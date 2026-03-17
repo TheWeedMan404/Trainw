@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trainw — Modern Fitness Management</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+  <!-- Noise overlay -->
+  <div class="noise"></div>
+
+  <!-- Orbs -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <!-- NAV -->
+  <nav id="navbar">
+    <div class="nav-inner">
+      <div class="logo-text">TRAINW</div>
+      <div class="nav-right">
+        <div class="lang-toggle">
+          <button class="lang-btn active" data-lang="en">EN</button>
+          <button class="lang-btn" data-lang="fr">FR</button>
+        </div>
+        <a href="TW Role.html" class="nav-cta" data-i18n="navLogin">Login</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-badge" data-i18n="heroBadge">🇹🇳 Built for Tunisia</div>
+      <h1 class="hero-title" data-i18n="heroTitle">TRAIN<br>SMARTER.<br>GROW<br>STRONGER.</h1>
+      <p class="hero-sub" data-i18n="heroSub">One platform connecting gyms, coaches, and clients. No more spreadsheets, no more chaos.</p>
+      <div class="hero-actions">
+        <a href="TW Role.html" class="btn-primary" data-i18n="heroGetStarted">Get Started</a>
+        <a href="TW Role.html" class="btn-ghost" data-i18n="heroLogin">Login</a>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="hv-card hv-card-1">
+        <div class="hv-label" data-i18n="hvSessions">Sessions Today</div>
+        <div class="hv-value">12</div>
+      </div>
+      <div class="hv-card hv-card-2">
+        <div class="hv-label" data-i18n="hvRevenue">Revenue</div>
+        <div class="hv-value">4,200<span class="hv-unit">DT</span></div>
+      </div>
+      <div class="hv-card hv-card-3">
+        <div class="hv-label" data-i18n="hvClients">Active Clients</div>
+        <div class="hv-value">38</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-item">
+      <div class="stat-val">24/7</div>
+      <div class="stat-lbl" data-i18n="stat1">Booking Access</div>
+    </div>
+    <div class="stat-div"></div>
+    <div class="stat-item">
+      <div class="stat-val">3</div>
+      <div class="stat-lbl" data-i18n="stat2">Platforms in One</div>
+    </div>
+    <div class="stat-div"></div>
+    <div class="stat-item">
+      <div class="stat-val">100%</div>
+      <div class="stat-lbl" data-i18n="stat3">Tunisia-Focused</div>
+    </div>
+  </div>
+
+  <!-- WHO IT'S FOR -->
+  <section class="who-section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag" data-i18n="whoTag">Who it's for</span>
+        <h2 class="section-title" data-i18n="whoTitle">Built for Everyone in Fitness</h2>
+      </div>
+      <div class="who-grid">
+        <div class="who-card">
+          <div class="who-icon">🏢</div>
+          <h3 class="who-name" data-i18n="gymTitle">Gym Owners</h3>
+          <p class="who-desc" data-i18n="gymDesc">Run your entire operation from one dashboard. Manage coaches, track revenue, and grow your client base.</p>
+          <ul class="who-list">
+            <li data-i18n="gymB1">Real-time bookings & revenue</li>
+            <li data-i18n="gymB2">Coach performance monitoring</li>
+            <li data-i18n="gymB3">AI-powered forecasting</li>
+            <li data-i18n="gymB4">Automated scheduling</li>
+          </ul>
+          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Get started →</a>
+        </div>
+        <div class="who-card who-card-featured">
+          <div class="who-icon">💪</div>
+          <h3 class="who-name" data-i18n="coachTitle">Coaches</h3>
+          <p class="who-desc" data-i18n="coachDesc">Focus on training, not admin. Manage your schedule, clients, and earnings from one place.</p>
+          <ul class="who-list">
+            <li data-i18n="coachB1">Schedule & earnings in one place</li>
+            <li data-i18n="coachB2">Client progress tracking</li>
+            <li data-i18n="coachB3">AI session notes generator</li>
+            <li data-i18n="coachB4">Verified client reviews</li>
+          </ul>
+          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Get started →</a>
+        </div>
+        <div class="who-card">
+          <div class="who-icon">🎯</div>
+          <h3 class="who-name" data-i18n="clientTitle">Clients</h3>
+          <p class="who-desc" data-i18n="clientDesc">Book sessions, track progress, and stay on top of your goals — all in one place.</p>
+          <ul class="who-list">
+            <li data-i18n="clientB1">Book sessions anytime</li>
+            <li data-i18n="clientB2">Track measurements & weight</li>
+            <li data-i18n="clientB3">AI diet recommendations</li>
+            <li data-i18n="clientB4">Direct coach messaging</li>
+          </ul>
+          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Get started →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="pricing-section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag" data-i18n="pricingTag">Pricing</span>
+        <h2 class="section-title" data-i18n="pricingTitle">Simple, Transparent Pricing</h2>
+      </div>
+      <div class="pricing-grid">
+        <div class="price-card">
+          <div class="price-tag" data-i18n="pFreeTag">Free Trial</div>
+          <div class="price-name" data-i18n="pFreeName">Starter</div>
+          <div class="price-amount">0<span class="price-cur">DT</span></div>
+          <div class="price-period" data-i18n="pFreePeriod">30 days free</div>
+          <ul class="price-list">
+            <li data-i18n="pFF1">Up to 50 clients</li>
+            <li data-i18n="pFF2">Basic scheduling</li>
+            <li data-i18n="pFF3">Client messaging</li>
+            <li data-i18n="pFF4">Progress tracking</li>
+          </ul>
+          <a href="TW Role.html" class="price-btn" data-i18n="pFreeBtn">Start Free Trial</a>
+        </div>
+        <div class="price-card price-featured">
+          <div class="price-badge" data-i18n="pProBadge">Most Popular</div>
+          <div class="price-tag" data-i18n="pProTag">Professional</div>
+          <div class="price-name" data-i18n="pProName">Pro</div>
+          <div class="price-amount">700<span class="price-cur">DT</span></div>
+          <div class="price-period" data-i18n="pProPeriod">per year + 200DT setup</div>
+          <ul class="price-list">
+            <li data-i18n="pPF1">Unlimited clients</li>
+            <li data-i18n="pPF2">AI revenue forecasting</li>
+            <li data-i18n="pPF3">Advanced analytics</li>
+            <li data-i18n="pPF4">Payment processing</li>
+            <li data-i18n="pPF5">Priority support</li>
+          </ul>
+          <a href="TW Role.html" class="price-btn price-btn-ac" data-i18n="pProBtn">Get Started</a>
+        </div>
+        <div class="price-card">
+          <div class="price-tag" data-i18n="pEntTag">Enterprise</div>
+          <div class="price-name" data-i18n="pEntName">Enterprise</div>
+          <div class="price-amount" data-i18n="pEntAmount">Custom</div>
+          <div class="price-period" data-i18n="pEntPeriod">Tailored to your needs</div>
+          <ul class="price-list">
+            <li data-i18n="pEF1">Multi-location support</li>
+            <li data-i18n="pEF2">Custom integrations</li>
+            <li data-i18n="pEF3">Dedicated account manager</li>
+            <li data-i18n="pEF4">White-label options</li>
+          </ul>
+          <a href="#" class="price-btn" data-i18n="pEntBtn">Contact Sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container">
+      <div class="footer-logo">TRAINW</div>
+      <p class="footer-sub" data-i18n="footerSub">Modern fitness management for Tunisia</p>
+      <p class="footer-copy" data-i18n="footerCopy">© 2026 Trainw. Built by Phantom Solutions.</p>
+    </div>
+  </footer>
+
+  <script src="index.js"></script>
+</body>
+</html>

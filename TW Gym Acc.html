@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trainw — Gym Dashboard</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="TW Gym Acc.css">
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo-section">
+      <img src="logo.png" alt="Trainw" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+      <div class="logo-text" style="display:none;">TRAINW</div>
+    </div>
+
+    <div class="gym-info">
+      <div class="gym-name" id="sidebar-gym-name">—</div>
+      <div class="gym-label" data-i18n="gymOwner">Gym Owner</div>
+    </div>
+
+    <nav>
+      <div class="nav-item active" data-page="dashboard"><span>📊</span><span data-i18n="navDashboard">Dashboard</span></div>
+      <div class="nav-item" data-page="schedule"><span>📅</span><span data-i18n="navSchedule">Schedule</span></div>
+      <div class="nav-item" data-page="coaches"><span>💪</span><span data-i18n="navCoaches">Coaches</span></div>
+      <div class="nav-item" data-page="clients"><span>👥</span><span data-i18n="navClients">Clients</span></div>
+      <div class="nav-item" data-page="analytics"><span>📈</span><span data-i18n="navAnalytics">Analytics</span></div>
+      <div class="nav-item" data-page="settings"><span>⚙️</span><span data-i18n="navSettings">Settings</span></div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="lang-toggle">
+        <button class="lang-btn active" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="fr">FR</button>
+      </div>
+      <button class="logout-btn" id="btn-logout">← <span data-i18n="signOut">Sign Out</span></button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main-content">
+
+    <!-- DASHBOARD -->
+    <div id="dashboard-page" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navDashboard">Dashboard</h1>
+        <p class="page-subtitle" data-i18n="dashSub">Your gym at a glance</p>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statRevenue">Monthly Revenue</div>
+          <div class="stat-value">8,340<span class="stat-unit">DT</span></div>
+          <div class="stat-change positive">+12% <span data-i18n="vsLastMonth">vs last month</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statClients">Active Clients</div>
+          <div class="stat-value" id="stat-clients">—</div>
+          <div class="stat-change positive" data-i18n="thisMonth">this month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statSessions">Sessions This Week</div>
+          <div class="stat-value">87</div>
+          <div class="stat-change positive">+5% <span data-i18n="vsLastWeek">vs last week</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statCoaches">Active Coaches</div>
+          <div class="stat-value" id="stat-coaches">—</div>
+          <div class="stat-change" data-i18n="onStaff">on staff</div>
+        </div>
+      </div>
+
+      <!-- Revenue forecast card -->
+      <div class="predictor-card">
+        <div class="predictor-header">
+          <span style="font-size:28px;">📊</span>
+          <div class="predictor-title" data-i18n="forecastTitle">Revenue Forecast</div>
+        </div>
+        <p class="predictor-sub" data-i18n="forecastSub">Conservative projection based on current trends</p>
+        <div class="predictor-grid">
+          <div class="predictor-box"><div class="predictor-lbl" data-i18n="nextMonth">Next Month</div><div class="predictor-val">9,200<span class="predictor-unit">DT</span></div></div>
+          <div class="predictor-box"><div class="predictor-lbl" data-i18n="nextQ">Q2 2026</div><div class="predictor-val">27K<span class="predictor-unit">DT</span></div></div>
+          <div class="predictor-box"><div class="predictor-lbl" data-i18n="fullYear">Full Year</div><div class="predictor-val">106K<span class="predictor-unit">DT</span></div></div>
+        </div>
+      </div>
+
+      <div class="content-grid">
+        <div class="card">
+          <div class="card-header"><h2 class="card-title" data-i18n="topCoaches">Top Coaches</h2></div>
+          <div id="top-coaches-list"><p class="empty-state" data-i18n="loading">Loading…</p></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2 class="card-title" data-i18n="quickStats">Quick Stats</h2></div>
+          <div id="quick-stats-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE -->
+    <div id="schedule-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navSchedule">Schedule</h1>
+        <p class="page-subtitle" data-i18n="schedSub">All sessions across your gym</p>
+      </div>
+      <input type="text" class="search-input" id="schedule-search" placeholder="Search…" data-i18n-ph="searchPh">
+      <div class="filter-row">
+        <button class="filter-btn active" data-filter="all" data-i18n="filterAll">All</button>
+        <button class="filter-btn" data-filter="confirmed" data-i18n="filterConfirmed">Confirmed</button>
+        <button class="filter-btn" data-filter="pending" data-i18n="filterPending">Pending</button>
+      </div>
+      <div class="card"><div id="schedule-list"><p class="empty-state" data-i18n="loading">Loading…</p></div></div>
+    </div>
+
+    <!-- COACHES -->
+    <div id="coaches-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navCoaches">Coaches</h1>
+        <p class="page-subtitle" data-i18n="coachesSub">Manage your coaching staff</p>
+      </div>
+      <div class="toolbar">
+        <input type="text" class="search-input" id="coaches-search" placeholder="Search coaches…">
+        <button class="btn-primary" id="btn-add-coach" data-i18n="addCoach">+ Add Coach</button>
+      </div>
+      <div class="person-grid" id="coaches-grid"><p class="empty-state" data-i18n="loading">Loading…</p></div>
+    </div>
+
+    <!-- CLIENTS -->
+    <div id="clients-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navClients">Clients</h1>
+        <p class="page-subtitle" data-i18n="clientsSub">All gym members</p>
+      </div>
+      <input type="text" class="search-input" id="clients-search" placeholder="Search clients…">
+      <div class="person-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Loading…</p></div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div id="analytics-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navAnalytics">Analytics</h1>
+        <p class="page-subtitle" data-i18n="analyticsSub">Key business metrics</p>
+      </div>
+      <div class="stats-grid" style="margin-bottom:32px;">
+        <div class="stat-card"><div class="stat-label" data-i18n="avgRevClient">Avg Rev / Client</div><div class="stat-value">58<span class="stat-unit">DT</span></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="retention">3-Month Retention</div><div class="stat-value">76<span class="stat-unit">%</span></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="peakHours">Peak Hours</div><div class="stat-value" style="font-size:32px;">6–8<span class="stat-unit">PM</span></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="newClients30">New Clients (30d)</div><div class="stat-value">18</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title" data-i18n="revBreakdown">Revenue Breakdown</h2></div>
+        <div id="revenue-breakdown"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="settings-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navSettings">Settings</h1>
+        <p class="page-subtitle" data-i18n="settingsSub">Configure your gym</p>
+      </div>
+      <div class="card">
+        <h2 class="card-title" style="margin-bottom:24px;" data-i18n="gymInfo">Gym Information</h2>
+        <div class="form-group"><label class="form-label" data-i18n="gymNameLbl">Gym Name</label><input type="text" class="form-input" id="gym-name-input"></div>
+        <div class="form-group"><label class="form-label" data-i18n="addressLbl">Address</label><input type="text" class="form-input" id="gym-address-input"></div>
+        <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Phone</label><input type="text" class="form-input" id="gym-phone-input"></div>
+        <div class="form-group"><label class="form-label" data-i18n="descLbl">Description</label><textarea class="form-input" id="gym-desc-input" rows="3"></textarea></div>
+        <button class="btn-primary" id="btn-save-settings" data-i18n="saveChanges">Save Changes</button>
+      </div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /app-container -->
+
+<!-- COACH DETAIL MODAL -->
+<div class="modal" id="coach-modal">
+  <div class="modal-content">
+    <button class="modal-close" id="close-coach-modal">×</button>
+    <div id="coach-modal-body"></div>
+  </div>
+</div>
+
+<!-- ADD COACH MODAL -->
+<div class="modal" id="add-coach-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-add-coach-modal">×</button>
+    <h2 class="form-modal-title" data-i18n="addCoachTitle">Add New Coach</h2>
+    <div class="form-group"><label class="form-label" data-i18n="coachName">Full Name</label><input type="text" class="form-input" id="new-coach-name" placeholder="Ahmed Ben Ali"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachEmail">Email</label><input type="email" class="form-input" id="new-coach-email" placeholder="ahmed@gym.tn"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachPhone">Phone</label><input type="text" class="form-input" id="new-coach-phone" placeholder="+216 92 123 456"></div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="coachSpecialty">Specialty</label>
+      <select class="form-input" id="new-coach-specialty">
+        <option>Strength Training</option><option>HIIT</option><option>Cardio</option>
+        <option>Pilates</option><option>Yoga</option><option>CrossFit</option><option>Bodybuilding</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label" data-i18n="coachRate">Hourly Rate (DT)</label><input type="number" class="form-input" id="new-coach-rate" placeholder="45" min="0" step="5"></div>
+    <button class="btn-primary" id="btn-submit-coach" data-i18n="submitCoach">Add Coach</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"><div class="toast-message" id="toast-msg"></div></div>
+
+<script src="TW Gym Acc.js"></script>
+</body>
+</html>
