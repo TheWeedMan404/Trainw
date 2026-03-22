@@ -107,15 +107,15 @@ function applyTranslations() {
     document.getElementById('settings-phone').value = user.phone || '';
   }
 
-  const { data: client } = await sb.from('client_profiles')
-    .select('id, membership_tier, fitness_goal, created_at, height_cm, weight_kg, body_fat_pct, goal_weight_kg')
+  const { data: client } = await sb.from('clients')
+    .select('id, membership_tier, goal, start_date, height_cm, weight_kg, body_fat_pct, goal_weight_kg')
     .eq('user_id', currentUserId).single();
 
   if (client) {
     currentClientProfileId = client.id;
     document.getElementById('stat-tier').textContent  = (client.membership_tier || 'basic').toUpperCase();
-    document.getElementById('stat-goal').textContent  = client.fitness_goal || '—';
-    document.getElementById('settings-goal').value   = client.fitness_goal || '';
+    document.getElementById('stat-goal').textContent  = client.goal || '—';
+    document.getElementById('settings-goal').value   = client.goal || '';
     if (client.created_at) {
       document.getElementById('stat-since').textContent = new Date(client.created_at).toLocaleDateString('en-GB', { month:'short', year:'numeric' });
     }
@@ -182,7 +182,7 @@ async function loadSessions() {
 // ── Coach ─────────────────────────────────────────────────
 async function loadCoach() {
   const { data: last } = await sb.from('sessions')
-    .select('coach_id, users!sessions_coach_id_fkey(name), coach_profiles!sessions_coach_id_fkey(id, specialty, rating)')
+    .select('coach_id, users!sessions_coach_id_fkey(name)')
     .eq('client_id', currentUserId)
     .order('session_date', { ascending: false })
     .limit(1).maybeSingle();
@@ -194,9 +194,15 @@ async function loadCoach() {
   }
 
   currentCoachUserId = last.coach_id;
-  const name      = last.users?.name || 'Coach';
-  const specialty = last.coach_profiles?.specialty || '';
-  const rating    = last.coach_profiles?.rating;
+  const name = last.users?.name || 'Coach';
+
+  // Fetch coach profile separately (coaches.user_id = sessions.coach_id)
+  const { data: coachProfile } = await sb.from('coaches')
+    .select('id, specialty, rating')
+    .eq('user_id', last.coach_id).maybeSingle();
+
+  const specialty = coachProfile?.specialty || '';
+  const rating    = coachProfile?.rating;
   const initials  = name.split(' ').map(n => n[0]).join('').slice(0,2);
 
   document.getElementById('coach-avatar').textContent   = initials;
@@ -273,7 +279,7 @@ async function saveMeasurements() {
   const btn = document.getElementById('btn-save-measurements');
   btn.textContent = '…'; btn.disabled = true;
   try {
-    const { error } = await sb.from('client_profiles').update({
+    const { error } = await sb.from('clients').update({
       height_cm:      height,
       weight_kg:      weight,
       body_fat_pct:   bodyfat,
@@ -309,7 +315,7 @@ async function saveSettings() {
   try {
     await sb.from('users').update({ name, phone }).eq('id', currentUserId);
     if (currentClientProfileId && goal) {
-      await sb.from('client_profiles').update({ fitness_goal: goal }).eq('id', currentClientProfileId);
+      await sb.from('clients').update({ goal: goal }).eq('id', currentClientProfileId);
     }
     document.getElementById('sidebar-client-name').textContent = name;
     document.getElementById('stat-goal').textContent = goal || '—';

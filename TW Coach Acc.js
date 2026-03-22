@@ -87,8 +87,8 @@ function applyTranslations() {
     document.getElementById('profile-email').value = session.user.email || '';
   }
 
-  // Load coach_profiles row (FIXED: was querying 'coaches' — wrong table)
-  const { data: coach } = await sb.from('coach_profiles')
+  // Load coaches row
+  const { data: coach } = await sb.from('coaches')
     .select('id, specialty, hourly_rate, bio, rating, total_reviews')
     .eq('user_id', currentUserId).single();
 
@@ -193,7 +193,7 @@ async function loadClients() {
 async function loadReviews() {
   if (!currentCoachProfileId) return;
   const { data: reviews } = await sb.from('reviews')
-    .select('rating, comment, created_at, client_profiles(users(name))')
+    .select('rating, comment, created_at, clients(users(name))')
     .eq('coach_id', currentCoachProfileId)
     .order('created_at', { ascending: false });
 
@@ -208,7 +208,7 @@ async function loadReviews() {
   document.getElementById('reviews-list').innerHTML = reviews.map(r => {
     const days = Math.floor((Date.now() - new Date(r.created_at)) / 86400000);
     const when = days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
-    const name = r.client_profiles?.users?.name || 'Client';
+    const name = r.clients?.users?.name || 'Client';
     return `<div class="review-item">
       <div class="review-header"><span class="review-client">${name}</span><span class="review-rating">★ ${r.rating}</span></div>
       <div class="review-text">${r.comment || ''}</div>
@@ -230,7 +230,7 @@ async function saveProfile() {
   try {
     await sb.from('users').update({ name, phone }).eq('id', currentUserId);
     if (currentCoachProfileId) {
-      await sb.from('coach_profiles').update({ specialty, hourly_rate: rate, bio }).eq('id', currentCoachProfileId);
+      await sb.from('coaches').update({ specialty, hourly_rate: rate, bio }).eq('id', currentCoachProfileId);
     }
     document.getElementById('sidebar-coach-name').textContent = name;
     toast(t('savedOk'));

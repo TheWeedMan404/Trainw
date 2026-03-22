@@ -54,8 +54,8 @@
     <!-- DASHBOARD -->
     <div id="dashboard-page" class="page">
       <div class="page-header">
-        <h1 class="page-title" data-i18n="navDashboard">Dashboard</h1>
-        <p class="page-subtitle" data-i18n="dashSub">Your gym at a glance</p>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Welcome back, <span id="dashboard-gym-name">—</span></p>
       </div>
       <div class="stats-grid">
         <div class="stat-card">
@@ -140,7 +140,11 @@
         <h1 class="page-title" data-i18n="navClients">Clients</h1>
         <p class="page-subtitle" data-i18n="clientsSub">All gym members</p>
       </div>
-      <input type="text" class="search-input" id="clients-search" placeholder="Search clients…">
+      <div class="toolbar">
+        <input type="text" class="search-input" id="clients-search" placeholder="Search clients…">
+        <button class="btn-primary" id="btn-signup-client" data-i18n="signupClient">+ Sign Up Client</button>
+        <button class="btn-secondary" id="btn-link-client" data-i18n="linkClient">Link Existing</button>
+      </div>
       <div class="person-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Loading…</p></div>
     </div>
 
@@ -173,7 +177,6 @@
         <div class="form-group"><label class="form-label" data-i18n="gymNameLbl">Gym Name</label><input type="text" class="form-input" id="gym-name-input"></div>
         <div class="form-group"><label class="form-label" data-i18n="addressLbl">Address</label><input type="text" class="form-input" id="gym-address-input"></div>
         <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Phone</label><input type="text" class="form-input" id="gym-phone-input"></div>
-        <div class="form-group"><label class="form-label" data-i18n="descLbl">Description</label><textarea class="form-input" id="gym-desc-input" rows="3"></textarea></div>
         <button class="btn-primary" id="btn-save-settings" data-i18n="saveChanges">Save Changes</button>
       </div>
     </div>
@@ -206,6 +209,40 @@
     </div>
     <div class="form-group"><label class="form-label" data-i18n="coachRate">Hourly Rate (DT)</label><input type="number" class="form-input" id="new-coach-rate" placeholder="45" min="0" step="5"></div>
     <button class="btn-primary" id="btn-submit-coach" data-i18n="submitCoach">Add Coach</button>
+  </div>
+</div>
+
+<!-- SIGN UP CLIENT MODAL -->
+<div class="modal" id="signup-client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-signup-client-modal">×</button>
+    <h2 class="form-modal-title" data-i18n="signupClientTitle">Sign Up New Client</h2>
+    <div class="form-group"><label class="form-label" data-i18n="clientName">Full Name</label><input type="text" class="form-input" id="new-client-name" placeholder="Sarah Ben Ali"></div>
+    <div class="form-group"><label class="form-label" data-i18n="clientEmail">Email</label><input type="email" class="form-input" id="new-client-email" placeholder="sarah@email.com"></div>
+    <div class="form-group"><label class="form-label" data-i18n="clientPassword">Password</label><input type="password" class="form-input" id="new-client-password" placeholder="Min. 8 characters"></div>
+    <div class="form-group"><label class="form-label" data-i18n="clientPhone">Phone (optional)</label><input type="text" class="form-input" id="new-client-phone" placeholder="+216 92 123 456"></div>
+    <div class="alert-box hidden" id="signup-client-err"></div>
+    <button class="btn-primary" id="btn-submit-signup-client" data-i18n="createClient">Create Client Account</button>
+  </div>
+</div>
+
+<!-- LINK EXISTING CLIENT MODAL -->
+<div class="modal" id="link-client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-link-client-modal">×</button>
+    <h2 class="form-modal-title" data-i18n="linkClientTitle">Add Existing Client</h2>
+    <p style="font-size:13px;color:var(--mt);margin-bottom:20px;" data-i18n="linkClientDesc">Search by email or phone to link an existing Trainw account to your gym.</p>
+    <div class="form-group"><label class="form-label" data-i18n="searchByEmail">Email or Phone</label>
+      <div style="display:flex;gap:10px;">
+        <input type="text" class="form-input" id="link-client-search" placeholder="email or +216…" style="flex:1;">
+        <button class="btn-secondary" id="btn-search-client" data-i18n="search">Search</button>
+      </div>
+    </div>
+    <div id="link-client-result" class="hidden">
+      <div class="link-result-card" id="link-result-card"></div>
+      <button class="btn-primary" id="btn-confirm-link" style="margin-top:16px;width:100%;" data-i18n="linkToGym">Link to My Gym</button>
+    </div>
+    <div class="alert-box hidden" id="link-client-err"></div>
   </div>
 </div>
 
