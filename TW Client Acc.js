@@ -215,8 +215,9 @@ async function loadSessions() {
 
 // ── Coach ─────────────────────────────────────────────────
 async function loadCoach() {
+  // Step 1: get the coach_id from the client's most recent session
   const { data: last } = await sb.from('sessions')
-    .select('coach_id, users!sessions_coach_id_fkey(name), coach_profiles!sessions_coach_id_fkey(id, specialty, rating)')
+    .select('coach_id, users!sessions_coach_id_fkey(name)')
     .eq('client_id', currentUserId)
     .order('session_date', { ascending: false })
     .limit(1).maybeSingle();
@@ -228,9 +229,16 @@ async function loadCoach() {
   }
 
   currentCoachUserId = last.coach_id;
-  const name      = last.users?.name || 'Coach';
-  const specialty = last.coach_profiles?.specialty || '';
-  const rating    = last.coach_profiles?.rating;
+  const name = last.users?.name || 'Coach';
+
+  // Step 2: get coach_profiles via user_id (correct FK path)
+  const { data: coachProfile } = await sb.from('coach_profiles')
+    .select('id, specialty, rating')
+    .eq('user_id', last.coach_id)
+    .maybeSingle();
+
+  const specialty = coachProfile?.specialty || '';
+  const rating    = coachProfile?.rating;
   const initials  = name.split(' ').map(n => n[0]).join('').slice(0,2);
 
   document.getElementById('coach-avatar').textContent   = initials;
