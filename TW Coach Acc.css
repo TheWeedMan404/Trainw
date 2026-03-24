@@ -117,3 +117,12 @@ body::before { content:''; position:fixed; inset:0; pointer-events:none; z-index
   .main-content { margin-left:0; padding:24px 20px; }
   .person-grid { grid-template-columns:1fr; }
 }
+
+.nav-icon { font-size: 14px; color: var(--mt); flex-shrink: 0; }
+.nav-item.active .nav-icon { color: var(--ac); }
+.save-status { font-size: 12px; font-family: 'DM Mono', monospace; margin-top: 10px; min-height: 18px; }
+[dir="rtl"] .sidebar { left: auto; right: 0; border-left: 1px solid var(--bd); border-right: none; }
+[dir="rtl"] .main-content { margin-left: 0; margin-right: 260px; }
+[dir="rtl"] .nav-item { border-left: none; border-right: 3px solid transparent; }
+[dir="rtl"] .nav-item:hover, [dir="rtl"] .nav-item.active { border-right-color: var(--ac); }
+@media (max-width: 900px) { [dir="rtl"] .main-content { margin-right: 0; } }

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trainw — Coach Dashboard</title>
+  <title>Trainw — Coach</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
@@ -20,26 +20,26 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="logo-section">
-      <img src="logo.png" alt="Trainw" onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
-      <div class="logo-text" style="display:none;">TRAINW</div>
+      <div class="logo-text">TRAINW</div>
     </div>
     <div class="coach-info">
       <div class="coach-name" id="sidebar-coach-name">—</div>
       <div class="coach-label" data-i18n="roleLabel">Coach</div>
     </div>
     <nav>
-      <div class="nav-item active" data-page="dashboard"><span>📊</span><span data-i18n="navDash">Dashboard</span></div>
-      <div class="nav-item" data-page="sessions"><span>📅</span><span data-i18n="navSessions">Sessions</span></div>
-      <div class="nav-item" data-page="clients"><span>👥</span><span data-i18n="navClients">Clients</span></div>
-      <div class="nav-item" data-page="reviews"><span>⭐</span><span data-i18n="navReviews">Reviews</span></div>
-      <div class="nav-item" data-page="profile"><span>⚙️</span><span data-i18n="navProfile">Profile</span></div>
+      <div class="nav-item active" data-page="dashboard"><span class="nav-icon">◈</span><span data-i18n="navDash">Tableau de Bord</span></div>
+      <div class="nav-item" data-page="sessions"><span class="nav-icon">◷</span><span data-i18n="navSessions">Séances</span></div>
+      <div class="nav-item" data-page="clients"><span class="nav-icon">◎</span><span data-i18n="navClients">Clients</span></div>
+      <div class="nav-item" data-page="reviews"><span class="nav-icon">◉</span><span data-i18n="navReviews">Avis</span></div>
+      <div class="nav-item" data-page="profile"><span class="nav-icon">◇</span><span data-i18n="navProfile">Profil</span></div>
     </nav>
     <div class="sidebar-footer">
       <div class="lang-toggle">
-        <button class="lang-btn active" data-lang="en">EN</button>
-        <button class="lang-btn" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+        <button class="lang-btn active" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="ar">ع</button>
       </div>
-      <button class="logout-btn" id="btn-logout">← <span data-i18n="signOut">Sign Out</span></button>
+      <button class="logout-btn" id="btn-logout">← <span data-i18n="signOut">Déconnexion</span></button>
     </div>
   </aside>
 
@@ -49,73 +49,99 @@
     <!-- DASHBOARD -->
     <div id="dashboard-page" class="page">
       <div class="page-header">
-        <h1 class="page-title" data-i18n="navDash">Dashboard</h1>
-        <p class="page-subtitle" data-i18n="dashSub">Your coaching overview</p>
+        <h1 class="page-title" data-i18n="navDash">Tableau de Bord</h1>
+        <p class="page-subtitle" data-i18n="dashSub">Vue d'ensemble de votre coaching</p>
       </div>
       <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label" data-i18n="statSessions">Sessions This Week</div><div class="stat-value" id="stat-sessions">—</div><div class="stat-change" data-i18n="upcoming">upcoming</div></div>
-        <div class="stat-card"><div class="stat-label" data-i18n="statClients">Active Clients</div><div class="stat-value" id="stat-clients">—</div><div class="stat-change" data-i18n="total">total</div></div>
-        <div class="stat-card"><div class="stat-label" data-i18n="statRating">Avg Rating</div><div class="stat-value" id="stat-rating">—</div><div class="stat-change" id="stat-reviews-count">reviews</div></div>
-        <div class="stat-card"><div class="stat-label" data-i18n="statRate">Hourly Rate</div><div class="stat-value" id="stat-rate">—<span class="stat-unit">DT</span></div><div class="stat-change" data-i18n="perSession">per session</div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statSessions">Séances Cette Semaine</div><div class="stat-value" id="stat-sessions">—</div><div class="stat-change" data-i18n="upcoming">à venir</div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statClients">Clients Actifs</div><div class="stat-value" id="stat-clients">—</div><div class="stat-change" data-i18n="total">total</div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statRating">Note Moyenne</div><div class="stat-value" id="stat-rating">—</div><div class="stat-change" id="stat-reviews-count">avis</div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statRate">Tarif Horaire</div><div class="stat-value" id="stat-rate">—<span class="stat-unit">DT</span></div><div class="stat-change" data-i18n="perSession">par séance</div></div>
       </div>
 
-      <!-- AI Session Notes -->
+      <!-- Session Note Generator (renamed from AI) -->
       <div class="ai-card">
-        <div class="ai-header"><span style="font-size:28px;">🤖</span><div class="ai-title" data-i18n="aiTitle">AI Session Notes</div></div>
-        <p class="ai-sub" data-i18n="aiSub">Auto-generate professional post-session notes</p>
-        <div class="form-group"><label class="form-label" data-i18n="aiClientName">Client Name</label><input type="text" class="form-input" id="ai-client-name" placeholder="Sarah Martinez"></div>
+        <div class="ai-header"><span style="font-size:22px;">📋</span><div class="ai-title" data-i18n="notesTitle">Générateur de Notes de Séance</div></div>
+        <p class="ai-sub" data-i18n="notesSub">Créez des notes de séance professionnelles rapidement</p>
         <div class="form-group">
-          <label class="form-label" data-i18n="aiSessionType">Session Type</label>
+          <label class="form-label" for="ai-client-name" data-i18n="aiClientName">Nom du Client</label>
+          <input type="text" class="form-input" id="ai-client-name" placeholder="Sana Ben Ali">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="ai-session-type" data-i18n="aiSessionType">Type de Séance</label>
           <select class="form-input" id="ai-session-type">
-            <option>Strength Training</option><option>Cardio</option><option>HIIT</option><option>Pilates</option><option>Bodybuilding</option>
+            <option>CrossFit</option><option>Musculation</option><option>Cardio</option>
+            <option>HIIT</option><option>Yoga</option><option>Natation</option><option>Boxe</option>
           </select>
         </div>
-        <div class="form-group"><label class="form-label" data-i18n="aiHighlights">Key Highlights</label><textarea class="form-input" id="ai-highlights" rows="3" placeholder="e.g. Hit new PR on squats, worked on form corrections…"></textarea></div>
-        <button class="btn-primary" id="btn-gen-notes" data-i18n="aiGenerate">Generate Notes</button>
+        <div class="form-group">
+          <label class="form-label" for="ai-highlights" data-i18n="aiHighlights">Points Clés de la Séance</label>
+          <textarea class="form-input" id="ai-highlights" rows="3" placeholder="Ex: Nouveau record sur les squats, correction de posture…"></textarea>
+        </div>
+        <button class="btn-primary" id="btn-gen-notes" data-i18n="aiGenerate">Générer les Notes</button>
         <div class="ai-output hidden" id="ai-output"><pre id="ai-output-text"></pre></div>
       </div>
 
       <div class="card">
-        <div class="card-header"><h2 class="card-title" data-i18n="todaySessions">Today's Sessions</h2></div>
-        <div id="today-sessions"><p class="empty-state" data-i18n="loading">Loading…</p></div>
+        <div class="card-header"><h2 class="card-title" data-i18n="todaySessions">Séances du Jour</h2></div>
+        <div id="today-sessions"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
       </div>
     </div>
 
     <!-- SESSIONS -->
     <div id="sessions-page" class="page hidden">
-      <div class="page-header"><h1 class="page-title" data-i18n="navSessions">Sessions</h1><p class="page-subtitle" data-i18n="sessionsSub">Your full training schedule</p></div>
-      <div class="card"><div id="all-sessions"><p class="empty-state" data-i18n="loading">Loading…</p></div></div>
+      <div class="page-header"><h1 class="page-title" data-i18n="navSessions">Séances</h1><p class="page-subtitle" data-i18n="sessionsSub">Votre planning complet</p></div>
+      <div class="card"><div id="all-sessions"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
     </div>
 
     <!-- CLIENTS -->
     <div id="clients-page" class="page hidden">
-      <div class="page-header"><h1 class="page-title" data-i18n="navClients">Clients</h1><p class="page-subtitle" data-i18n="clientsSub">Track your client progress</p></div>
-      <div class="person-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Loading…</p></div>
+      <div class="page-header"><h1 class="page-title" data-i18n="navClients">Clients</h1><p class="page-subtitle" data-i18n="clientsSub">Suivez vos clients</p></div>
+      <div class="person-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
     </div>
 
     <!-- REVIEWS -->
     <div id="reviews-page" class="page hidden">
-      <div class="page-header"><h1 class="page-title" data-i18n="navReviews">Reviews</h1><p class="page-subtitle" data-i18n="reviewsSub">Client feedback</p></div>
+      <div class="page-header"><h1 class="page-title" data-i18n="navReviews">Avis</h1><p class="page-subtitle" data-i18n="reviewsSub">Retours de vos clients</p></div>
       <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:32px;">
-        <div class="stat-card"><div class="stat-label" data-i18n="avgRating">Average Rating</div><div class="stat-value" id="rev-avg">—</div></div>
-        <div class="stat-card"><div class="stat-label" data-i18n="totalReviews">Total Reviews</div><div class="stat-value" id="rev-total">—</div></div>
-        <div class="stat-card"><div class="stat-label" data-i18n="fiveStars">5-Star Reviews</div><div class="stat-value" id="rev-five">—</div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="avgRating">Note Moyenne</div><div class="stat-value" id="rev-avg">—</div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="totalReviews">Total Avis</div><div class="stat-value" id="rev-total">—</div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="fiveStars">Avis 5 Étoiles</div><div class="stat-value" id="rev-five">—</div></div>
       </div>
-      <div class="card"><div id="reviews-list"><p class="empty-state" data-i18n="loading">Loading…</p></div></div>
+      <div class="card"><div id="reviews-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
     </div>
 
-    <!-- PROFILE / SETTINGS -->
+    <!-- PROFILE -->
     <div id="profile-page" class="page hidden">
-      <div class="page-header"><h1 class="page-title" data-i18n="navProfile">Profile</h1><p class="page-subtitle" data-i18n="profileSub">Manage your coaching profile</p></div>
+      <div class="page-header"><h1 class="page-title" data-i18n="navProfile">Profil</h1><p class="page-subtitle" data-i18n="profileSub">Gérez votre profil de coach</p></div>
       <div class="card">
-        <h2 class="card-title" style="margin-bottom:24px;" data-i18n="personalInfo">Personal Information</h2>
-        <div class="form-group"><label class="form-label" data-i18n="lName">Name</label><input type="text" class="form-input" id="profile-name"></div>
-        <div class="form-group"><label class="form-label" data-i18n="lEmail">Email</label><input type="email" class="form-input" id="profile-email" disabled style="opacity:.5;"></div>
-        <div class="form-group"><label class="form-label" data-i18n="lPhone">Phone</label><input type="text" class="form-input" id="profile-phone"></div>
-        <div class="form-group"><label class="form-label" data-i18n="lSpecialty">Specialty</label><input type="text" class="form-input" id="profile-specialty"></div>
-        <div class="form-group"><label class="form-label" data-i18n="lRate">Hourly Rate (DT)</label><input type="number" class="form-input" id="profile-rate"></div>
-        <div class="form-group"><label class="form-label" data-i18n="lBio">Bio</label><textarea class="form-input" id="profile-bio" rows="4"></textarea></div>
-        <button class="btn-primary" id="btn-save-profile" data-i18n="saveChanges">Save Changes</button>
+        <h2 class="card-title" style="margin-bottom:24px;" data-i18n="personalInfo">Informations Personnelles</h2>
+        <div class="form-group">
+          <label class="form-label" for="profile-name" data-i18n="lName">Nom</label>
+          <input type="text" class="form-input" id="profile-name">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-email" data-i18n="lEmail">Email</label>
+          <input type="email" class="form-input" id="profile-email" disabled style="opacity:.5;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-phone" data-i18n="lPhone">Téléphone</label>
+          <input type="text" class="form-input" id="profile-phone">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-specialty" data-i18n="lSpecialty">Spécialité</label>
+          <input type="text" class="form-input" id="profile-specialty" placeholder="CrossFit, Boxe, Natation…">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-rate" data-i18n="lRate">Tarif Horaire (DT)</label>
+          <input type="number" class="form-input" id="profile-rate" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-bio" data-i18n="lBio">Bio</label>
+          <textarea class="form-input" id="profile-bio" rows="4"></textarea>
+        </div>
+        <button class="btn-primary" id="btn-save-profile" data-i18n="saveChanges">Enregistrer</button>
+        <div class="save-status" id="coach-save-status"></div>
       </div>
     </div>
 

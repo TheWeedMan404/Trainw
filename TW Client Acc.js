@@ -9,7 +9,7 @@ let currentClientProfileId = null;
 let currentCoachUserId = null;
 let selectedSlot       = null;
 let userInitials       = 'ME';
-let currentLang        = 'en';
+let currentLang        = localStorage.getItem('trainw_lang') || 'fr';
 
 // ── i18n ──────────────────────────────────────────────────
 const T = {
@@ -30,7 +30,7 @@ const T = {
     bodyFat:'Body Fat (%)', goalWeight:'Goal Weight (kg)',
     saveMeasurements:'Save Measurements',
     nutritionSub:'Personalized meal planning',
-    aiDietTitle:'AI Diet Generator', aiDietSub:'Smart meal planning based on your goals and Tunisian food preferences',
+    aiDietTitle:'Guide Nutrition Personnalisé', aiDietSub:'Plan alimentaire adapté à vos objectifs et aux préférences tunisiennes',
     yourGoal:'Your Goal', bodyType:'Body Type', activityLevel:'Activity Level', workoutType:'Workout Type',
     generateDiet:'Generate My Diet',
     coachSub:'Stay connected with your trainer', loadingCoach:'Loading coach…',
@@ -78,6 +78,39 @@ const T = {
     noCoach:'Aucun coach assigné. Contactez votre salle.',
     savedOk:'Enregistré !', errorMsg:'Une erreur s\'est produite.',
     bookingOk:'Séance réservée !', selectSlot:'Veuillez sélectionner un créneau.',
+  },
+  ar: {
+    roleLabel:'عميل', signOut:'تسجيل الخروج',
+    navDash:'لوحة التحكم', navProgress:'التقدم', navNutrition:'التغذية',
+    navCoach:'مدربي', navBookings:'الحجوزات', navSettings:'الإعدادات',
+    dashSub:'رحلتك الرياضية',
+    statSessions:'جلسات هذا الشهر', statMembership:'الاشتراك',
+    statGoal:'الهدف', statSince:'عضو منذ',
+    thisMonth:'هذا الشهر', plan:'خطة', currentGoal:'الهدف الحالي', joined:'انضم',
+    bookSession:'احجز الجلسة القادمة', scheduleCoach:'حدد موعداً مع مدربك',
+    msgCoach:'مراسلة المدرب', msgCoachDesc:'أسئلة أو تحديث التقدم',
+    recentSessions:'الجلسات الأخيرة', loading:'جار التحميل…',
+    progressSub:'تابع تحولك',
+    sessionHistory:'سجل الجلسات', bodyMeasurements:'القياسات الجسمية',
+    edit:'تعديل', height:'الطول (سم)', weight:'الوزن (كغ)',
+    bodyFat:'نسبة الدهون (%)', goalWeight:'الوزن المستهدف (كغ)',
+    saveMeasurements:'حفظ القياسات',
+    nutritionSub:'خطة غذائية شخصية',
+    aiDietTitle:'دليل التغذية الشخصي', aiDietSub:'خطة غذائية مناسبة لأهدافك والتفضيلات التونسية',
+    yourGoal:'هدفك', bodyType:'نوع الجسم', activityLevel:'مستوى النشاط', workoutType:'نوع التمرين',
+    generateDiet:'إنشاء خطتي الغذائية',
+    coachSub:'ابق على تواصل مع مدربك', loadingCoach:'جار تحميل المدرب…',
+    messages:'الرسائل', chatPlaceholder:'الدردشة قريباً. احجز جلسة للتواصل.',
+    typeMessage:'اكتب رسالة…', send:'إرسال',
+    availableSlots:'المواعيد المتاحة', confirmBooking:'تأكيد الحجز',
+    upcomingSessions:'الجلسات القادمة',
+    bookingsSub:'جدوِل تدريبك القادم',
+    settingsSub:'إدارة حسابك', personalInfo:'المعلومات الشخصية',
+    lName:'الاسم', lPhone:'الهاتف', lGoal:'الهدف', saveChanges:'حفظ التغييرات',
+    noSessions:'لا توجد جلسات بعد.',
+    noCoach:'لا يوجد مدرب معيّن بعد. تواصل مع صالتك.',
+    savedOk:'تم الحفظ!', errorMsg:'حدث خطأ ما.',
+    bookingOk:'تم الحجز!', selectSlot:'الرجاء اختيار موعد.',
   }
 };
 const t = k => T[currentLang][k] || T.en[k] || k;
@@ -85,12 +118,13 @@ const t = k => T[currentLang][k] || T.en[k] || k;
 function applyTranslations() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const k = el.getAttribute('data-i18n');
-    if (T[currentLang][k]) el.textContent = T[currentLang][k];
+    if (T[currentLang]?.[k]) el.textContent = T[currentLang][k];
   });
   document.querySelectorAll('[data-i18n-ph]').forEach(el => {
     const k = el.getAttribute('data-i18n-ph');
-    if (T[currentLang][k]) el.placeholder = T[currentLang][k];
+    if (T[currentLang]?.[k]) el.placeholder = T[currentLang][k];
   });
+  document.documentElement.setAttribute('dir', currentLang === 'ar' ? 'rtl' : 'ltr');
 }
 
 // ── Init ──────────────────────────────────────────────────
@@ -107,15 +141,15 @@ function applyTranslations() {
     document.getElementById('settings-phone').value = user.phone || '';
   }
 
-  const { data: client } = await sb.from('clients')
-    .select('id, membership_tier, goal, start_date, height_cm, weight_kg, body_fat_pct, goal_weight_kg')
+  const { data: client } = await sb.from('client_profiles')
+    .select('id, membership_tier, fitness_goal, created_at, height_cm, weight_kg, body_fat_pct, goal_weight_kg')
     .eq('user_id', currentUserId).single();
 
   if (client) {
     currentClientProfileId = client.id;
     document.getElementById('stat-tier').textContent  = (client.membership_tier || 'basic').toUpperCase();
-    document.getElementById('stat-goal').textContent  = client.goal || '—';
-    document.getElementById('settings-goal').value   = client.goal || '';
+    document.getElementById('stat-goal').textContent  = client.fitness_goal || '—';
+    document.getElementById('settings-goal').value   = client.fitness_goal || '';
     if (client.created_at) {
       document.getElementById('stat-since').textContent = new Date(client.created_at).toLocaleDateString('en-GB', { month:'short', year:'numeric' });
     }
@@ -182,7 +216,7 @@ async function loadSessions() {
 // ── Coach ─────────────────────────────────────────────────
 async function loadCoach() {
   const { data: last } = await sb.from('sessions')
-    .select('coach_id, users!sessions_coach_id_fkey(name)')
+    .select('coach_id, users!sessions_coach_id_fkey(name), coach_profiles!sessions_coach_id_fkey(id, specialty, rating)')
     .eq('client_id', currentUserId)
     .order('session_date', { ascending: false })
     .limit(1).maybeSingle();
@@ -194,15 +228,9 @@ async function loadCoach() {
   }
 
   currentCoachUserId = last.coach_id;
-  const name = last.users?.name || 'Coach';
-
-  // Fetch coach profile separately (coaches.user_id = sessions.coach_id)
-  const { data: coachProfile } = await sb.from('coaches')
-    .select('id, specialty, rating')
-    .eq('user_id', last.coach_id).maybeSingle();
-
-  const specialty = coachProfile?.specialty || '';
-  const rating    = coachProfile?.rating;
+  const name      = last.users?.name || 'Coach';
+  const specialty = last.coach_profiles?.specialty || '';
+  const rating    = last.coach_profiles?.rating;
   const initials  = name.split(' ').map(n => n[0]).join('').slice(0,2);
 
   document.getElementById('coach-avatar').textContent   = initials;
@@ -279,7 +307,7 @@ async function saveMeasurements() {
   const btn = document.getElementById('btn-save-measurements');
   btn.textContent = '…'; btn.disabled = true;
   try {
-    const { error } = await sb.from('clients').update({
+    const { error } = await sb.from('client_profiles').update({
       height_cm:      height,
       weight_kg:      weight,
       body_fat_pct:   bodyfat,
@@ -315,11 +343,13 @@ async function saveSettings() {
   try {
     await sb.from('users').update({ name, phone }).eq('id', currentUserId);
     if (currentClientProfileId && goal) {
-      await sb.from('clients').update({ goal: goal }).eq('id', currentClientProfileId);
+      await sb.from('client_profiles').update({ fitness_goal: goal }).eq('id', currentClientProfileId);
     }
     document.getElementById('sidebar-client-name').textContent = name;
     document.getElementById('stat-goal').textContent = goal || '—';
     toast(t('savedOk'));
+    const ss = document.getElementById('client-save-status');
+    if (ss) { ss.textContent = t('savedOk'); ss.style.color = 'var(--ac)'; setTimeout(() => ss.textContent = '', 3000); }
   } catch (err) {
     toast('Error: ' + err.message);
   } finally {
@@ -382,11 +412,23 @@ function sendMessage() {
   const msg   = input.value.trim();
   if (!msg) return;
   const time = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-  document.getElementById('chat-messages').innerHTML += `
-    <div class="message sent">
-      <div class="msg-avatar">${userInitials}</div>
-      <div><div class="msg-bubble">${msg}</div><div class="msg-time">${time}</div></div>
-    </div>`;
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'message sent';
+  const avatarDiv = document.createElement('div');
+  avatarDiv.className = 'msg-avatar';
+  avatarDiv.textContent = userInitials;
+  const innerDiv = document.createElement('div');
+  const bubbleDiv = document.createElement('div');
+  bubbleDiv.className = 'msg-bubble';
+  bubbleDiv.textContent = msg; // safe - no innerHTML
+  const timeDiv = document.createElement('div');
+  timeDiv.className = 'msg-time';
+  timeDiv.textContent = time;
+  innerDiv.appendChild(bubbleDiv);
+  innerDiv.appendChild(timeDiv);
+  msgDiv.appendChild(avatarDiv);
+  msgDiv.appendChild(innerDiv);
+  document.getElementById('chat-messages').appendChild(msgDiv);
   input.value = '';
   document.getElementById('chat-messages').scrollTop = 99999;
 }
@@ -424,11 +466,14 @@ document.querySelectorAll('.quick-card[data-goto]').forEach(card => {
 document.querySelectorAll('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     currentLang = btn.dataset.lang;
+    localStorage.setItem('trainw_lang', currentLang);
     document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     applyTranslations();
   });
 });
+document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+document.querySelector(`.lang-btn[data-lang="${currentLang}"]`)?.classList.add('active');
 
 // ── Wire buttons ──────────────────────────────────────────
 document.getElementById('btn-confirm-booking').addEventListener('click', confirmBooking);

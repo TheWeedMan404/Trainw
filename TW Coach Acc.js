@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(
 
 let currentUserId = null;
 let currentCoachProfileId = null;
-let currentLang = 'en';
+let currentLang = localStorage.getItem('trainw_lang') || 'fr';
 
 // ── i18n ──────────────────────────────────────────────────
 const T = {
@@ -18,7 +18,7 @@ const T = {
     statSessions:'Sessions This Week', statClients:'Active Clients',
     statRating:'Avg Rating', statRate:'Hourly Rate',
     upcoming:'upcoming', total:'total', perSession:'per session',
-    aiTitle:'AI Session Notes', aiSub:'Auto-generate professional post-session notes',
+    notesTitle:'Session Note Generator', notesSub:'Generate professional post-session notes quickly',
     aiClientName:'Client Name', aiSessionType:'Session Type',
     aiHighlights:'Key Highlights', aiGenerate:'Generate Notes',
     todaySessions:"Today's Sessions", loading:'Loading…',
@@ -44,7 +44,7 @@ const T = {
     statSessions:'Séances Cette Semaine', statClients:'Clients Actifs',
     statRating:'Note Moyenne', statRate:'Tarif Horaire',
     upcoming:'à venir', total:'total', perSession:'par séance',
-    aiTitle:'Notes IA', aiSub:'Générer des notes de séance professionnelles',
+    notesTitle:'Générateur de Notes de Séance', notesSub:'Créez des notes professionnelles rapidement',
     aiClientName:'Nom du Client', aiSessionType:'Type de Séance',
     aiHighlights:'Points Clés', aiGenerate:'Générer les Notes',
     todaySessions:'Séances du Jour', loading:'Chargement…',
@@ -61,6 +61,32 @@ const T = {
     noClients:'Aucun client pour l\'instant.',
     noReviews:'Aucun avis pour l\'instant.',
     savedOk:'Profil enregistré !', errorMsg:'Une erreur s\'est produite.',
+  },
+  ar: {
+    roleLabel:'مدرب', signOut:'تسجيل الخروج',
+    navDash:'لوحة التحكم', navSessions:'الجلسات', navClients:'العملاء',
+    navReviews:'التقييمات', navProfile:'الملف الشخصي',
+    dashSub:'نظرة عامة على تدريبك',
+    statSessions:'جلسات هذا الأسبوع', statClients:'العملاء النشطون',
+    statRating:'متوسط التقييم', statRate:'الأجر بالساعة',
+    upcoming:'قادمة', total:'إجمالي', perSession:'لكل جلسة',
+    notesTitle:'مولّد ملاحظات الجلسات', notesSub:'أنشئ ملاحظات احترافية بسرعة',
+    aiClientName:'اسم العميل', aiSessionType:'نوع الجلسة',
+    aiHighlights:'النقاط الرئيسية', aiGenerate:'إنشاء الملاحظات',
+    todaySessions:'جلسات اليوم', loading:'جار التحميل…',
+    sessionsSub:'جدولك الكامل',
+    clientsSub:'تابع عملاءك',
+    reviewsSub:'آراء عملائك',
+    avgRating:'متوسط التقييم', totalReviews:'إجمالي التقييمات', fiveStars:'تقييمات 5 نجوم',
+    profileSub:'إدارة ملفك الشخصي',
+    personalInfo:'المعلومات الشخصية',
+    lName:'الاسم', lEmail:'البريد الإلكتروني', lPhone:'الهاتف',
+    lSpecialty:'التخصص', lRate:'الأجر بالساعة (دت)', lBio:'نبذة',
+    saveChanges:'حفظ التغييرات',
+    noSessions:'لا توجد جلسات بعد.',
+    noClients:'لا يوجد عملاء بعد.',
+    noReviews:'لا توجد تقييمات بعد.',
+    savedOk:'تم الحفظ!', errorMsg:'حدث خطأ ما.',
   }
 };
 const t = k => T[currentLang][k] || T.en[k] || k;
@@ -68,8 +94,9 @@ const t = k => T[currentLang][k] || T.en[k] || k;
 function applyTranslations() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const k = el.getAttribute('data-i18n');
-    if (T[currentLang][k]) el.textContent = T[currentLang][k];
+    if (T[currentLang]?.[k]) el.textContent = T[currentLang][k];
   });
+  document.documentElement.setAttribute('dir', currentLang === 'ar' ? 'rtl' : 'ltr');
 }
 
 // ── Init ──────────────────────────────────────────────────
@@ -87,8 +114,8 @@ function applyTranslations() {
     document.getElementById('profile-email').value = session.user.email || '';
   }
 
-  // Load coaches row
-  const { data: coach } = await sb.from('coaches')
+  // Load coach_profiles row (FIXED: was querying 'coaches' — wrong table)
+  const { data: coach } = await sb.from('coach_profiles')
     .select('id, specialty, hourly_rate, bio, rating, total_reviews')
     .eq('user_id', currentUserId).single();
 
@@ -193,7 +220,7 @@ async function loadClients() {
 async function loadReviews() {
   if (!currentCoachProfileId) return;
   const { data: reviews } = await sb.from('reviews')
-    .select('rating, comment, created_at, clients(users(name))')
+    .select('rating, comment, created_at, client_profiles(users(name))')
     .eq('coach_id', currentCoachProfileId)
     .order('created_at', { ascending: false });
 
@@ -208,7 +235,7 @@ async function loadReviews() {
   document.getElementById('reviews-list').innerHTML = reviews.map(r => {
     const days = Math.floor((Date.now() - new Date(r.created_at)) / 86400000);
     const when = days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
-    const name = r.clients?.users?.name || 'Client';
+    const name = r.client_profiles?.users?.name || 'Client';
     return `<div class="review-item">
       <div class="review-header"><span class="review-client">${name}</span><span class="review-rating">★ ${r.rating}</span></div>
       <div class="review-text">${r.comment || ''}</div>
@@ -222,7 +249,8 @@ async function saveProfile() {
   const name      = document.getElementById('profile-name').value.trim();
   const phone     = document.getElementById('profile-phone').value.trim();
   const specialty = document.getElementById('profile-specialty').value.trim();
-  const rate      = parseFloat(document.getElementById('profile-rate').value);
+  const rateRaw = document.getElementById('profile-rate').value;
+  const rate = rateRaw && !isNaN(parseFloat(rateRaw)) ? parseFloat(rateRaw) : null;
   const bio       = document.getElementById('profile-bio').value.trim();
 
   const btn = document.getElementById('btn-save-profile');
@@ -230,10 +258,12 @@ async function saveProfile() {
   try {
     await sb.from('users').update({ name, phone }).eq('id', currentUserId);
     if (currentCoachProfileId) {
-      await sb.from('coaches').update({ specialty, hourly_rate: rate, bio }).eq('id', currentCoachProfileId);
+      await sb.from('coach_profiles').update({ specialty, hourly_rate: rate, bio }).eq('id', currentCoachProfileId);
     }
     document.getElementById('sidebar-coach-name').textContent = name;
     toast(t('savedOk'));
+    const ss = document.getElementById('coach-save-status');
+    if (ss) { ss.textContent = t('savedOk'); ss.style.color = 'var(--ac)'; setTimeout(() => ss.textContent = '', 3000); }
   } catch (err) {
     toast('Error: ' + err.message);
   } finally {
@@ -241,7 +271,7 @@ async function saveProfile() {
   }
 }
 
-// ── AI Session Notes ──────────────────────────────────────
+// ── Session Notes Generator ──────────────────────────────────────
 function generateNotes() {
   const client  = document.getElementById('ai-client-name').value.trim();
   const type    = document.getElementById('ai-session-type').value;
@@ -298,11 +328,14 @@ document.querySelectorAll('.nav-item').forEach(item => {
 document.querySelectorAll('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     currentLang = btn.dataset.lang;
+    localStorage.setItem('trainw_lang', currentLang);
     document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     applyTranslations();
   });
 });
+document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+document.querySelector(`.lang-btn[data-lang="${currentLang}"]`)?.classList.add('active');
 
 // ── Wire buttons ──────────────────────────────────────────
 document.getElementById('btn-gen-notes').addEventListener('click', generateNotes);

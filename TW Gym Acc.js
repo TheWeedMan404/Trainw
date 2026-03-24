@@ -1,36 +1,68 @@
-// ── Supabase ──────────────────────────────────────────────
 const sb = window.supabase.createClient(
   'https://bibqumevndfykmkssslb.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM'
 );
 
-// ── State ─────────────────────────────────────────────────
 let currentUser = null;
 let currentGymId = null;
-let currentLang = 'en';
+let currentLang = localStorage.getItem('trainw_lang') || 'fr';
 let scheduleFilter = 'all';
 
 // ── i18n ──────────────────────────────────────────────────
 const T = {
+  fr: {
+    gymOwner:'Propriétaire', signOut:'Déconnexion',
+    navDashboard:'Tableau de Bord', navSchedule:'Planning', navCoaches:'Coachs',
+    navClients:'Clients', navAnalytics:'Analytiques', navSettings:'Paramètres',
+    dashSub:"Votre salle en un coup d'œil",
+    statClients:'Clients Actifs', statCoaches:'Coachs Actifs',
+    statSessions:'Séances Cette Semaine', statRevenue:'Revenu Mensuel',
+    thisMonth:'ce mois', onStaff:'en staff', vsLastWeek:'cette semaine',
+    comingSoon:'bientôt disponible',
+    topCoaches:'Meilleurs Coachs', recentSessions:'Séances Récentes',
+    loading:'Chargement…',
+    schedSub:'Toutes les séances de votre salle',
+    filterAll:'Tout', filterConfirmed:'Confirmé', filterPending:'En attente',
+    coachesSub:'Gérez votre équipe de coachs', addCoach:'+ Ajouter un Coach',
+    clientsSub:'Tous les membres de votre salle',
+    analyticsSub:'Métriques clés de votre activité',
+    analyticsComingSoon:'Analytiques Avancées',
+    analyticsDesc:'Les rapports de revenus, rétention et heures de pointe seront disponibles dans la prochaine mise à jour.',
+    settingsSub:'Configurez votre salle', gymInfo:'Informations de la Salle',
+    gymNameLbl:'Nom de la Salle', addressLbl:'Adresse', phoneLbl:'Téléphone', descLbl:'Description',
+    saveChanges:'Enregistrer',
+    addCoachTitle:'Ajouter un Coach', coachName:'Nom Complet', coachEmail:'Email',
+    coachPhone:'Téléphone', coachSpecialty:'Spécialité', coachRate:'Tarif Horaire (DT)',
+    submitCoach:'Ajouter le Coach',
+    noCoaches:'Aucun coach pour le moment. Ajoutez votre premier coach !',
+    noClients:'Aucun client pour le moment.',
+    noSessions:'Aucune séance trouvée.',
+    savedOk:'Paramètres enregistrés !', coachAdded:'Coach ajouté avec succès !',
+    errorMsg:'Une erreur est survenue.',
+    hourlyRate:'Tarif Horaire', avgRating:'Note Moy.',
+    performanceLbl:'Performance', reviewsLbl:'Avis',
+    employedLbl:'Ancienneté', totalReviews:'Total Avis',
+    emailMissing:'Veuillez saisir un email valide.',
+    nameMissing:'Veuillez saisir un nom.',
+  },
   en: {
     gymOwner:'Gym Owner', signOut:'Sign Out',
     navDashboard:'Dashboard', navSchedule:'Schedule', navCoaches:'Coaches',
     navClients:'Clients', navAnalytics:'Analytics', navSettings:'Settings',
     dashSub:'Your gym at a glance',
-    statRevenue:'Monthly Revenue', statClients:'Active Clients',
-    statSessions:'Sessions This Week', statCoaches:'Active Coaches',
-    vsLastMonth:'vs last month', thisMonth:'this month',
-    vsLastWeek:'vs last week', onStaff:'on staff',
-    forecastTitle:'Revenue Forecast', forecastSub:'Conservative projection based on current trends',
-    nextMonth:'Next Month', nextQ:'Q2 2026', fullYear:'Full Year',
-    topCoaches:'Top Coaches', quickStats:'Quick Stats', loading:'Loading…',
-    schedSub:'All sessions across your gym', searchPh:'Search…',
+    statClients:'Active Clients', statCoaches:'Active Coaches',
+    statSessions:'Sessions This Week', statRevenue:'Monthly Revenue',
+    thisMonth:'this month', onStaff:'on staff', vsLastWeek:'this week',
+    comingSoon:'coming soon',
+    topCoaches:'Top Coaches', recentSessions:'Recent Sessions',
+    loading:'Loading…',
+    schedSub:'All sessions across your gym',
     filterAll:'All', filterConfirmed:'Confirmed', filterPending:'Pending',
     coachesSub:'Manage your coaching staff', addCoach:'+ Add Coach',
     clientsSub:'All gym members',
-    analyticsSub:'Key business metrics', avgRevClient:'Avg Rev / Client',
-    retention:'3-Month Retention', peakHours:'Peak Hours', newClients30:'New Clients (30d)',
-    revBreakdown:'Revenue Breakdown',
+    analyticsSub:'Key business metrics',
+    analyticsComingSoon:'Advanced Analytics',
+    analyticsDesc:'Revenue reports, client retention and peak hours coming in the next update.',
     settingsSub:'Configure your gym', gymInfo:'Gym Information',
     gymNameLbl:'Gym Name', addressLbl:'Address', phoneLbl:'Phone', descLbl:'Description',
     saveChanges:'Save Changes',
@@ -42,70 +74,60 @@ const T = {
     noSessions:'No sessions found.',
     savedOk:'Settings saved!', coachAdded:'Coach added!',
     errorMsg:'Something went wrong.',
-    performanceLbl:'Performance', reviewsLbl:'Reviews', bioLbl:'Bio',
-    hourlyRate:'Hourly Rate', totalReviews:'Total Reviews', avgRating:'Avg Rating',
-    employedLbl:'Employed',
-    signupClient:'+ Sign Up Client', linkClient:'Link Existing',
-    signupClientTitle:'Sign Up New Client', clientName:'Full Name',
-    clientEmail:'Email', clientPassword:'Password', clientPhone:'Phone (optional)',
-    createClient:'Create Client Account',
-    linkClientTitle:'Add Existing Client',
-    linkClientDesc:'Search by email or phone to link an existing Trainw account to your gym.',
-    searchByEmail:'Email or Phone', search:'Search', linkToGym:'Link to My Gym',
+    hourlyRate:'Hourly Rate', avgRating:'Avg Rating',
+    performanceLbl:'Performance', reviewsLbl:'Reviews',
+    employedLbl:'Employed', totalReviews:'Total Reviews',
+    emailMissing:'Please enter a valid email.',
+    nameMissing:'Please enter a name.',
   },
-  fr: {
-    gymOwner:'Propriétaire', signOut:'Se Déconnecter',
-    navDashboard:'Tableau de Bord', navSchedule:'Planning', navCoaches:'Coachs',
-    navClients:'Clients', navAnalytics:'Analytiques', navSettings:'Paramètres',
-    dashSub:'Votre salle en un coup d\'œil',
-    statRevenue:'Revenu Mensuel', statClients:'Clients Actifs',
-    statSessions:'Séances Cette Semaine', statCoaches:'Coachs Actifs',
-    vsLastMonth:'vs mois dernier', thisMonth:'ce mois',
-    vsLastWeek:'vs semaine dernière', onStaff:'en staff',
-    forecastTitle:'Prévision de Revenus', forecastSub:'Projection conservatrice selon les tendances actuelles',
-    nextMonth:'Mois Prochain', nextQ:'T2 2026', fullYear:'Année Complète',
-    topCoaches:'Meilleurs Coachs', quickStats:'Stats Rapides', loading:'Chargement…',
-    schedSub:'Toutes les séances de votre salle', searchPh:'Rechercher…',
-    filterAll:'Tout', filterConfirmed:'Confirmés', filterPending:'En Attente',
-    coachesSub:'Gérez votre équipe', addCoach:'+ Ajouter Coach',
-    clientsSub:'Tous les membres',
-    analyticsSub:'Métriques clés', avgRevClient:'Revenu Moy. / Client',
-    retention:'Rétention 3 Mois', peakHours:'Heure de Pointe', newClients30:'Nouveaux Clients (30j)',
-    revBreakdown:'Répartition Revenus',
-    settingsSub:'Configurez votre salle', gymInfo:'Infos de la Salle',
-    gymNameLbl:'Nom de la Salle', addressLbl:'Adresse', phoneLbl:'Téléphone', descLbl:'Description',
-    saveChanges:'Enregistrer',
-    addCoachTitle:'Ajouter un Coach', coachName:'Nom Complet', coachEmail:'Email',
-    coachPhone:'Téléphone', coachSpecialty:'Spécialité', coachRate:'Tarif Horaire (DT)',
-    submitCoach:'Ajouter Coach',
-    noCoaches:'Aucun coach. Ajoutez le premier !',
-    noClients:'Aucun client pour l\'instant.',
-    noSessions:'Aucune séance trouvée.',
-    savedOk:'Paramètres enregistrés !', coachAdded:'Coach ajouté !',
-    errorMsg:'Une erreur s\'est produite.',
-    performanceLbl:'Performance', reviewsLbl:'Avis', bioLbl:'Bio',
-    hourlyRate:'Tarif Horaire', totalReviews:'Total Avis', avgRating:'Note Moy.',
-    employedLbl:'Ancienneté',
-    signupClient:'+ Inscrire Client', linkClient:'Lier Existant',
-    signupClientTitle:'Inscrire Nouveau Client', clientName:'Nom Complet',
-    clientEmail:'Email', clientPassword:'Mot de passe', clientPhone:'Téléphone (optionnel)',
-    createClient:'Créer le Compte Client',
-    linkClientTitle:'Ajouter Client Existant',
-    linkClientDesc:'Recherchez par email ou téléphone pour lier un compte Trainw existant à votre salle.',
-    searchByEmail:'Email ou Téléphone', search:'Rechercher', linkToGym:'Lier à Ma Salle',
+  ar: {
+    gymOwner:'مالك الصالة', signOut:'تسجيل الخروج',
+    navDashboard:'لوحة التحكم', navSchedule:'الجدول', navCoaches:'المدربون',
+    navClients:'العملاء', navAnalytics:'التحليلات', navSettings:'الإعدادات',
+    dashSub:'صالتك في نظرة واحدة',
+    statClients:'العملاء النشطون', statCoaches:'المدربون النشطون',
+    statSessions:'جلسات هذا الأسبوع', statRevenue:'الإيرادات الشهرية',
+    thisMonth:'هذا الشهر', onStaff:'في الفريق', vsLastWeek:'هذا الأسبوع',
+    comingSoon:'قريباً',
+    topCoaches:'أفضل المدربين', recentSessions:'الجلسات الأخيرة',
+    loading:'جار التحميل…',
+    schedSub:'جميع جلسات صالتك',
+    filterAll:'الكل', filterConfirmed:'مؤكد', filterPending:'معلق',
+    coachesSub:'إدارة فريق المدربين', addCoach:'+ إضافة مدرب',
+    clientsSub:'جميع أعضاء الصالة',
+    analyticsSub:'المقاييس الرئيسية',
+    analyticsComingSoon:'التحليلات المتقدمة',
+    analyticsDesc:'تقارير الإيرادات والاحتفاظ بالعملاء وأوقات الذروة ستكون متاحة في التحديث القادم.',
+    settingsSub:'إعداد صالتك', gymInfo:'معلومات الصالة',
+    gymNameLbl:'اسم الصالة', addressLbl:'العنوان', phoneLbl:'الهاتف', descLbl:'الوصف',
+    saveChanges:'حفظ التغييرات',
+    addCoachTitle:'إضافة مدرب', coachName:'الاسم الكامل', coachEmail:'البريد الإلكتروني',
+    coachPhone:'الهاتف', coachSpecialty:'التخصص', coachRate:'الأجر بالساعة (دت)',
+    submitCoach:'إضافة المدرب',
+    noCoaches:'لا يوجد مدربون بعد. أضف أول مدرب!',
+    noClients:'لا يوجد عملاء بعد.',
+    noSessions:'لا توجد جلسات.',
+    savedOk:'تم الحفظ!', coachAdded:'تمت إضافة المدرب!',
+    errorMsg:'حدث خطأ ما.',
+    hourlyRate:'الأجر بالساعة', avgRating:'متوسط التقييم',
+    performanceLbl:'الأداء', reviewsLbl:'التقييمات',
+    employedLbl:'مدة العمل', totalReviews:'إجمالي التقييمات',
+    emailMissing:'الرجاء إدخال بريد إلكتروني صحيح.',
+    nameMissing:'الرجاء إدخال الاسم.',
   }
 };
-const t = k => T[currentLang][k] || T.en[k] || k;
+const t = k => T[currentLang]?.[k] || T.fr[k] || k;
 
 function applyTranslations() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const k = el.getAttribute('data-i18n');
-    if (T[currentLang][k]) el.textContent = T[currentLang][k];
+    if (T[currentLang]?.[k]) el.textContent = T[currentLang][k];
   });
-  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
-    const k = el.getAttribute('data-i18n-ph');
-    if (T[currentLang][k]) el.placeholder = T[currentLang][k];
-  });
+  if (currentLang === 'ar') {
+    document.documentElement.setAttribute('dir', 'rtl');
+  } else {
+    document.documentElement.setAttribute('dir', 'ltr');
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────
@@ -115,37 +137,22 @@ function applyTranslations() {
   currentUser = session.user;
 
   const { data: profile } = await sb.from('users').select('gym_id, name').eq('id', currentUser.id).single();
-
-  // Primary: gym_id set on users row by trigger
   if (profile?.gym_id) {
     currentGymId = profile.gym_id;
-  } else {
-    // Fallback: look up gyms table by owner_id (in case trigger didn't patch users.gym_id)
-    const { data: ownedGym } = await sb.from('gyms').select('id').eq('owner_id', currentUser.id).maybeSingle();
-    if (ownedGym) {
-      currentGymId = ownedGym.id;
-      // Patch the users row so the next load is instant
-      await sb.from('users').update({ gym_id: currentGymId }).eq('id', currentUser.id);
-    }
-  }
-
-  if (currentGymId) {
-    const { data: gym } = await sb.from('gyms').select('name, address, phone').eq('id', currentGymId).single();
+    const { data: gym } = await sb.from('gyms').select('name, address, phone, description').eq('id', currentGymId).single();
     if (gym) {
-      document.getElementById('sidebar-gym-name').textContent  = gym.name || '—';
-      document.getElementById('dashboard-gym-name').textContent = gym.name || '—';
-      const nameInput  = document.getElementById('gym-name-input');
-      const addrInput  = document.getElementById('gym-address-input');
-      const phoneInput = document.getElementById('gym-phone-input');
-      if (nameInput)  nameInput.value  = gym.name    || '';
-      if (addrInput)  addrInput.value  = gym.address || '';
-      if (phoneInput) phoneInput.value = gym.phone   || '';
+      document.getElementById('sidebar-gym-name').textContent = gym.name || '—';
+      const f = id => document.getElementById(id);
+      if (f('gym-name-input'))  f('gym-name-input').value  = gym.name        || '';
+      if (f('gym-address-input')) f('gym-address-input').value = gym.address || '';
+      if (f('gym-phone-input'))   f('gym-phone-input').value  = gym.phone    || '';
+      if (f('gym-desc-input'))    f('gym-desc-input').value   = gym.description || '';
     }
+  } else {
+    document.getElementById('sidebar-gym-name').textContent = profile?.name || '—';
   }
 
   await loadDashboardStats();
-  renderQuickStats();
-  renderRevBreakdown();
   await loadSchedule();
   await loadCoaches();
   await loadClients();
@@ -154,71 +161,114 @@ function applyTranslations() {
 
 // ── Dashboard stats ───────────────────────────────────────
 async function loadDashboardStats() {
-  // coach count
-  const { count: coachCount } = await sb.from('coaches').select('id', { count: 'exact', head: true });
-  document.getElementById('stat-coaches').textContent = coachCount ?? '—';
+  // Coach count — scoped to gym
+  let coachCount = 0;
+  if (currentGymId) {
+    const { count } = await sb.from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'coach')
+      .eq('gym_id', currentGymId);
+    coachCount = count ?? 0;
+  }
+  document.getElementById('stat-coaches').textContent = coachCount;
 
-  // client count
-  let clientQ = sb.from('clients').select('id', { count: 'exact', head: true });
-  if (currentGymId) clientQ = sb.from('users').select('id', { count: 'exact', head: true }).eq('role','client').eq('gym_id', currentGymId);
-  const { count: clientCount } = await clientQ;
-  document.getElementById('stat-clients').textContent = clientCount ?? '—';
+  // Client count — scoped to gym
+  let clientCount = 0;
+  if (currentGymId) {
+    const { count } = await sb.from('users')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'client')
+      .eq('gym_id', currentGymId);
+    clientCount = count ?? 0;
+  }
+  document.getElementById('stat-clients').textContent = clientCount;
 
-  // top coaches
-  const { data: coaches } = await sb.from('coaches')
-    .select('id, specialty, hourly_rate, rating, total_reviews, users(name)')
-    .order('rating', { ascending: false }).limit(3);
+  // Session count this week — scoped to gym
+  const now = new Date();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
+  const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+  const ws = weekStart.toISOString().split('T')[0];
+  const we = weekEnd.toISOString().split('T')[0];
+
+  let sessionCount = 0;
+  if (currentGymId) {
+    const { count } = await sb.from('sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('gym_id', currentGymId)
+      .gte('session_date', ws)
+      .lte('session_date', we);
+    sessionCount = count ?? 0;
+  }
+  document.getElementById('stat-sessions').textContent = sessionCount;
+
+  // Top coaches — scoped to gym via users table
+  let coaches = [];
+  if (currentGymId) {
+    const { data } = await sb.from('coach_profiles')
+      .select('id, specialty, hourly_rate, rating, total_reviews, users!inner(name, gym_id)')
+      .eq('users.gym_id', currentGymId)
+      .order('rating', { ascending: false })
+      .limit(3);
+    coaches = data || [];
+  }
 
   const topEl = document.getElementById('top-coaches-list');
   if (!coaches || coaches.length === 0) {
     topEl.innerHTML = `<p class="empty-state">${t('noCoaches')}</p>`;
-    return;
+  } else {
+    topEl.innerHTML = coaches.map(c => {
+      const name = c.users?.name || 'Coach';
+      const initials = name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+      return `<div class="person-card" onclick="openCoachModal('${c.id}')" style="cursor:pointer;">
+        <div class="person-header">
+          <div class="person-avatar">${initials}</div>
+          <div><div class="person-name">${name}</div><div class="person-role">${c.specialty || '—'}</div></div>
+        </div>
+        <div class="person-stats">
+          <div class="person-stat-item"><div class="person-stat-value">${c.hourly_rate ?? '—'}<span style="font-size:13px;color:var(--mt)"> DT</span></div><div class="person-stat-label">${t('hourlyRate')}</div></div>
+          <div class="person-stat-item"><div class="person-stat-value">★ ${c.rating ?? '—'}</div><div class="person-stat-label">${t('avgRating')}</div></div>
+        </div>
+      </div>`;
+    }).join('');
   }
-  topEl.innerHTML = coaches.map(c => {
-    const name = c.users?.name || 'Coach';
-    const initials = name.split(' ').map(n => n[0]).join('');
-    return `<div class="person-card" onclick="openCoachModal('${c.id}')">
-      <div class="person-header">
-        <div class="person-avatar">${initials}</div>
-        <div><div class="person-name">${name}</div><div class="person-role">${c.specialty || '—'}</div></div>
-      </div>
-      <div class="person-stats">
-        <div class="person-stat-item"><div class="person-stat-value">${c.hourly_rate ?? '—'}<span style="font-size:13px;color:var(--mt)"> DT</span></div><div class="person-stat-label">Hourly</div></div>
-        <div class="person-stat-item"><div class="person-stat-value">★ ${c.rating ?? '—'}</div><div class="person-stat-label">Rating</div></div>
-      </div>
-    </div>`;
-  }).join('');
-}
 
-function renderQuickStats() {
-  document.getElementById('quick-stats-list').innerHTML = [
-    { label: t('avgRating') || 'Avg Rating', val: '4.8' },
-    { label: t('statSessions'), val: '87' },
-    { label: t('retention') || '3-Mo Retention', val: '76%' },
-  ].map(s => `<div class="qs-item"><span class="qs-label">${s.label}</span><span class="qs-value">${s.val}</span></div>`).join('');
-}
-
-function renderRevBreakdown() {
-  const rows = [
-    { source: 'Personal Training', amount: '5,240 DT', pct: '63%' },
-    { source: 'Memberships',       amount: '2,180 DT', pct: '26%' },
-    { source: 'Group Classes',     amount: '920 DT',   pct: '11%' },
-  ];
-  document.getElementById('revenue-breakdown').innerHTML = rows.map(r =>
-    `<div class="rev-row">
-      <div><div class="rev-source">${r.source}</div><div class="rev-pct">${r.pct} of total</div></div>
-      <div class="rev-amount">${r.amount}</div>
-    </div>`
-  ).join('');
+  // Recent sessions
+  const recentEl = document.getElementById('recent-sessions-list');
+  if (currentGymId) {
+    const { data: sessions } = await sb.from('sessions')
+      .select('id, session_date, start_time, type, status, users!sessions_coach_id_fkey(name)')
+      .eq('gym_id', currentGymId)
+      .order('session_date', { ascending: false })
+      .limit(4);
+    if (!sessions || sessions.length === 0) {
+      recentEl.innerHTML = `<p class="empty-state">${t('noSessions')}</p>`;
+    } else {
+      recentEl.innerHTML = sessions.map(s => {
+        const coachName = s.users?.name || '—';
+        const time = s.start_time?.slice(0,5) || '—';
+        const date = new Date(s.session_date).toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
+        return `<div class="schedule-item">
+          <div class="schedule-time-col"><div class="schedule-time">${time}</div></div>
+          <div><div class="schedule-title">${(s.type || 'Séance').replace(/_/g,' ')}</div><div class="schedule-meta">${coachName} · ${date}</div></div>
+          <div class="schedule-status status-${s.status || 'pending'}">${s.status || 'pending'}</div>
+        </div>`;
+      }).join('');
+    }
+  } else {
+    recentEl.innerHTML = `<p class="empty-state">${t('noSessions')}</p>`;
+  }
 }
 
 // ── Schedule ──────────────────────────────────────────────
 let allSessions = [];
 
 async function loadSchedule() {
+  if (!currentGymId) { allSessions = []; renderSchedule(); return; }
   const { data } = await sb.from('sessions')
-    .select('id, session_date, start_time, duration_minutes, type, status, coach_id, client_id, users!sessions_coach_id_fkey(name)')
-    .order('session_date', { ascending: true }).limit(60);
+    .select('id, session_date, start_time, duration_minutes, type, status, coach_id, users!sessions_coach_id_fkey(name)')
+    .eq('gym_id', currentGymId)
+    .order('session_date', { ascending: true })
+    .limit(60);
   allSessions = data || [];
   renderSchedule();
 }
@@ -231,16 +281,15 @@ function renderSchedule() {
     (s.users?.name || '').toLowerCase().includes(search) ||
     (s.type || '').toLowerCase().includes(search)
   );
-
   const el = document.getElementById('schedule-list');
   if (!list.length) { el.innerHTML = `<p class="empty-state">${t('noSessions')}</p>`; return; }
   el.innerHTML = list.map(s => {
     const coachName = s.users?.name || '—';
     const time = s.start_time?.slice(0,5) || '—';
-    const date = new Date(s.session_date).toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' });
+    const date = new Date(s.session_date).toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
     return `<div class="schedule-item">
       <div class="schedule-time-col"><div class="schedule-time">${time}</div><div class="schedule-dur">${s.duration_minutes ?? 60}min</div></div>
-      <div><div class="schedule-title">${(s.type || 'Session').replace('_',' ')}</div><div class="schedule-meta">${coachName} • ${date}</div></div>
+      <div><div class="schedule-title">${(s.type || 'Séance').replace(/_/g,' ')}</div><div class="schedule-meta">${coachName} · ${date}</div></div>
       <div class="schedule-status status-${s.status || 'confirmed'}">${s.status || 'confirmed'}</div>
     </div>`;
   }).join('');
@@ -248,14 +297,21 @@ function renderSchedule() {
 
 // ── Coaches ───────────────────────────────────────────────
 async function loadCoaches() {
-  const { data: coaches } = await sb.from('coaches')
-    .select('id, specialty, hourly_rate, rating, total_reviews, users(name)');
   const el = document.getElementById('coaches-grid');
-  if (!coaches || coaches.length === 0) { el.innerHTML = `<p class="empty-state">${t('noCoaches')}</p>`; return; }
+  if (!currentGymId) { el.innerHTML = `<p class="empty-state">${t('noCoaches')}</p>`; return; }
+
+  const { data: coaches } = await sb.from('coach_profiles')
+    .select('id, specialty, hourly_rate, rating, total_reviews, users!inner(name, gym_id)')
+    .eq('users.gym_id', currentGymId);
+
+  if (!coaches || coaches.length === 0) {
+    el.innerHTML = `<p class="empty-state">${t('noCoaches')}</p>`;
+    return;
+  }
   el.innerHTML = coaches.map(c => {
     const name = c.users?.name || 'Coach';
-    const initials = name.split(' ').map(n => n[0]).join('');
-    return `<div class="person-card" onclick="openCoachModal('${c.id}')">
+    const initials = name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+    return `<div class="person-card" onclick="openCoachModal('${c.id}')" style="cursor:pointer;">
       <div class="person-header">
         <div class="person-avatar">${initials}</div>
         <div><div class="person-name">${name}</div><div class="person-role">${c.specialty || 'Coach'}</div></div>
@@ -270,23 +326,28 @@ async function loadCoaches() {
 
 // ── Clients ───────────────────────────────────────────────
 async function loadClients() {
-  let q = sb.from('clients').select('id, membership_tier, goal, created_at, users(name, gym_id)');
-  if (currentGymId) q = sb.from('clients').select('id, membership_tier, goal, created_at, users!inner(name, gym_id)').eq('users.gym_id', currentGymId);
-  const { data: clients } = await q;
   const el = document.getElementById('clients-grid');
-  if (!clients || clients.length === 0) { el.innerHTML = `<p class="empty-state">${t('noClients')}</p>`; return; }
+  if (!currentGymId) { el.innerHTML = `<p class="empty-state">${t('noClients')}</p>`; return; }
+
+  const { data: clients } = await sb.from('users')
+    .select('id, name, created_at')
+    .eq('role', 'client')
+    .eq('gym_id', currentGymId);
+
+  if (!clients || clients.length === 0) {
+    el.innerHTML = `<p class="empty-state">${t('noClients')}</p>`;
+    return;
+  }
   el.innerHTML = clients.map(c => {
-    const name = c.users?.name || 'Client';
-    const initials = name.split(' ').map(n => n[0]).join('');
-    const since = new Date(c.created_at).toLocaleDateString('en-GB', { month:'short', year:'numeric' });
+    const initials = (c.name || 'C').split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+    const since = new Date(c.created_at).toLocaleDateString('fr-FR', { month:'short', year:'numeric' });
     return `<div class="person-card">
       <div class="person-header">
         <div class="person-avatar">${initials}</div>
-        <div><div class="person-name">${name}</div><div class="person-role">${c.membership_tier || 'Client'}</div></div>
+        <div><div class="person-name">${c.name || 'Client'}</div><div class="person-role">Client</div></div>
       </div>
       <div class="person-stats">
-        <div class="person-stat-item"><div class="person-stat-value" style="font-size:14px;padding-top:4px;">${c.goal || '—'}</div><div class="person-stat-label">Goal</div></div>
-        <div class="person-stat-item"><div class="person-stat-value" style="font-size:14px;padding-top:4px;">${since}</div><div class="person-stat-label">Since</div></div>
+        <div class="person-stat-item"><div class="person-stat-value" style="font-size:14px;padding-top:4px;">${since}</div><div class="person-stat-label">Depuis</div></div>
       </div>
     </div>`;
   }).join('');
@@ -294,33 +355,22 @@ async function loadClients() {
 
 // ── Coach modal ───────────────────────────────────────────
 async function openCoachModal(coachId) {
-  const { data: c } = await sb.from('coaches')
+  const { data: c } = await sb.from('coach_profiles')
     .select('id, specialty, hourly_rate, bio, rating, total_reviews, created_at, users(name, phone)')
     .eq('id', coachId).single();
   if (!c) return;
 
-  const { data: reviews } = await sb.from('reviews')
-    .select('rating, comment, created_at, clients(users(name))')
-    .eq('coach_id', coachId).order('created_at', { ascending: false }).limit(5);
-
   const name = c.users?.name || 'Coach';
-  const initials = name.split(' ').map(n => n[0]).join('');
+  const initials = name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
   const months = Math.floor((Date.now() - new Date(c.created_at)) / (1000*60*60*24*30));
-  const employed = months >= 12 ? `${Math.floor(months/12)}y ${months%12}mo` : `${months}mo`;
-
-  const reviewsHTML = reviews?.length
-    ? reviews.map(r => `<div class="review-item">
-        <div class="review-header"><span class="review-client">${r.clients?.users?.name || 'Client'}</span><span class="review-rating">★ ${r.rating}</span></div>
-        <div class="review-text">${r.comment || ''}</div>
-      </div>`).join('')
-    : `<p class="empty-state" style="padding:16px 0;">${t('noReviews') || 'No reviews yet.'}</p>`;
+  const employed = months >= 12 ? `${Math.floor(months/12)}a ${months%12}m` : `${months}m`;
 
   document.getElementById('coach-modal-body').innerHTML = `
     <div class="modal-header">
       <div class="modal-avatar-lg">${initials}</div>
       <div class="modal-info">
         <h2>${name}</h2>
-        <div class="modal-meta">${t('employedLbl')}: ${employed} • ${c.users?.phone || '—'}</div>
+        <div class="modal-meta">${t('employedLbl')}: ${employed} · ${c.users?.phone || '—'}</div>
         <span class="modal-badge">${c.specialty || '—'}</span>
       </div>
     </div>
@@ -332,10 +382,6 @@ async function openCoachModal(coachId) {
         <div class="modal-stat-box"><div class="modal-stat-value">${c.rating ?? '—'}</div><div class="modal-stat-label">${t('avgRating')}</div></div>
       </div>
       ${c.bio ? `<div style="background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:16px;margin-top:14px;font-size:14px;color:var(--mt);line-height:1.7;">${c.bio}</div>` : ''}
-    </div>
-    <div class="modal-section">
-      <div class="modal-section-title">${t('reviewsLbl')}</div>
-      ${reviewsHTML}
     </div>`;
   document.getElementById('coach-modal').classList.add('show');
 }
@@ -345,22 +391,27 @@ async function submitNewCoach() {
   const name      = document.getElementById('new-coach-name').value.trim();
   const email     = document.getElementById('new-coach-email').value.trim();
   const phone     = document.getElementById('new-coach-phone').value.trim();
-  const specialty = document.getElementById('new-coach-specialty').value;
-  const rate      = parseFloat(document.getElementById('new-coach-rate').value);
+  const specialty = document.getElementById('new-coach-specialty').value.trim();
+  const rateVal   = document.getElementById('new-coach-rate').value;
+  const rate      = rateVal ? parseFloat(rateVal) : null;
+  const errEl     = document.getElementById('add-coach-err');
 
-  if (!name || !email || !phone || !rate) { toast(t('errorMsg')); return; }
+  errEl.classList.remove('show'); errEl.textContent = '';
+
+  if (!name) { errEl.textContent = t('nameMissing'); errEl.classList.add('show'); return; }
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  if (!email || !emailRe.test(email)) { errEl.textContent = t('emailMissing'); errEl.classList.add('show'); return; }
 
   const btn = document.getElementById('btn-submit-coach');
   btn.textContent = '…'; btn.disabled = true;
 
   try {
-    // Save gym owner session before signup changes it
     const { data: { session: ownerSession } } = await sb.auth.getSession();
     const tempPw = 'Trainw!' + Math.random().toString(36).slice(2, 10);
 
     const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
       email, password: tempPw,
-      options: { data: { name, role: 'coach', phone, gym_id: currentGymId || null } }
+      options: { data: { name, role: 'coach', phone: phone || null, gym_id: currentGymId || null } }
     });
     if (signUpErr) throw new Error(signUpErr.message);
 
@@ -369,25 +420,34 @@ async function submitNewCoach() {
 
     // Restore gym owner session
     if (ownerSession) {
-      await sb.auth.setSession({ access_token: ownerSession.access_token, refresh_token: ownerSession.refresh_token });
+      await sb.auth.setSession({
+        access_token: ownerSession.access_token,
+        refresh_token: ownerSession.refresh_token
+      });
     }
 
-    // Wait for DB trigger
-    await new Promise(r => setTimeout(r, 700));
+    await new Promise(r => setTimeout(r, 800));
 
-    // Patch gym_id and phone on users row
-    if (currentGymId) await sb.from('users').update({ gym_id: currentGymId, phone }).eq('id', newUserId);
-
-    // Patch specialty + rate on coaches table
-    await sb.from('coaches').update({ specialty, hourly_rate: rate }).eq('user_id', newUserId);
+    if (currentGymId) {
+      await sb.from('users').update({ gym_id: currentGymId, phone: phone || null }).eq('id', newUserId);
+    }
+    if (specialty || rate) {
+      await sb.from('coach_profiles').update({
+        specialty: specialty || null,
+        hourly_rate: rate
+      }).eq('user_id', newUserId);
+    }
 
     toast(t('coachAdded'));
     document.getElementById('add-coach-modal').classList.remove('show');
-    ['new-coach-name','new-coach-email','new-coach-phone','new-coach-rate'].forEach(id => { document.getElementById(id).value = ''; });
+    ['new-coach-name','new-coach-email','new-coach-phone','new-coach-specialty','new-coach-rate'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
     await loadCoaches();
     await loadDashboardStats();
   } catch (err) {
-    toast('Error: ' + err.message);
+    errEl.textContent = err.message;
+    errEl.classList.add('show');
   } finally {
     btn.textContent = t('submitCoach'); btn.disabled = false;
   }
@@ -395,197 +455,29 @@ async function submitNewCoach() {
 
 // ── Save Settings ─────────────────────────────────────────
 async function saveSettings() {
+  if (!currentGymId) { toast(t('errorMsg')); return; }
   const name = document.getElementById('gym-name-input').value.trim();
-  if (!name) { toast('Gym name cannot be empty'); return; }
-
-  const address = document.getElementById('gym-address-input').value.trim() || null;
-  const phone   = document.getElementById('gym-phone-input').value.trim()   || null;
+  if (!name) { toast('Le nom de la salle est obligatoire'); return; }
 
   const btn = document.getElementById('btn-save-settings');
   btn.textContent = '…'; btn.disabled = true;
-
   try {
-    if (currentGymId) {
-      const { error } = await sb.from('gyms')
-        .update({ name, address, phone })
-        .eq('id', currentGymId);
-      if (error) throw new Error(error.message);
-    } else {
-      const { data: newGym, error: insertErr } = await sb.from('gyms')
-        .insert({ name, address, phone, owner_id: currentUser.id })
-        .select('id').single();
-      if (insertErr) throw new Error(insertErr.message);
-
-      currentGymId = newGym.id;
-      const { error: linkErr } = await sb.from('users')
-        .update({ gym_id: currentGymId })
-        .eq('id', currentUser.id);
-      if (linkErr) throw new Error(linkErr.message);
-    }
-
-    document.getElementById('sidebar-gym-name').textContent   = name;
-    document.getElementById('dashboard-gym-name').textContent = name;
+    const updates = {
+      name,
+      address:     document.getElementById('gym-address-input').value.trim() || null,
+      phone:       document.getElementById('gym-phone-input').value.trim()   || null,
+      description: document.getElementById('gym-desc-input').value.trim()   || null,
+    };
+    const { error } = await sb.from('gyms').update(updates).eq('id', currentGymId);
+    if (error) throw new Error(error.message);
+    document.getElementById('sidebar-gym-name').textContent = name;
+    const ss = document.getElementById('save-status');
+    if (ss) { ss.textContent = t('savedOk'); ss.style.color = 'var(--ac)'; setTimeout(() => { ss.textContent = ''; }, 3000); }
     toast(t('savedOk'));
   } catch (err) {
-    toast('Error: ' + err.message);
+    toast(t('errorMsg') + ' ' + err.message);
   } finally {
     btn.textContent = t('saveChanges'); btn.disabled = false;
-  }
-}
-
-// ── Sign Up New Client ────────────────────────────────────
-let foundClientId = null; // for link existing flow
-
-async function submitSignupClient() {
-  const name     = document.getElementById('new-client-name').value.trim();
-  const email    = document.getElementById('new-client-email').value.trim();
-  const password = document.getElementById('new-client-password').value;
-  const phone    = document.getElementById('new-client-phone').value.trim();
-  const errEl    = document.getElementById('signup-client-err');
-
-  errEl.classList.add('hidden');
-
-  if (!name || !email || !password) {
-    errEl.textContent = 'Name, email and password are required.';
-    errEl.classList.remove('hidden'); return;
-  }
-  if (password.length < 8) {
-    errEl.textContent = 'Password must be at least 8 characters.';
-    errEl.classList.remove('hidden'); return;
-  }
-
-  const btn = document.getElementById('btn-submit-signup-client');
-  btn.textContent = '…'; btn.disabled = true;
-
-  try {
-    const { data: { session: ownerSession } } = await sb.auth.getSession();
-    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
-      email, password,
-      options: { data: { name, role: 'client', phone: phone || null, gym_id: currentGymId || null } }
-    });
-
-    if (signUpErr) {
-      const msg = signUpErr.message.toLowerCase();
-      errEl.textContent = msg.includes('already') ? 'An account with this email already exists.' : signUpErr.message;
-      errEl.classList.remove('hidden'); return;
-    }
-
-    const newUserId = signUpData.user?.id;
-    if (!newUserId) throw new Error('No user ID returned.');
-
-    // Restore gym owner session
-    if (ownerSession) {
-      await sb.auth.setSession({ access_token: ownerSession.access_token, refresh_token: ownerSession.refresh_token });
-    }
-
-    // Wait for trigger
-    await new Promise(r => setTimeout(r, 700));
-
-    // Patch gym_id and phone
-    if (currentGymId) {
-      await sb.from('users').update({ gym_id: currentGymId, phone: phone || null }).eq('id', newUserId);
-    }
-
-    toast('Client account created!');
-    document.getElementById('signup-client-modal').classList.remove('show');
-    ['new-client-name','new-client-email','new-client-password','new-client-phone'].forEach(id => {
-      document.getElementById(id).value = '';
-    });
-    await loadClients();
-    await loadDashboardStats();
-
-  } catch (err) {
-    errEl.textContent = 'Error: ' + err.message;
-    errEl.classList.remove('hidden');
-  } finally {
-    btn.textContent = t('createClient') || 'Create Client Account';
-    btn.disabled = false;
-  }
-}
-
-// ── Search Existing Client ────────────────────────────────
-async function searchExistingClient() {
-  const query  = document.getElementById('link-client-search').value.trim();
-  const errEl  = document.getElementById('link-client-err');
-  const result = document.getElementById('link-client-result');
-  errEl.classList.add('hidden');
-  result.classList.add('hidden');
-  foundClientId = null;
-
-  if (!query) { errEl.textContent = 'Enter an email or phone number.'; errEl.classList.remove('hidden'); return; }
-
-  const btn = document.getElementById('btn-search-client');
-  btn.textContent = '…'; btn.disabled = true;
-
-  try {
-    // Search by email or phone in users table
-    const { data: users } = await sb.from('users')
-      .select('id, name, email, phone, gym_id, role')
-      .or(`email.eq.${query},phone.eq.${query}`)
-      .eq('role', 'client')
-      .limit(1);
-
-    if (!users || users.length === 0) {
-      errEl.textContent = 'No Trainw client account found with that email or phone.';
-      errEl.classList.remove('hidden'); return;
-    }
-
-    const u = users[0];
-
-    if (u.gym_id && u.gym_id === currentGymId) {
-      errEl.textContent = 'This client is already linked to your gym.';
-      errEl.classList.remove('hidden'); return;
-    }
-
-    foundClientId = u.id;
-    const initials = (u.name || 'C').split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
-
-    document.getElementById('link-result-card').innerHTML = `
-      <div class="lrc-avatar">${initials}</div>
-      <div>
-        <div class="lrc-name">${u.name || '—'}</div>
-        <div class="lrc-meta">${u.email || ''} ${u.phone ? '• ' + u.phone : ''}</div>
-      </div>`;
-    result.classList.remove('hidden');
-
-  } catch (err) {
-    errEl.textContent = 'Error: ' + err.message;
-    errEl.classList.remove('hidden');
-  } finally {
-    btn.textContent = t('search') || 'Search';
-    btn.disabled = false;
-  }
-}
-
-// ── Link Existing Client to Gym ───────────────────────────
-async function confirmLinkClient() {
-  if (!foundClientId) return;
-  if (!currentGymId) { toast(t('errorMsg')); return; }
-
-  const btn = document.getElementById('btn-confirm-link');
-  btn.textContent = '…'; btn.disabled = true;
-
-  try {
-    const { error } = await sb.from('users')
-      .update({ gym_id: currentGymId })
-      .eq('id', foundClientId);
-    if (error) throw new Error(error.message);
-
-    toast('Client linked to your gym!');
-    document.getElementById('link-client-modal').classList.remove('show');
-    document.getElementById('link-client-search').value = '';
-    document.getElementById('link-client-result').classList.add('hidden');
-    foundClientId = null;
-    await loadClients();
-    await loadDashboardStats();
-
-  } catch (err) {
-    const errEl = document.getElementById('link-client-err');
-    errEl.textContent = 'Error: ' + err.message;
-    errEl.classList.remove('hidden');
-  } finally {
-    btn.textContent = t('linkToGym') || 'Link to My Gym';
-    btn.disabled = false;
   }
 }
 
@@ -610,14 +502,17 @@ document.querySelectorAll('.nav-item').forEach(item => {
 document.querySelectorAll('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     currentLang = btn.dataset.lang;
+    localStorage.setItem('trainw_lang', currentLang);
     document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     applyTranslations();
-    renderQuickStats();
-    renderRevBreakdown();
     renderSchedule();
   });
 });
+
+// Set active lang button on load
+document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+document.querySelector(`.lang-btn[data-lang="${currentLang}"]`)?.classList.add('active');
 
 // ── Schedule filters ──────────────────────────────────────
 document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -630,7 +525,7 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 });
 document.getElementById('schedule-search')?.addEventListener('input', renderSchedule);
 
-// ── Coach search filter ───────────────────────────────────
+// ── Coach search ──────────────────────────────────────────
 document.getElementById('coaches-search')?.addEventListener('input', function () {
   const q = this.value.toLowerCase();
   document.querySelectorAll('#coaches-grid .person-card').forEach(card => {
@@ -638,7 +533,7 @@ document.getElementById('coaches-search')?.addEventListener('input', function ()
   });
 });
 
-// ── Client search filter ──────────────────────────────────
+// ── Client search ─────────────────────────────────────────
 document.getElementById('clients-search')?.addEventListener('input', function () {
   const q = this.value.toLowerCase();
   document.querySelectorAll('#clients-grid .person-card').forEach(card => {
@@ -655,24 +550,14 @@ document.getElementById('add-coach-modal').addEventListener('click', e => { if (
 document.getElementById('btn-submit-coach').addEventListener('click', submitNewCoach);
 document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
 
-// Client modals
-document.getElementById('btn-signup-client')?.addEventListener('click', () => document.getElementById('signup-client-modal').classList.add('show'));
-document.getElementById('btn-link-client')?.addEventListener('click', () => document.getElementById('link-client-modal').classList.add('show'));
-document.getElementById('close-signup-client-modal').addEventListener('click', () => document.getElementById('signup-client-modal').classList.remove('show'));
-document.getElementById('close-link-client-modal').addEventListener('click', () => document.getElementById('link-client-modal').classList.remove('show'));
-document.getElementById('signup-client-modal').addEventListener('click', e => { if (e.target.id === 'signup-client-modal') e.target.classList.remove('show'); });
-document.getElementById('link-client-modal').addEventListener('click', e => { if (e.target.id === 'link-client-modal') e.target.classList.remove('show'); });
-document.getElementById('btn-submit-signup-client').addEventListener('click', submitSignupClient);
-document.getElementById('btn-search-client').addEventListener('click', searchExistingClient);
-document.getElementById('btn-confirm-link').addEventListener('click', confirmLinkClient);
-document.getElementById('link-client-search').addEventListener('keypress', e => { if (e.key === 'Enter') searchExistingClient(); });
-
 // ── Toast ─────────────────────────────────────────────────
-function toast(msg) {
+function toast(msg, type = 'ok') {
   const el = document.getElementById('toast');
   document.getElementById('toast-msg').textContent = msg;
+  el.classList.remove('show', 'toast-err');
+  if (type === 'err') el.classList.add('toast-err');
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 3000);
+  setTimeout(() => el.classList.remove('show'), 3500);
 }
 
 applyTranslations();

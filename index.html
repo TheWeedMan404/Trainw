@@ -1,9 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Trainw — Modern Fitness Management</title>
+  <title>Trainw — Gestion de Salle de Sport en Tunisie</title>
+  <meta name="description" content="Trainw — La plateforme de gestion pour les salles de sport tunisiennes. Gérez vos coachs, plannings et clients en un seul endroit.">
+  <meta property="og:title" content="Trainw — Gestion de Salle de Sport">
+  <meta property="og:description" content="La plateforme tout-en-un pour les salles de sport en Tunisie. Coachs, clients, séances — tout géré depuis un seul tableau de bord.">
+  <meta property="og:url" content="https://trainw.vercel.app">
+  <meta property="og:type" content="website">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
@@ -15,10 +20,7 @@
 </head>
 <body>
 
-  <!-- Noise overlay -->
   <div class="noise"></div>
-
-  <!-- Orbs -->
   <div class="orb orb-1"></div>
   <div class="orb orb-2"></div>
 
@@ -28,10 +30,12 @@
       <div class="logo-text">TRAINW</div>
       <div class="nav-right">
         <div class="lang-toggle">
-          <button class="lang-btn active" data-lang="en">EN</button>
-          <button class="lang-btn" data-lang="fr">FR</button>
+          <button class="lang-btn" data-lang="en">EN</button>
+          <button class="lang-btn active" data-lang="fr">FR</button>
+          <button class="lang-btn" data-lang="ar">ع</button>
         </div>
-        <a href="TW Role.html" class="nav-cta" data-i18n="navLogin">Login</a>
+        <a href="https://wa.me/21658000000?text=Bonjour%2C%20je%20voudrais%20une%20d%C3%A9mo%20de%20Trainw" class="nav-demo" target="_blank" data-i18n="navDemo">Réserver une démo</a>
+        <a href="TW Role.html" class="nav-cta" data-i18n="navLogin">Connexion</a>
       </div>
     </div>
   </nav>
@@ -39,27 +43,29 @@
   <!-- HERO -->
   <section class="hero">
     <div class="hero-inner">
-      <div class="hero-badge" data-i18n="heroBadge">🇹🇳 Built for Tunisia</div>
-      <h1 class="hero-title" data-i18n="heroTitle">TRAIN<br>SMARTER.<br>GROW<br>STRONGER.</h1>
-      <p class="hero-sub" data-i18n="heroSub">One platform connecting gyms, coaches, and clients. No more spreadsheets, no more chaos.</p>
+      <div class="hero-badge" data-i18n="heroBadge">🇹🇳 Conçu pour la Tunisie</div>
+      <h1 class="hero-title" data-i18n="heroTitle">GÉREZ<br>VOTRE SALLE.<br>SIMPLEMENT.</h1>
+      <p class="hero-sub" data-i18n="heroSub">Fini les tableaux Excel et les groupes WhatsApp. Trainw connecte vos coachs, vos clients et votre planning en un seul endroit.</p>
       <div class="hero-actions">
-        <a href="TW Role.html" class="btn-primary" data-i18n="heroGetStarted">Get Started</a>
-        <a href="TW Role.html" class="btn-ghost" data-i18n="heroLogin">Login</a>
+        <a href="https://wa.me/21658000000?text=Bonjour%2C%20je%20voudrais%20une%20d%C3%A9mo%20de%20Trainw" class="btn-primary" target="_blank" data-i18n="heroDemo">Réserver une démo gratuite</a>
+        <a href="TW Role.html" class="btn-ghost" data-i18n="heroLogin">Connexion</a>
       </div>
+      <p class="hero-note" data-i18n="heroNote">Essai gratuit 30 jours · Aucune carte bancaire requise</p>
     </div>
     <div class="hero-visual">
       <div class="hv-card hv-card-1">
-        <div class="hv-label" data-i18n="hvSessions">Sessions Today</div>
+        <div class="hv-label" data-i18n="hvSessions">Séances aujourd'hui</div>
         <div class="hv-value">12</div>
       </div>
       <div class="hv-card hv-card-2">
-        <div class="hv-label" data-i18n="hvRevenue">Revenue</div>
+        <div class="hv-label" data-i18n="hvRevenue">Revenus</div>
         <div class="hv-value">4,200<span class="hv-unit">DT</span></div>
       </div>
       <div class="hv-card hv-card-3">
-        <div class="hv-label" data-i18n="hvClients">Active Clients</div>
+        <div class="hv-label" data-i18n="hvClients">Clients Actifs</div>
         <div class="hv-value">38</div>
       </div>
+      <div class="hv-demo-label" data-i18n="hvDemoLabel">Données d'exemple</div>
     </div>
   </section>
 
@@ -67,17 +73,17 @@
   <div class="stats-row">
     <div class="stat-item">
       <div class="stat-val">24/7</div>
-      <div class="stat-lbl" data-i18n="stat1">Booking Access</div>
+      <div class="stat-lbl" data-i18n="stat1">Accès Réservation</div>
     </div>
     <div class="stat-div"></div>
     <div class="stat-item">
       <div class="stat-val">3</div>
-      <div class="stat-lbl" data-i18n="stat2">Platforms in One</div>
+      <div class="stat-lbl" data-i18n="stat2">Rôles en Un · Salle · Coach · Client</div>
     </div>
     <div class="stat-div"></div>
     <div class="stat-item">
       <div class="stat-val">100%</div>
-      <div class="stat-lbl" data-i18n="stat3">Tunisia-Focused</div>
+      <div class="stat-lbl" data-i18n="stat3">Tunisie</div>
     </div>
   </div>
 
@@ -85,45 +91,72 @@
   <section class="who-section">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag" data-i18n="whoTag">Who it's for</span>
-        <h2 class="section-title" data-i18n="whoTitle">Built for Everyone in Fitness</h2>
+        <span class="section-tag" data-i18n="whoTag">Pour qui</span>
+        <h2 class="section-title" data-i18n="whoTitle">Conçu pour Toute la Salle</h2>
       </div>
       <div class="who-grid">
         <div class="who-card">
           <div class="who-icon">🏢</div>
-          <h3 class="who-name" data-i18n="gymTitle">Gym Owners</h3>
-          <p class="who-desc" data-i18n="gymDesc">Run your entire operation from one dashboard. Manage coaches, track revenue, and grow your client base.</p>
+          <h3 class="who-name" data-i18n="gymTitle">Propriétaires de Salles</h3>
+          <p class="who-desc" data-i18n="gymDesc">Gérez toute votre activité depuis un seul tableau de bord. Coachs, revenus, clients — tout centralisé.</p>
           <ul class="who-list">
-            <li data-i18n="gymB1">Real-time bookings & revenue</li>
-            <li data-i18n="gymB2">Coach performance monitoring</li>
-            <li data-i18n="gymB3">AI-powered forecasting</li>
-            <li data-i18n="gymB4">Automated scheduling</li>
+            <li data-i18n="gymB1">Réservations et revenus en temps réel</li>
+            <li data-i18n="gymB2">Suivi des performances des coachs</li>
+            <li data-i18n="gymB3">Planification des séances et classes</li>
+            <li data-i18n="gymB4">Gestion complète des membres</li>
           </ul>
-          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Get started →</a>
+          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
         </div>
         <div class="who-card who-card-featured">
           <div class="who-icon">💪</div>
-          <h3 class="who-name" data-i18n="coachTitle">Coaches</h3>
-          <p class="who-desc" data-i18n="coachDesc">Focus on training, not admin. Manage your schedule, clients, and earnings from one place.</p>
+          <h3 class="who-name" data-i18n="coachTitle">Coachs</h3>
+          <p class="who-desc" data-i18n="coachDesc">Concentrez-vous sur l'entraînement, pas l'administratif. Planning, clients et revenus en un seul endroit.</p>
           <ul class="who-list">
-            <li data-i18n="coachB1">Schedule & earnings in one place</li>
-            <li data-i18n="coachB2">Client progress tracking</li>
-            <li data-i18n="coachB3">AI session notes generator</li>
-            <li data-i18n="coachB4">Verified client reviews</li>
+            <li data-i18n="coachB1">Planning et revenus centralisés</li>
+            <li data-i18n="coachB2">Suivi des progrès clients</li>
+            <li data-i18n="coachB3">Générateur de notes de séance</li>
+            <li data-i18n="coachB4">Avis clients vérifiés</li>
           </ul>
-          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Get started →</a>
+          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
         </div>
         <div class="who-card">
           <div class="who-icon">🎯</div>
           <h3 class="who-name" data-i18n="clientTitle">Clients</h3>
-          <p class="who-desc" data-i18n="clientDesc">Book sessions, track progress, and stay on top of your goals — all in one place.</p>
+          <p class="who-desc" data-i18n="clientDesc">Réservez vos séances, suivez vos progrès et restez connecté à votre coach — tout en un.</p>
           <ul class="who-list">
-            <li data-i18n="clientB1">Book sessions anytime</li>
-            <li data-i18n="clientB2">Track measurements & weight</li>
-            <li data-i18n="clientB3">AI diet recommendations</li>
-            <li data-i18n="clientB4">Direct coach messaging</li>
+            <li data-i18n="clientB1">Réservation de séances à tout moment</li>
+            <li data-i18n="clientB2">Suivi des mensurations et du poids</li>
+            <li data-i18n="clientB3">Guide nutrition personnalisé</li>
+            <li data-i18n="clientB4">Contact direct avec le coach</li>
           </ul>
-          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Get started →</a>
+          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how-section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag" data-i18n="howTag">Comment ça marche</span>
+        <h2 class="section-title" data-i18n="howTitle">Opérationnel en 3 Étapes</h2>
+      </div>
+      <div class="how-grid">
+        <div class="how-step">
+          <div class="how-num">01</div>
+          <h3 class="how-title" data-i18n="how1Title">Créez votre salle</h3>
+          <p class="how-desc" data-i18n="how1Desc">Inscription en 2 minutes. Ajoutez le nom de votre salle, vos informations, et vous êtes prêt.</p>
+        </div>
+        <div class="how-step">
+          <div class="how-num">02</div>
+          <h3 class="how-title" data-i18n="how2Title">Ajoutez vos coachs et clients</h3>
+          <p class="how-desc" data-i18n="how2Desc">Invitez vos coachs, enregistrez vos membres. Chacun accède à son propre tableau de bord.</p>
+        </div>
+        <div class="how-step">
+          <div class="how-num">03</div>
+          <h3 class="how-title" data-i18n="how3Title">Gérez tout depuis un endroit</h3>
+          <p class="how-desc" data-i18n="how3Desc">Planning, réservations, suivi clients, revenus — tout centralisé. Fini le chaos WhatsApp.</p>
         </div>
       </div>
     </div>
@@ -133,50 +166,51 @@
   <section class="pricing-section">
     <div class="container">
       <div class="section-head">
-        <span class="section-tag" data-i18n="pricingTag">Pricing</span>
-        <h2 class="section-title" data-i18n="pricingTitle">Simple, Transparent Pricing</h2>
+        <span class="section-tag" data-i18n="pricingTag">Tarifs</span>
+        <h2 class="section-title" data-i18n="pricingTitle">Simple et Transparent</h2>
       </div>
       <div class="pricing-grid">
         <div class="price-card">
-          <div class="price-tag" data-i18n="pFreeTag">Free Trial</div>
-          <div class="price-name" data-i18n="pFreeName">Starter</div>
+          <div class="price-tag" data-i18n="pFreeTag">Essai Gratuit</div>
+          <div class="price-name" data-i18n="pFreeName">Démarrage</div>
           <div class="price-amount">0<span class="price-cur">DT</span></div>
-          <div class="price-period" data-i18n="pFreePeriod">30 days free</div>
+          <div class="price-period" data-i18n="pFreePeriod">30 jours gratuits</div>
           <ul class="price-list">
-            <li data-i18n="pFF1">Up to 50 clients</li>
-            <li data-i18n="pFF2">Basic scheduling</li>
-            <li data-i18n="pFF3">Client messaging</li>
-            <li data-i18n="pFF4">Progress tracking</li>
+            <li data-i18n="pFF1">Jusqu'à 50 clients</li>
+            <li data-i18n="pFF2">Planification de base</li>
+            <li data-i18n="pFF3">Messagerie clients</li>
+            <li data-i18n="pFF4">Suivi des progrès</li>
           </ul>
-          <a href="TW Role.html" class="price-btn" data-i18n="pFreeBtn">Start Free Trial</a>
+          <a href="TW Role.html" class="price-btn" data-i18n="pFreeBtn">Démarrer gratuitement</a>
         </div>
         <div class="price-card price-featured">
-          <div class="price-badge" data-i18n="pProBadge">Most Popular</div>
-          <div class="price-tag" data-i18n="pProTag">Professional</div>
+          <div class="price-badge" data-i18n="pProBadge">Recommandé</div>
+          <div class="price-tag" data-i18n="pProTag">Professionnel</div>
           <div class="price-name" data-i18n="pProName">Pro</div>
-          <div class="price-amount">700<span class="price-cur">DT</span></div>
-          <div class="price-period" data-i18n="pProPeriod">per year + 200DT setup</div>
+          <div class="price-amount">150<span class="price-cur">DT</span></div>
+          <div class="price-period" data-i18n="pProPeriod">par mois · 300 DT installation</div>
+          <div class="price-alts" data-i18n="pProAlts">ou 400 DT/trimestre · 1 400 DT/an</div>
           <ul class="price-list">
-            <li data-i18n="pPF1">Unlimited clients</li>
-            <li data-i18n="pPF2">AI revenue forecasting</li>
-            <li data-i18n="pPF3">Advanced analytics</li>
-            <li data-i18n="pPF4">Payment processing</li>
-            <li data-i18n="pPF5">Priority support</li>
+            <li data-i18n="pPF1">Clients illimités</li>
+            <li data-i18n="pPF2">Gestion complète des séances</li>
+            <li data-i18n="pPF3">Tableau de bord analytique</li>
+            <li data-i18n="pPF4">Profils coachs personnalisés</li>
+            <li data-i18n="pPF5">Support prioritaire</li>
           </ul>
-          <a href="TW Role.html" class="price-btn price-btn-ac" data-i18n="pProBtn">Get Started</a>
+          <a href="TW Role.html" class="price-btn price-btn-ac" data-i18n="pProBtn">Commencer</a>
         </div>
         <div class="price-card">
-          <div class="price-tag" data-i18n="pEntTag">Enterprise</div>
-          <div class="price-name" data-i18n="pEntName">Enterprise</div>
-          <div class="price-amount" data-i18n="pEntAmount">Custom</div>
-          <div class="price-period" data-i18n="pEntPeriod">Tailored to your needs</div>
+          <div class="price-tag" data-i18n="pEntTag">Entreprise</div>
+          <div class="price-name" data-i18n="pEntName">Sur Mesure</div>
+          <div class="price-amount" data-i18n="pEntAmount">Devis</div>
+          <div class="price-period" data-i18n="pEntPeriod">Adapté à vos besoins</div>
           <ul class="price-list">
-            <li data-i18n="pEF1">Multi-location support</li>
-            <li data-i18n="pEF2">Custom integrations</li>
-            <li data-i18n="pEF3">Dedicated account manager</li>
-            <li data-i18n="pEF4">White-label options</li>
+            <li data-i18n="pEF1">Multi-salles</li>
+            <li data-i18n="pEF2">Intégrations personnalisées</li>
+            <li data-i18n="pEF3">Gestionnaire de compte dédié</li>
+            <li data-i18n="pEF4">Marque blanche disponible</li>
           </ul>
-          <a href="#" class="price-btn" data-i18n="pEntBtn">Contact Sales</a>
+          <a href="https://wa.me/21658000000?text=Bonjour%2C%20je%20voudrais%20en%20savoir%20plus%20sur%20Trainw%20Entreprise" class="price-btn" target="_blank" data-i18n="pEntBtn">Nous contacter</a>
         </div>
       </div>
     </div>
@@ -186,8 +220,13 @@
   <footer>
     <div class="container">
       <div class="footer-logo">TRAINW</div>
-      <p class="footer-sub" data-i18n="footerSub">Modern fitness management for Tunisia</p>
-      <p class="footer-copy" data-i18n="footerCopy">© 2026 Trainw. Built by Phantom Solutions.</p>
+      <p class="footer-sub" data-i18n="footerSub">La plateforme de gestion pour les salles de sport tunisiennes</p>
+      <div class="footer-links">
+        <a href="https://wa.me/21658000000?text=Bonjour%2C%20je%20voudrais%20une%20d%C3%A9mo%20de%20Trainw" target="_blank" class="footer-link" data-i18n="footerDemo">Réserver une démo</a>
+        <span class="footer-sep">·</span>
+        <a href="TW Role.html" class="footer-link" data-i18n="footerLogin">Connexion</a>
+      </div>
+      <p class="footer-copy">© 2026 Trainw</p>
     </div>
   </footer>
 

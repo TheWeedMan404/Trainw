@@ -320,3 +320,75 @@ footer {
   .container { padding: 0 20px; }
   .nav-inner { padding: 16px 20px; }
 }
+
+/* ── New elements ── */
+.nav-demo {
+  padding: 10px 20px; background: transparent; color: var(--ac);
+  text-decoration: none; border-radius: 7px; border: 1px solid var(--ac);
+  font-size: 13px; font-weight: 600; transition: all 0.2s;
+  display: none;
+}
+.nav-demo:hover { background: var(--ac); color: var(--bg); }
+@media (min-width: 700px) { .nav-demo { display: inline-flex; } }
+
+.hero-note {
+  font-size: 12px; color: var(--mt); font-family: 'DM Mono', monospace;
+  margin-top: 16px; letter-spacing: 0.3px;
+}
+
+.hv-demo-label {
+  text-align: center; font-family: 'DM Mono', monospace; font-size: 10px;
+  color: var(--mt); opacity: 0.5; letter-spacing: 1px; text-transform: uppercase;
+  margin-top: 8px;
+}
+
+/* ── How it works ── */
+.how-section { padding: 100px 0; position: relative; z-index: 2; }
+.how-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px;
+}
+.how-step {
+  padding: 36px; background: var(--s1); border: 1px solid var(--bd);
+  border-radius: 14px; transition: all 0.3s;
+}
+.how-step:hover { border-color: var(--ac); transform: translateY(-4px); }
+.how-num {
+  font-family: 'Bebas Neue', sans-serif; font-size: 52px; color: var(--ac);
+  opacity: 0.25; line-height: 1; margin-bottom: 16px; letter-spacing: 2px;
+}
+.how-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 24px; color: var(--txt);
+  letter-spacing: 1px; margin-bottom: 12px;
+}
+.how-desc { font-size: 14px; color: var(--mt); line-height: 1.7; }
+
+/* ── Pricing extras ── */
+.price-alts {
+  font-size: 11px; color: var(--mt); font-family: 'DM Mono', monospace;
+  margin-top: -16px; margin-bottom: 20px; letter-spacing: 0.3px;
+}
+
+/* ── Footer links ── */
+.footer-links {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin: 16px 0 8px;
+}
+.footer-link {
+  font-size: 13px; color: var(--ac); text-decoration: none; transition: opacity 0.2s;
+}
+.footer-link:hover { opacity: 0.7; }
+.footer-sep { color: var(--mt); font-size: 12px; }
+
+/* ── RTL support ── */
+[dir="rtl"] .hero { flex-direction: row-reverse; }
+[dir="rtl"] .hero-title { letter-spacing: 0; }
+[dir="rtl"] .nav-inner { flex-direction: row-reverse; }
+[dir="rtl"] .nav-right { flex-direction: row-reverse; }
+[dir="rtl"] .who-list li { padding-left: 0; padding-right: 20px; }
+[dir="rtl"] .who-list li::before { left: auto; right: 0; }
+[dir="rtl"] .price-list li { padding-left: 0; padding-right: 24px; }
+[dir="rtl"] .price-list li::before { left: auto; right: 0; }
+
+@media (max-width: 900px) {
+  .how-grid { grid-template-columns: 1fr; }
+}

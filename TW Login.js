@@ -53,25 +53,53 @@ const T = {
     okForgot:'Email envoyé — vérifiez votre boîte',
     okSignup:'Compte créé ! Connexion en cours…',
     okLogin:'Connecté ! Redirection…',
+  },
+  ar: {
+    navBack:'رجوع',
+    tabLogin:'تسجيل الدخول', tabSignup:'إنشاء حساب',
+    loginTitle:'مرحباً بعودتك', loginSub:'سجّل دخولك إلى لوحة Trainw',
+    signupTitle:'انضم إلى Trainw', signupSub:'أنشئ حسابك في ثوانٍ',
+    lEmail:'البريد الإلكتروني', lPw:'كلمة المرور', lName:'الاسم الكامل',
+    lConfirm:'تأكيد كلمة المرور', lRole:'أنا', lGymName:'اسم الصالة',
+    btnLogin:'تسجيل الدخول', btnSignup:'إنشاء حساب',
+    forgotPw:'نسيت كلمة المرور؟',
+    eEmailReq:'البريد الإلكتروني مطلوب',
+    eEmailFmt:'أدخل بريداً إلكترونياً صحيحاً',
+    ePwReq:'كلمة المرور مطلوبة',
+    ePwShort:'8 أحرف على الأقل',
+    ePwMatch:'كلمتا المرور غير متطابقتين',
+    eNameReq:'الاسم مطلوب',
+    eGymNameReq:'اسم الصالة مطلوب',
+    eGeneric:'حدث خطأ — أعد المحاولة',
+    eBadCreds:'بريد إلكتروني أو كلمة مرور غير صحيحة',
+    eEmailTaken:'حساب بهذا البريد موجود مسبقاً',
+    eNoProfile:'الحساب غير موجود. يرجى التسجيل أولاً.',
+    okForgot:'تم إرسال رابط الاسترداد — تحقق من بريدك',
+    okSignup:'تم إنشاء الحساب! جارٍ تسجيل الدخول…',
+    okLogin:'تم تسجيل الدخول! جارٍ التوجيه…',
   }
 };
 
-let lang = 'en';
+let lang = localStorage.getItem('trainw_lang') || 'fr';
 const t = k => T[lang][k] || T.en[k] || k;
 
 function applyTranslations() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const k = el.getAttribute('data-i18n');
-    if (T[lang][k]) el.textContent = T[lang][k];
+    if (T[lang]?.[k]) el.textContent = T[lang][k];
   });
+  document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
 }
 
 document.querySelectorAll('.lang-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     lang = btn.dataset.lang;
+    localStorage.setItem('trainw_lang', lang);
     document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    applyTranslations();
+    document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+document.querySelector(`.lang-btn[data-lang="${lang}"]`)?.classList.add('active');
+applyTranslations();
   });
 });
 
@@ -102,7 +130,8 @@ function onRoleChange() {
 (function () {
   const role = new URLSearchParams(location.search).get('role');
   if (role) {
-    document.getElementById('rbadge').textContent = '↳ ' + role.replace('_', ' ').toUpperCase();
+    const roleLabels = { gym_owner: { fr:'Propriétaire de Salle', en:'Gym Owner', ar:'مالك الصالة' }, coach: { fr:'Coach', en:'Coach', ar:'مدرب' }, client: { fr:'Client', en:'Client', ar:'عميل' } };
+    document.getElementById('rbadge').textContent = '↳ ' + (roleLabels[role]?.[lang] || role.replace('_',' ').toUpperCase());
     const sel = document.getElementById('s-role');
     for (const o of sel.options) if (o.value === role) { o.selected = true; break; }
     onRoleChange();
@@ -261,7 +290,7 @@ async function doSignup() {
       if (signInErr || !signIn?.user) {
         switchTab('login');
         document.getElementById('l-email').value = email;
-        showOk('l-ok', 'Account created! Sign in to continue.');
+        showOk('l-ok', t('okSignup'));
         return;
       }
       // Give trigger 500ms to finish writing rows
@@ -300,4 +329,6 @@ document.addEventListener('keydown', e => {
 document.getElementById('btn-login').addEventListener('click', doLogin);
 document.getElementById('btn-signup').addEventListener('click', doSignup);
 
+document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+document.querySelector(`.lang-btn[data-lang="${lang}"]`)?.classList.add('active');
 applyTranslations();
