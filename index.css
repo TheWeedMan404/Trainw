@@ -114,6 +114,7 @@ nav {
 
 .hero-actions {
   display: flex; gap: 16px; flex-wrap: wrap;
+  margin-bottom: 20px;
   animation: fadeUp 0.6s 0.3s ease both;
 }
 

@@ -15,7 +15,6 @@
   <link rel="stylesheet" href="TW Gym Acc.css">
 </head>
 <body>
-
 <div class="app-container">
 
   <!-- SIDEBAR -->
@@ -23,12 +22,10 @@
     <div class="logo-section">
       <div class="logo-text">TRAINW</div>
     </div>
-
     <div class="gym-info">
       <div class="gym-name" id="sidebar-gym-name">Chargement…</div>
       <div class="gym-label" data-i18n="gymOwner">Propriétaire</div>
     </div>
-
     <nav>
       <div class="nav-item active" data-page="dashboard"><span class="nav-icon">◈</span><span data-i18n="navDashboard">Tableau de Bord</span></div>
       <div class="nav-item" data-page="schedule"><span class="nav-icon">◷</span><span data-i18n="navSchedule">Planning</span></div>
@@ -37,7 +34,6 @@
       <div class="nav-item" data-page="analytics"><span class="nav-icon">◈</span><span data-i18n="navAnalytics">Analytiques</span></div>
       <div class="nav-item" data-page="settings"><span class="nav-icon">◇</span><span data-i18n="navSettings">Paramètres</span></div>
     </nav>
-
     <div class="sidebar-footer">
       <div class="lang-toggle">
         <button class="lang-btn" data-lang="en">EN</button>
@@ -58,34 +54,37 @@
         <p class="page-subtitle" data-i18n="dashSub">Votre salle en un coup d'œil</p>
       </div>
       <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card" id="sc-clients">
           <div class="stat-label" data-i18n="statClients">Clients Actifs</div>
           <div class="stat-value" id="stat-clients">—</div>
           <div class="stat-change" data-i18n="thisMonth">ce mois</div>
+          <div class="stat-glow"></div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="sc-coaches">
           <div class="stat-label" data-i18n="statCoaches">Coachs Actifs</div>
           <div class="stat-value" id="stat-coaches">—</div>
           <div class="stat-change" data-i18n="onStaff">en staff</div>
+          <div class="stat-glow"></div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="sc-sessions">
           <div class="stat-label" data-i18n="statSessions">Séances Cette Semaine</div>
           <div class="stat-value" id="stat-sessions">—</div>
           <div class="stat-change" data-i18n="vsLastWeek">cette semaine</div>
+          <div class="stat-glow"></div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="sc-revenue">
           <div class="stat-label" data-i18n="statRevenue">Revenu Mensuel</div>
           <div class="stat-value">—</div>
           <div class="stat-change" data-i18n="comingSoon">bientôt disponible</div>
+          <div class="stat-glow"></div>
         </div>
       </div>
-
       <div class="content-grid">
-        <div class="card">
+        <div class="card card-animated">
           <div class="card-header"><h2 class="card-title" data-i18n="topCoaches">Meilleurs Coachs</h2></div>
           <div id="top-coaches-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
         </div>
-        <div class="card">
+        <div class="card card-animated">
           <div class="card-header"><h2 class="card-title" data-i18n="recentSessions">Séances Récentes</h2></div>
           <div id="recent-sessions-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
         </div>
@@ -95,14 +94,20 @@
     <!-- SCHEDULE -->
     <div id="schedule-page" class="page hidden">
       <div class="page-header">
-        <h1 class="page-title" data-i18n="navSchedule">Planning</h1>
-        <p class="page-subtitle" data-i18n="schedSub">Toutes les séances de votre salle</p>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <h1 class="page-title" data-i18n="navSchedule">Planning</h1>
+            <p class="page-subtitle" data-i18n="schedSub">Toutes les séances de votre salle</p>
+          </div>
+          <button class="btn-primary" id="btn-create-session" data-i18n="createSession">+ Créer une Séance</button>
+        </div>
       </div>
       <input type="text" class="search-input" id="schedule-search" placeholder="Rechercher…">
       <div class="filter-row">
         <button class="filter-btn active" data-filter="all" data-i18n="filterAll">Tout</button>
         <button class="filter-btn" data-filter="confirmed" data-i18n="filterConfirmed">Confirmé</button>
         <button class="filter-btn" data-filter="pending" data-i18n="filterPending">En attente</button>
+        <button class="filter-btn" data-filter="completed" data-i18n="filterCompleted">Terminé</button>
       </div>
       <div class="card"><div id="schedule-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
     </div>
@@ -123,10 +128,20 @@
     <!-- CLIENTS -->
     <div id="clients-page" class="page hidden">
       <div class="page-header">
-        <h1 class="page-title" data-i18n="navClients">Clients</h1>
-        <p class="page-subtitle" data-i18n="clientsSub">Tous les membres de votre salle</p>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <h1 class="page-title" data-i18n="navClients">Clients</h1>
+            <p class="page-subtitle" data-i18n="clientsSub">Tous les membres de votre salle</p>
+          </div>
+          <button class="btn-primary" id="btn-add-client" data-i18n="addClient">+ Ajouter un Client</button>
+        </div>
       </div>
       <input type="text" class="search-input" id="clients-search" placeholder="Rechercher un client…">
+      <div class="filter-row">
+        <button class="filter-btn active" data-cfilter="all" data-i18n="filterAll">Tout</button>
+        <button class="filter-btn" data-cfilter="paid" data-i18n="filterPaid">Payé</button>
+        <button class="filter-btn" data-cfilter="pending" data-i18n="filterPending">En attente</button>
+      </div>
       <div class="person-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
     </div>
 
@@ -136,10 +151,36 @@
         <h1 class="page-title" data-i18n="navAnalytics">Analytiques</h1>
         <p class="page-subtitle" data-i18n="analyticsSub">Métriques clés de votre activité</p>
       </div>
-      <div class="card" style="text-align:center; padding:60px 40px;">
-        <div style="font-size:48px; margin-bottom:16px; opacity:0.3;">◈</div>
-        <h2 style="font-family:'Bebas Neue',sans-serif; font-size:28px; color:var(--ac); margin-bottom:12px;" data-i18n="analyticsComingSoon">Analytiques Avancées</h2>
-        <p style="color:var(--mt); font-size:14px; max-width:400px; margin:0 auto;" data-i18n="analyticsDesc">Les rapports de revenus, rétention des clients et heures de pointe seront disponibles dans la prochaine mise à jour.</p>
+      <!-- Business metrics -->
+      <div class="analytics-section-title" data-i18n="bizMetrics">Métriques Générales</div>
+      <div class="stats-grid" style="margin-bottom:32px;">
+        <div class="stat-card"><div class="stat-label" data-i18n="statClients">Clients Actifs</div><div class="stat-value" id="an-clients">—</div><div class="stat-glow"></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statCoaches">Coachs Actifs</div><div class="stat-value" id="an-coaches">—</div><div class="stat-glow"></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statSessions">Séances (Semaine)</div><div class="stat-value" id="an-sessions">—</div><div class="stat-glow"></div></div>
+      </div>
+      <!-- Financial -->
+      <div class="analytics-section-title" data-i18n="finMetrics">Métriques Financières</div>
+      <div class="analytics-grid">
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title" data-i18n="coachRevenue">Revenus Coachs</h2></div>
+          <div class="analytics-placeholder"><span class="analytics-coming" data-i18n="comingSoon">Bientôt disponible</span><p class="analytics-hint" data-i18n="analyticsHint">Connectez les paiements pour voir les revenus par coach</p></div>
+        </div>
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title" data-i18n="monthlyRevenue">Revenu Mensuel</h2></div>
+          <div class="analytics-placeholder"><span class="analytics-coming" data-i18n="comingSoon">Bientôt disponible</span><p class="analytics-hint" data-i18n="analyticsHint2">Activez les paiements pour voir les revenus mensuels</p></div>
+        </div>
+      </div>
+      <!-- Operations -->
+      <div class="analytics-section-title" data-i18n="opsMetrics">Opérations</div>
+      <div class="analytics-grid">
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title" data-i18n="popularClasses">Cours Populaires</h2></div>
+          <div id="popular-classes-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+        </div>
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title" data-i18n="coachUtil">Utilisation des Coachs</h2></div>
+          <div id="coach-util-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+        </div>
       </div>
     </div>
 
@@ -149,8 +190,12 @@
         <h1 class="page-title" data-i18n="navSettings">Paramètres</h1>
         <p class="page-subtitle" data-i18n="settingsSub">Configurez votre salle</p>
       </div>
-      <div class="card">
-        <h2 class="card-title" style="margin-bottom:24px;" data-i18n="gymInfo">Informations de la Salle</h2>
+      <!-- Gym Info -->
+      <div class="card settings-section">
+        <div class="settings-section-header">
+          <div class="settings-section-icon">◈</div>
+          <h2 class="card-title" data-i18n="gymInfo">Informations de la Salle</h2>
+        </div>
         <div class="form-group">
           <label class="form-label" for="gym-name-input" data-i18n="gymNameLbl">Nom de la Salle</label>
           <input type="text" class="form-input" id="gym-name-input">
@@ -169,6 +214,58 @@
         </div>
         <button class="btn-primary" id="btn-save-settings" data-i18n="saveChanges">Enregistrer</button>
         <div class="save-status" id="save-status"></div>
+      </div>
+      <!-- Account -->
+      <div class="card settings-section">
+        <div class="settings-section-header">
+          <div class="settings-section-icon">◇</div>
+          <h2 class="card-title" data-i18n="accountSettings">Compte</h2>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="currentEmail">Email actuel</label>
+          <input type="email" class="form-input" id="account-email" disabled style="opacity:.5;">
+        </div>
+        <div class="settings-actions">
+          <button class="btn-secondary" id="btn-change-password" data-i18n="changePassword">Changer le mot de passe</button>
+        </div>
+        <div class="save-status" id="pw-status"></div>
+      </div>
+      <!-- Subscription -->
+      <div class="card settings-section">
+        <div class="settings-section-header">
+          <div class="settings-section-icon">◉</div>
+          <h2 class="card-title" data-i18n="subscription">Abonnement</h2>
+        </div>
+        <div class="subscription-tier">
+          <div class="sub-tier-badge" id="sub-tier-badge">FREE</div>
+          <div>
+            <div class="sub-tier-name" id="sub-tier-name" data-i18n="freeTier">Essai Gratuit</div>
+            <div class="sub-tier-desc" data-i18n="subDesc">Passez au plan Pro pour débloquer toutes les fonctionnalités</div>
+          </div>
+        </div>
+        <a href="https://wa.me/21658000000?text=Je%20veux%20passer%20au%20plan%20Pro%20Trainw" target="_blank" class="btn-primary" style="display:inline-block;text-decoration:none;margin-top:16px;" data-i18n="upgradePro">Passer au Pro →</a>
+      </div>
+      <!-- Language -->
+      <div class="card settings-section">
+        <div class="settings-section-header">
+          <div class="settings-section-icon">◷</div>
+          <h2 class="card-title" data-i18n="langSettings">Langue</h2>
+        </div>
+        <div class="lang-options">
+          <button class="lang-option-btn active" data-lang="fr">🇫🇷 Français</button>
+          <button class="lang-option-btn" data-lang="en">🇬🇧 English</button>
+          <button class="lang-option-btn" data-lang="ar">🇹🇳 العربية</button>
+        </div>
+      </div>
+      <!-- Support -->
+      <div class="card settings-section">
+        <div class="settings-section-header">
+          <div class="settings-section-icon">◎</div>
+          <h2 class="card-title" data-i18n="support">Support</h2>
+        </div>
+        <div class="settings-actions">
+          <a href="https://wa.me/21658000000?text=Support%20Trainw" target="_blank" class="btn-secondary" data-i18n="contactSupport">Contacter le Support</a>
+        </div>
       </div>
     </div>
 
@@ -210,6 +307,112 @@
     </div>
     <div class="alert aerr" id="add-coach-err"></div>
     <button class="btn-primary" id="btn-submit-coach" data-i18n="submitCoach">Ajouter le Coach</button>
+  </div>
+</div>
+
+<!-- ADD CLIENT MODAL -->
+<div class="modal" id="add-client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-add-client-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title" data-i18n="addClientTitle">Ajouter un Client</h2>
+    <div class="form-group">
+      <label class="form-label" for="new-client-name" data-i18n="clientName">Nom Complet</label>
+      <input type="text" class="form-input" id="new-client-name" placeholder="Sana Ben Ali">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="new-client-age" data-i18n="clientAge">Âge</label>
+      <input type="number" class="form-input" id="new-client-age" placeholder="28" min="10" max="100">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="new-client-phone" data-i18n="clientPhone">Téléphone</label>
+      <input type="text" class="form-input" id="new-client-phone" placeholder="+216 92 123 456">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="new-client-membership" data-i18n="clientMembership">Type d'Abonnement</label>
+      <select class="form-input" id="new-client-membership">
+        <option value="monthly" data-i18n="monthly">Mensuel</option>
+        <option value="quarterly" data-i18n="quarterly">Trimestriel</option>
+        <option value="annual" data-i18n="annual">Annuel</option>
+        <option value="session" data-i18n="perSession">À la séance</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="new-client-training" data-i18n="clientTraining">Type d'Entraînement</label>
+      <select class="form-input" id="new-client-training">
+        <option value="individual">Individual Training</option>
+        <option value="group_class">Group Class</option>
+        <option value="group_activity">Group Activity</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="new-client-payment" data-i18n="paymentStatus">Statut Paiement</label>
+      <select class="form-input" id="new-client-payment">
+        <option value="paid" data-i18n="paid">Payé</option>
+        <option value="pending" data-i18n="filterPending">En attente</option>
+      </select>
+    </div>
+    <div class="alert aerr" id="add-client-err"></div>
+    <button class="btn-primary" id="btn-submit-client" data-i18n="submitClient">Ajouter le Client</button>
+  </div>
+</div>
+
+<!-- CREATE SESSION MODAL -->
+<div class="modal" id="create-session-modal">
+  <div class="modal-content" style="max-width:520px;">
+    <button class="modal-close" id="close-session-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title" data-i18n="createSessionTitle">Créer une Séance</h2>
+    <div class="form-group">
+      <label class="form-label" for="sess-name" data-i18n="sessName">Nom de la Séance</label>
+      <input type="text" class="form-input" id="sess-name" placeholder="Ex: HIIT Matin, Yoga Débutant…">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="sess-type" data-i18n="sessType">Type de Séance</label>
+      <select class="form-input" id="sess-type" onchange="updateSessionCategory()">
+        <option value="group_class" data-i18n="groupClass">Cours Collectif</option>
+        <option value="group_activity" data-i18n="groupActivity">Activité de Groupe</option>
+        <option value="individual" data-i18n="individualTraining">Entraînement Individuel</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="sess-category" data-i18n="sessCategory">Catégorie</label>
+      <select class="form-input" id="sess-category"></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" for="sess-date" data-i18n="sessDate">Date</label>
+        <input type="date" class="form-input" id="sess-date">
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" for="sess-time" data-i18n="sessTime">Heure</label>
+        <input type="time" class="form-input" id="sess-time">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" for="sess-duration" data-i18n="sessDuration">Durée (min)</label>
+        <input type="number" class="form-input" id="sess-duration" value="60" min="15" step="15">
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" for="sess-capacity" data-i18n="sessCapacity">Capacité Max</label>
+        <input type="number" class="form-input" id="sess-capacity" value="10" min="1">
+      </div>
+    </div>
+    <div class="form-group" id="sess-coach-group">
+      <label class="form-label" for="sess-coach" data-i18n="sessCoach">Coach Assigné <span style="color:var(--mt);font-size:10px;" data-i18n="optional">(optionnel)</span></label>
+      <select class="form-input" id="sess-coach">
+        <option value="" data-i18n="noCoachOpt">— Aucun coach —</option>
+      </select>
+    </div>
+    <div class="alert aerr" id="create-session-err"></div>
+    <button class="btn-primary" id="btn-submit-session" data-i18n="createSession">+ Créer une Séance</button>
+  </div>
+</div>
+
+<!-- CLIENT DETAIL MODAL -->
+<div class="modal" id="client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-client-modal" aria-label="Fermer">×</button>
+    <div id="client-modal-body"></div>
   </div>
 </div>
 
