@@ -142,7 +142,7 @@
         <button class="filter-btn" data-cfilter="paid" data-i18n="filterPaid">Payé</button>
         <button class="filter-btn" data-cfilter="pending" data-i18n="filterPending">En attente</button>
       </div>
-      <div class="person-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+      <div class="clients-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
     </div>
 
     <!-- ANALYTICS -->
@@ -151,40 +151,72 @@
         <h1 class="page-title" data-i18n="navAnalytics">Analytiques</h1>
         <p class="page-subtitle" data-i18n="analyticsSub">Métriques clés de votre activité</p>
       </div>
-      <!-- Business metrics -->
+
+      <!-- Smart Prediction Card -->
+      <div class="prediction-card">
+        <div class="prediction-header">
+          <span class="prediction-badge">Smart Analytics</span>
+          <div class="prediction-title">Prévision Intelligente</div>
+        </div>
+        <div class="prediction-grid">
+          <div class="prediction-item">
+            <div class="prediction-val" id="pred-monthly">—</div>
+            <div class="prediction-lbl">Revenu Estimé / Mois</div>
+          </div>
+          <div class="prediction-item">
+            <div class="prediction-val" id="pred-sessions">—</div>
+            <div class="prediction-lbl">Séances / Semaine</div>
+          </div>
+          <div class="prediction-item">
+            <div class="prediction-val" id="pred-retention">—</div>
+            <div class="prediction-lbl">Taux Activité</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Biz metrics -->
       <div class="analytics-section-title" data-i18n="bizMetrics">Métriques Générales</div>
-      <div class="stats-grid" style="margin-bottom:32px;">
-        <div class="stat-card"><div class="stat-label" data-i18n="statClients">Clients Actifs</div><div class="stat-value" id="an-clients">—</div><div class="stat-glow"></div></div>
-        <div class="stat-card"><div class="stat-label" data-i18n="statCoaches">Coachs Actifs</div><div class="stat-value" id="an-coaches">—</div><div class="stat-glow"></div></div>
-        <div class="stat-card"><div class="stat-label" data-i18n="statSessions">Séances (Semaine)</div><div class="stat-value" id="an-sessions">—</div><div class="stat-glow"></div></div>
-      </div>
-      <!-- Financial -->
-      <div class="analytics-section-title" data-i18n="finMetrics">Métriques Financières</div>
-      <div class="analytics-grid">
-        <div class="card card-animated">
-          <div class="card-header"><h2 class="card-title" data-i18n="coachRevenue">Revenus Coachs</h2></div>
-          <div class="analytics-placeholder"><span class="analytics-coming" data-i18n="comingSoon">Bientôt disponible</span><p class="analytics-hint" data-i18n="analyticsHint">Connectez les paiements pour voir les revenus par coach</p></div>
+      <div class="analytics-wow-grid">
+        <div class="wow-card">
+          <div class="wow-card-header">
+            <div class="wow-card-title" data-i18n="statClients">Clients Actifs</div>
+            <div class="wow-card-icon">◎</div>
+          </div>
+          <div class="wow-card-value" id="an-clients">—</div>
+          <div class="wow-card-sub" data-i18n="thisMonth">ce mois</div>
         </div>
-        <div class="card card-animated">
-          <div class="card-header"><h2 class="card-title" data-i18n="monthlyRevenue">Revenu Mensuel</h2></div>
-          <div class="analytics-placeholder"><span class="analytics-coming" data-i18n="comingSoon">Bientôt disponible</span><p class="analytics-hint" data-i18n="analyticsHint2">Activez les paiements pour voir les revenus mensuels</p></div>
+        <div class="wow-card">
+          <div class="wow-card-header">
+            <div class="wow-card-title" data-i18n="statCoaches">Coachs Actifs</div>
+            <div class="wow-card-icon">◉</div>
+          </div>
+          <div class="wow-card-value" id="an-coaches">—</div>
+          <div class="wow-card-sub" data-i18n="onStaff">en staff</div>
+        </div>
+        <div class="wow-card">
+          <div class="wow-card-header">
+            <div class="wow-card-title" data-i18n="statSessions">Séances Cette Semaine</div>
+            <div class="wow-card-icon">◷</div>
+          </div>
+          <div class="wow-card-value" id="an-sessions">—</div>
+          <div class="wow-card-sub" data-i18n="vsLastWeek">cette semaine</div>
         </div>
       </div>
+
       <!-- Operations -->
       <div class="analytics-section-title" data-i18n="opsMetrics">Opérations</div>
       <div class="analytics-grid">
-        <div class="card card-animated">
+        <div class="card">
           <div class="card-header"><h2 class="card-title" data-i18n="popularClasses">Cours Populaires</h2></div>
           <div id="popular-classes-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
         </div>
-        <div class="card card-animated">
+        <div class="card">
           <div class="card-header"><h2 class="card-title" data-i18n="coachUtil">Utilisation des Coachs</h2></div>
           <div id="coach-util-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
         </div>
       </div>
     </div>
 
-    <!-- SETTINGS -->
     <div id="settings-page" class="page hidden">
       <div class="page-header">
         <h1 class="page-title" data-i18n="navSettings">Paramètres</h1>
@@ -351,6 +383,13 @@
         <option value="pending" data-i18n="filterPending">En attente</option>
       </select>
     </div>
+    <div class="form-group">
+      <label class="form-label" for="new-client-payment" data-i18n="paymentStatus">Statut Paiement</label>
+      <select class="form-input" id="new-client-payment">
+        <option value="paid">Payé ✓</option>
+        <option value="pending">En attente ⏳</option>
+      </select>
+    </div>
     <div class="alert aerr" id="add-client-err"></div>
     <button class="btn-primary" id="btn-submit-client" data-i18n="submitClient">Ajouter le Client</button>
   </div>
@@ -413,6 +452,77 @@
   <div class="modal-content" style="max-width:480px;">
     <button class="modal-close" id="close-client-modal" aria-label="Fermer">×</button>
     <div id="client-modal-body"></div>
+  </div>
+</div>
+
+
+<!-- EDIT CLIENT MODAL -->
+<div class="modal" id="edit-client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-edit-client-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title">Modifier le Client</h2>
+    <input type="hidden" id="edit-client-id">
+    <div class="form-group">
+      <label class="form-label" for="edit-client-name">Nom Complet</label>
+      <input type="text" class="form-input" id="edit-client-name">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-client-phone">Téléphone</label>
+      <input type="text" class="form-input" id="edit-client-phone" placeholder="+216 92 123 456">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-client-age">Âge</label>
+      <input type="number" class="form-input" id="edit-client-age" min="10" max="99">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-client-membership">Type d'Abonnement</label>
+      <select class="form-input" id="edit-client-membership">
+        <option value="basic">Basic</option>
+        <option value="mensuel">Mensuel</option>
+        <option value="trimestriel">Trimestriel</option>
+        <option value="annuel">Annuel</option>
+        <option value="seance">À la séance</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-client-training">Type d'Entraînement</label>
+      <input type="text" class="form-input" id="edit-client-training" placeholder="CrossFit, Musculation, Yoga…">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-client-payment">Statut Paiement</label>
+      <select class="form-input" id="edit-client-payment">
+        <option value="paid">Payé ✓</option>
+        <option value="pending">En attente ⏳</option>
+      </select>
+    </div>
+    <div class="alert aerr" id="edit-client-err"></div>
+    <button class="btn-primary" id="btn-save-edit-client">Enregistrer les modifications</button>
+  </div>
+</div>
+
+<!-- EDIT COACH MODAL -->
+<div class="modal" id="edit-coach-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-edit-coach-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title">Modifier le Coach</h2>
+    <input type="hidden" id="edit-coach-profile-id">
+    <div class="form-group">
+      <label class="form-label" for="edit-coach-name2">Nom</label>
+      <input type="text" class="form-input" id="edit-coach-name2" disabled style="opacity:.5;">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-coach-specialty2">Spécialité</label>
+      <input type="text" class="form-input" id="edit-coach-specialty2" placeholder="CrossFit, Yoga, Natation…">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-coach-rate2">Tarif par Séance (DT)</label>
+      <input type="number" class="form-input" id="edit-coach-rate2" min="0" step="5">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="edit-coach-bio2">Bio</label>
+      <textarea class="form-input" id="edit-coach-bio2" rows="3" placeholder="Expérience, certifications…"></textarea>
+    </div>
+    <button class="btn-primary" id="btn-save-edit-coach">Enregistrer</button>
   </div>
 </div>
 

@@ -44,6 +44,7 @@ const T = {
     popularClasses:'Cours Populaires', coachUtil:'Utilisation des Coachs',
     analyticsHint:'Connectez les paiements pour voir les revenus par coach',
     analyticsHint2:'Activez les paiements pour voir les revenus mensuels',
+    predTitle:'Prévision Intelligente', predMonthly:'Revenu Estimé / Mois', predSessions:'Séances / Semaine', predRetention:'Taux Activité',
     settingsSub:'Configurez votre salle', gymInfo:'Informations de la Salle',
     gymNameLbl:'Nom de la Salle', addressLbl:'Adresse', phoneLbl:'Téléphone', descLbl:'Description',
     saveChanges:'Enregistrer',
@@ -60,7 +61,7 @@ const T = {
     noSessions:'Aucune séance trouvée.',
     savedOk:'Enregistré !', coachAdded:'Coach ajouté !', clientAdded:'Client ajouté !', sessionCreated:'Séance créée !',
     errorMsg:'Une erreur est survenue.',
-    hourlyRate:'Tarif/h', avgRating:'Note',
+    hourlyRate:'DT/séance', avgRating:'Note',
     employedLbl:'Ancienneté', totalReviews:'Avis',
     emailMissing:'Veuillez saisir un email valide.',
     nameMissing:'Veuillez saisir un nom.',
@@ -68,7 +69,7 @@ const T = {
     sessDateMissing:'Veuillez choisir une date.',
     sessTimeMissing:'Veuillez choisir une heure.',
     memberSince:'Membre depuis', membership:'Abonnement', training:'Entraînement',
-    payment:'Paiement', editClient:'Modifier', deleteClient:'Supprimer',
+    payment:'Paiement', editClient:'Modifier', deleteClient:'Supprimer', editCoach:'Modifier', deleteCoach:'Supprimer',
     pwReset:'Email de réinitialisation envoyé !',
   },
   en: {
@@ -101,6 +102,7 @@ const T = {
     popularClasses:'Popular Classes', coachUtil:'Coach Utilization',
     analyticsHint:'Connect payments to see revenue per coach',
     analyticsHint2:'Enable payments to see monthly revenue',
+    predTitle:'Smart Prediction', predMonthly:'Est. Revenue / Month', predSessions:'Sessions / Week', predRetention:'Activity Rate',
     settingsSub:'Configure your gym', gymInfo:'Gym Information',
     gymNameLbl:'Gym Name', addressLbl:'Address', phoneLbl:'Phone', descLbl:'Description',
     saveChanges:'Save Changes',
@@ -117,7 +119,7 @@ const T = {
     noSessions:'No sessions found.',
     savedOk:'Saved!', coachAdded:'Coach added!', clientAdded:'Client added!', sessionCreated:'Session created!',
     errorMsg:'Something went wrong.',
-    hourlyRate:'Rate/h', avgRating:'Rating',
+    hourlyRate:'DT/session', avgRating:'Rating',
     employedLbl:'Employed', totalReviews:'Reviews',
     emailMissing:'Please enter a valid email.',
     nameMissing:'Please enter a name.',
@@ -125,7 +127,7 @@ const T = {
     sessDateMissing:'Please choose a date.',
     sessTimeMissing:'Please choose a time.',
     memberSince:'Member since', membership:'Membership', training:'Training',
-    payment:'Payment', editClient:'Edit', deleteClient:'Delete',
+    payment:'Payment', editClient:'Edit', deleteClient:'Delete', editCoach:'Edit', deleteCoach:'Delete',
     pwReset:'Reset email sent!',
   },
   ar: {
@@ -158,6 +160,7 @@ const T = {
     popularClasses:'الفصول الشائعة', coachUtil:'استخدام المدربين',
     analyticsHint:'ربط المدفوعات لعرض الإيرادات',
     analyticsHint2:'تفعيل المدفوعات لعرض الإيرادات الشهرية',
+    predTitle:'التوقع الذكي', predMonthly:'الإيراد المقدر / شهر', predSessions:'الجلسات / أسبوع', predRetention:'معدل النشاط',
     settingsSub:'إعداد صالتك', gymInfo:'معلومات الصالة',
     gymNameLbl:'اسم الصالة', addressLbl:'العنوان', phoneLbl:'الهاتف', descLbl:'الوصف',
     saveChanges:'حفظ التغييرات',
@@ -174,7 +177,7 @@ const T = {
     noSessions:'لا توجد جلسات.',
     savedOk:'تم الحفظ!', coachAdded:'تمت إضافة المدرب!', clientAdded:'تمت إضافة العميل!', sessionCreated:'تم إنشاء الجلسة!',
     errorMsg:'حدث خطأ ما.',
-    hourlyRate:'الأجر/ساعة', avgRating:'التقييم',
+    hourlyRate:'دت/جلسة', avgRating:'التقييم',
     employedLbl:'مدة العمل', totalReviews:'التقييمات',
     emailMissing:'الرجاء إدخال بريد إلكتروني صحيح.',
     nameMissing:'الرجاء إدخال الاسم.',
@@ -182,7 +185,7 @@ const T = {
     sessDateMissing:'الرجاء اختيار تاريخ.',
     sessTimeMissing:'الرجاء اختيار وقت.',
     memberSince:'عضو منذ', membership:'الاشتراك', training:'التدريب',
-    payment:'الدفع', editClient:'تعديل', deleteClient:'حذف',
+    payment:'الدفع', editClient:'تعديل', deleteClient:'حذف', editCoach:'تعديل', deleteCoach:'حذف',
     pwReset:'تم إرسال رابط الاسترداد!',
   }
 };
@@ -207,13 +210,13 @@ function applyTranslations() {
 const SESSION_CATEGORIES = {
   group_class: ['Yoga','HIIT','Cardio','Pilates','CrossFit','Zumba','Musculation','Mobilité','Stretching','Fonctionnel','Spinning','Bootcamp'],
   group_activity: ['Piscine','Terrain de Football','Court de Tennis','Basketball','Volleyball','Sauna','Salle Libre','Piste de Course'],
-  individual: ['Entraînement Personnel','Boxe Privée','Coaching Musculation','Coaching Perte de Poids','Conditionnement Athlétique','Rééducation']
+  individual_training: ['Entraînement Personnel','Boxe Privée','Coaching Musculation','Coaching Perte de Poids','Conditionnement Athlétique','Rééducation']
 };
 
 function updateSessionCategory() {
   const type = document.getElementById('sess-type').value;
   const sel  = document.getElementById('sess-category');
-  const cats = SESSION_CATEGORIES[type] || [];
+  const cats = SESSION_CATEGORIES[type] || SESSION_CATEGORIES['individual_training'] || [];
   sel.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
   // coach optional only for group_activity
   const coachGroup = document.getElementById('sess-coach-group');
@@ -228,7 +231,7 @@ function updateSessionCategory() {
 // ── Init ──────────────────────────────────────────────────
 (async () => {
   const { data: { session } } = await sb.auth.getSession();
-  if (!session) { window.location.href = 'TW Login.html?role=gym_owner'; return; }
+  if (!session) { window.location.href = '/login?role=gym_owner'; return; }
   currentUser = session.user;
 
   // populate account email in settings
@@ -429,14 +432,15 @@ async function submitNewSession() {
   btn.textContent = '…'; btn.disabled = true;
   try {
     const { error } = await sb.from('sessions').insert({
-      gym_id:          currentGymId,
-      coach_id:        coachId,
-      session_date:    date,
-      start_time:      time + ':00',
+      gym_id:           currentGymId,
+      coach_id:         coachId || null,
+      session_date:     date,
+      start_time:       time + ':00',
       duration_minutes: duration,
-      type:            category || type,
-      status:          'confirmed',
-      notes:           name,
+      type:             type,
+      session_name:     name,
+      notes:            category || name,
+      status:           'confirmed',
     });
     if (error) throw new Error(error.message);
     toast(t('sessionCreated'));
@@ -549,8 +553,61 @@ async function openCoachModal(coachId) {
         <div class="modal-stat-box"><div class="modal-stat-value">${c.rating??'—'}</div><div class="modal-stat-label">${t('avgRating')}</div></div>
       </div>
       ${c.bio ? `<div style="background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:16px;margin-top:14px;font-size:14px;color:var(--mt);line-height:1.7;">${c.bio}</div>` : ''}
+    </div>
+    <div class="modal-section" style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn-primary" style="flex:1;" onclick="openEditCoachModal('${c.id}','${name}','${c.specialty||''}',${c.hourly_rate||0},'${c.bio||''}')">✏ Modifier</button>
+      <button class="btn-danger" style="flex:0 0 auto;" onclick="deleteCoach('${c.user_id||c.id}','${c.id}')">✕ Supprimer</button>
     </div>`;
   document.getElementById('coach-modal').classList.add('show');
+}
+
+
+// ── Edit coach ────────────────────────────────────────────
+function openEditCoachModal(profileId, name, specialty, rate, bio) {
+  const modal = document.getElementById('edit-coach-modal');
+  if (!modal) return;
+  document.getElementById('edit-coach-profile-id').value = profileId;
+  document.getElementById('edit-coach-name2').value      = name;
+  document.getElementById('edit-coach-specialty2').value = specialty;
+  document.getElementById('edit-coach-rate2').value      = rate || '';
+  document.getElementById('edit-coach-bio2').value       = bio;
+  document.getElementById('coach-modal').classList.remove('show');
+  modal.classList.add('show');
+}
+
+async function saveEditCoach() {
+  const profileId = document.getElementById('edit-coach-profile-id').value;
+  const specialty = document.getElementById('edit-coach-specialty2').value.trim();
+  const rate      = parseFloat(document.getElementById('edit-coach-rate2').value) || null;
+  const bio       = document.getElementById('edit-coach-bio2').value.trim();
+  const btn = document.getElementById('btn-save-edit-coach');
+  btn.textContent = '…'; btn.disabled = true;
+  try {
+    await sb.from('coach_profiles').update({ specialty: specialty||null, hourly_rate: rate, bio: bio||null }).eq('id', profileId);
+    toast(t('savedOk'));
+    document.getElementById('edit-coach-modal').classList.remove('show');
+    await loadCoaches();
+    await loadDashboardStats();
+  } catch(e) {
+    toast(t('errorMsg'));
+  } finally {
+    btn.textContent = t('saveChanges'); btn.disabled = false;
+  }
+}
+
+async function deleteCoach(userId, profileId) {
+  if (!confirm('Supprimer ce coach ?')) return;
+  try {
+    await sb.from('coach_profiles').delete().eq('id', profileId);
+    await sb.from('users').delete().eq('id', userId);
+    document.getElementById('coach-modal').classList.remove('show');
+    await loadCoaches();
+    await loadDashboardStats();
+    animateCounters();
+    toast('Coach supprimé');
+  } catch(e) {
+    toast(t('errorMsg'));
+  }
 }
 
 // ── Clients ───────────────────────────────────────────────
@@ -566,7 +623,7 @@ async function loadClients() {
   if (clients?.length) {
     const ids = clients.map(c=>c.id);
     const { data: profiles } = await sb.from('client_profiles')
-      .select('user_id, membership_tier, fitness_goal')
+      .select('user_id, membership_tier, fitness_goal, payment_status, age, training_type')
       .in('user_id', ids);
     (profiles||[]).forEach(p => { profileMap[p.user_id] = p; });
   }
@@ -585,24 +642,35 @@ function renderClients() {
   if (q) list = list.filter(c => (c.name||'').toLowerCase().includes(q) || (c.phone||'').includes(q));
   if (!list.length) { el.innerHTML = `<p class="empty-state">${t('noClients')}</p>`; return; }
   el.innerHTML = list.map(c => {
-    const ini   = (c.name||'C').split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
-    const since = new Date(c.created_at).toLocaleDateString('fr-FR',{month:'short',year:'numeric'});
-    const tier  = c.profile?.membership_tier || 'basic';
-    const goal  = c.profile?.fitness_goal || '—';
-    return `<div class="person-card client-card">
-      <div class="person-header">
-        <div class="person-avatar">${ini}</div>
-        <div>
-          <div class="person-name">${c.name||'Client'}</div>
-          <div class="person-role">${c.phone||'—'}</div>
-        </div>
-        <div style="margin-left:auto;display:flex;gap:8px;">
-          <button class="icon-btn btn-del" onclick="deleteClient('${c.id}')" title="${t('deleteClient')}">✕</button>
+    const ini     = (c.name||'C').split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+    const since   = new Date(c.created_at).toLocaleDateString('fr-FR',{month:'short',year:'numeric'});
+    const tier    = c.profile?.membership_tier || 'basic';
+    const goal    = c.profile?.fitness_goal || c.profile?.training_type || '—';
+    const payment = c.profile?.payment_status || 'paid';
+    const age     = c.profile?.age ? c.profile.age + ' ans' : '—';
+    const payBadgeClass = payment === 'paid' ? 'badge-paid' : 'badge-pending';
+    const payLabel = payment === 'paid' ? t('paid') : 'En attente';
+    const tierColors = { mensuel:'tier-monthly', monthly:'tier-monthly', trimestriel:'tier-quarterly', quarterly:'tier-quarterly', annuel:'tier-annual', annual:'tier-annual', basic:'tier-basic' };
+    const tierClass = tierColors[tier.toLowerCase()] || 'tier-basic';
+    return `<div class="client-card-v2">
+      <div class="cc-top">
+        <div class="cc-avatar">${ini}</div>
+        <div class="cc-badges">
+          <span class="cc-badge ${payBadgeClass}">${payLabel}</span>
+          <span class="cc-badge ${tierClass}">${tier.toUpperCase()}</span>
         </div>
       </div>
-      <div class="person-stats">
-        <div class="person-stat-item"><div class="person-stat-value" style="font-size:13px;padding-top:2px;">${tier.toUpperCase()}</div><div class="person-stat-label">${t('membership')}</div></div>
-        <div class="person-stat-item"><div class="person-stat-value" style="font-size:13px;padding-top:2px;">${since}</div><div class="person-stat-label">${t('memberSince')}</div></div>
+      <div class="cc-body">
+        <div class="cc-name">${c.name||'Client'}</div>
+        <div class="cc-meta">
+          <span class="cc-meta-item">📱 ${c.phone||'—'}</span>
+          <span class="cc-meta-item">🎯 ${goal}</span>
+          <span class="cc-meta-item">📅 ${since}</span>
+        </div>
+      </div>
+      <div class="cc-actions">
+        <button class="cc-btn cc-btn-edit" onclick="openEditClientModal('${c.id}')">✏ ${t('editClient')}</button>
+        <button class="cc-btn cc-btn-del"  onclick="deleteClient('${c.id}')">✕ ${t('deleteClient')}</button>
       </div>
     </div>`;
   }).join('');
@@ -612,8 +680,10 @@ function renderClients() {
 async function submitNewClient() {
   const name       = document.getElementById('new-client-name').value.trim();
   const phone      = document.getElementById('new-client-phone').value.trim();
+  const age        = parseInt(document.getElementById('new-client-age').value) || null;
   const membership = document.getElementById('new-client-membership').value;
   const training   = document.getElementById('new-client-training').value;
+  const payment    = document.getElementById('new-client-payment')?.value || 'paid';
   const errEl      = document.getElementById('add-client-err');
   errEl.classList.remove('show'); errEl.textContent = '';
 
@@ -622,23 +692,33 @@ async function submitNewClient() {
   const btn = document.getElementById('btn-submit-client');
   btn.textContent = '…'; btn.disabled = true;
   try {
-    const { data: { session: ownerSession } } = await sb.auth.getSession();
-    const fakeEmail = name.toLowerCase().replace(/\s+/g,'.') + '.' + Date.now() + '@trainw.client';
-    const tempPw = 'Trainw!' + Math.random().toString(36).slice(2,10);
-    const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
-      email: fakeEmail, password: tempPw,
-      options: { data: { name, role:'client', phone: phone||null, gym_id: currentGymId||null } }
+    // Create user row directly — gym owner adds clients without auth signup
+    const newUserId = crypto.randomUUID();
+    const { error: userErr } = await sb.from('users').insert({
+      id:      newUserId,
+      name:    name,
+      email:   name.toLowerCase().replace(/\s+/g,'.') + '.' + Date.now() + '@trainw.local',
+      role:    'client',
+      gym_id:  currentGymId,
+      phone:   phone || null,
     });
-    if (signUpErr) throw new Error(signUpErr.message);
-    const newId = signUpData.user?.id;
-    if (!newId) throw new Error('No user ID');
-    if (ownerSession) await sb.auth.setSession({ access_token: ownerSession.access_token, refresh_token: ownerSession.refresh_token });
-    await new Promise(r => setTimeout(r, 800));
-    if (currentGymId) await sb.from('users').update({ gym_id: currentGymId, phone: phone||null }).eq('id', newId);
-    await sb.from('client_profiles').update({ membership_tier: membership, fitness_goal: training }).eq('user_id', newId);
+    if (userErr) throw new Error(userErr.message);
+
+    const { error: profErr } = await sb.from('client_profiles').insert({
+      user_id:        newUserId,
+      membership_tier: membership,
+      fitness_goal:   training,
+      training_type:  training,
+      payment_status: payment,
+      age:            age,
+    });
+    if (profErr) throw new Error(profErr.message);
+
     toast(t('clientAdded'));
     document.getElementById('add-client-modal').classList.remove('show');
-    ['new-client-name','new-client-age','new-client-phone'].forEach(id => { document.getElementById(id).value = ''; });
+    ['new-client-name','new-client-age','new-client-phone'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
     await loadClients();
     await loadDashboardStats();
     animateCounters();
@@ -649,10 +729,69 @@ async function submitNewClient() {
   }
 }
 
+
+// ── Edit client modal ─────────────────────────────────────
+function openEditClientModal(userId) {
+  const client = allClients.find(c => c.id === userId);
+  if (!client) return;
+  const profile = client.profile || {};
+  const modal = document.getElementById('edit-client-modal');
+  if (!modal) return;
+  document.getElementById('edit-client-id').value        = userId;
+  document.getElementById('edit-client-name').value      = client.name || '';
+  document.getElementById('edit-client-phone').value     = client.phone || '';
+  document.getElementById('edit-client-age').value       = profile.age || '';
+  document.getElementById('edit-client-membership').value = profile.membership_tier || 'basic';
+  document.getElementById('edit-client-training').value  = profile.training_type || profile.fitness_goal || '';
+  document.getElementById('edit-client-payment').value   = profile.payment_status || 'paid';
+  modal.classList.add('show');
+}
+
+async function saveEditClient() {
+  const userId     = document.getElementById('edit-client-id').value;
+  const name       = document.getElementById('edit-client-name').value.trim();
+  const phone      = document.getElementById('edit-client-phone').value.trim();
+  const age        = parseInt(document.getElementById('edit-client-age').value) || null;
+  const membership = document.getElementById('edit-client-membership').value;
+  const training   = document.getElementById('edit-client-training').value;
+  const payment    = document.getElementById('edit-client-payment').value;
+  const errEl      = document.getElementById('edit-client-err');
+  errEl.classList.remove('show'); errEl.textContent = '';
+  if (!name) { errEl.textContent = t('nameMissing'); errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('btn-save-edit-client');
+  btn.textContent = '…'; btn.disabled = true;
+  try {
+    await sb.from('users').update({ name, phone: phone||null }).eq('id', userId);
+    await sb.from('client_profiles').update({
+      membership_tier: membership,
+      training_type:   training,
+      fitness_goal:    training,
+      payment_status:  payment,
+      age:             age,
+    }).eq('user_id', userId);
+    // update local state
+    const idx = allClients.findIndex(c => c.id === userId);
+    if (idx !== -1) {
+      allClients[idx].name  = name;
+      allClients[idx].phone = phone;
+      allClients[idx].profile = { ...allClients[idx].profile, membership_tier: membership, training_type: training, fitness_goal: training, payment_status: payment, age };
+    }
+    toast(t('savedOk'));
+    document.getElementById('edit-client-modal').classList.remove('show');
+    renderClients();
+  } catch(err) {
+    errEl.textContent = err.message; errEl.classList.add('show');
+  } finally {
+    btn.textContent = t('saveChanges'); btn.disabled = false;
+  }
+}
+
 // ── Delete client ─────────────────────────────────────────
 async function deleteClient(userId) {
-  if (!confirm('Supprimer ce client ?')) return;
+  if (!confirm('Supprimer ce client ? Action irréversible.')) return;
   try {
+    await sb.from('client_profiles').delete().eq('user_id', userId);
     await sb.from('users').delete().eq('id', userId);
     allClients = allClients.filter(c => c.id !== userId);
     renderClients();
@@ -660,7 +799,7 @@ async function deleteClient(userId) {
     animateCounters();
     toast('Client supprimé');
   } catch(e) {
-    toast(t('errorMsg'));
+    toast(t('errorMsg') + ': ' + e.message);
   }
 }
 
@@ -668,46 +807,90 @@ async function deleteClient(userId) {
 async function loadAnalytics() {
   if (!currentGymId) return;
 
+  // Get all data needed
+  const [
+    { count: totalClients },
+    { count: totalCoaches },
+    { data: allSessionData },
+    { data: coachProfiles }
+  ] = await Promise.all([
+    sb.from('users').select('id',{count:'exact',head:true}).eq('role','client').eq('gym_id',currentGymId),
+    sb.from('users').select('id',{count:'exact',head:true}).eq('role','coach').eq('gym_id',currentGymId),
+    sb.from('sessions').select('type,status,coach_id,session_date,users!sessions_coach_id_fkey(name)').eq('gym_id',currentGymId),
+    sb.from('coach_profiles').select('hourly_rate, users!inner(name,gym_id)').eq('users.gym_id',currentGymId)
+  ]);
+
+  // Update shared stat elements
+  const anC  = document.getElementById('an-clients');
+  const anCo = document.getElementById('an-coaches');
+  const anS  = document.getElementById('an-sessions');
+  if (anC)  anC.textContent  = totalClients ?? 0;
+  if (anCo) anCo.textContent = totalCoaches ?? 0;
+
+  // Week sessions for analytics
+  const now = new Date();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
+  const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+  const weekSessions = (allSessionData||[]).filter(s => {
+    const d = new Date(s.session_date);
+    return d >= weekStart && d <= weekEnd;
+  }).length;
+  if (anS) anS.textContent = weekSessions;
+
+  // SMART PREDICTION — estimated monthly revenue from coach rates × sessions
+  const avgRate = (coachProfiles||[]).reduce((sum,cp) => sum + (cp.hourly_rate||0), 0) /
+                  Math.max(1, (coachProfiles||[]).length);
+  const monthlySessionEstimate = weekSessions * 4;
+  const revenueEstimate = Math.round(avgRate * monthlySessionEstimate);
+  const retentionPct = totalClients > 0 ? Math.min(100, Math.round((weekSessions / Math.max(1, totalClients)) * 100)) + '%' : '—';
+
+  const predM = document.getElementById('pred-monthly');
+  const predS = document.getElementById('pred-sessions');
+  const predR = document.getElementById('pred-retention');
+  if (predM) predM.textContent = revenueEstimate > 0 ? revenueEstimate + ' DT' : '—';
+  if (predS) predS.textContent = weekSessions;
+  if (predR) predR.textContent = retentionPct;
+
   // Popular session types
-  const { data: sessions } = await sb.from('sessions')
-    .select('type').eq('gym_id', currentGymId);
   const typeCount = {};
-  (sessions||[]).forEach(s => { const k = s.type||'unknown'; typeCount[k] = (typeCount[k]||0)+1; });
-  const sorted = Object.entries(typeCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  (allSessionData||[]).forEach(s => { const k = (s.type||'unknown').replace(/_/g,' '); typeCount[k] = (typeCount[k]||0)+1; });
+  const sorted = Object.entries(typeCount).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxV = sorted.length ? Math.max(...sorted.map(x=>x[1])) : 1;
   const classEl = document.getElementById('popular-classes-list');
   if (classEl) {
     classEl.innerHTML = sorted.length
       ? sorted.map(([type, count]) => `
           <div class="analytics-row">
-            <div class="analytics-row-label">${type.replace(/_/g,' ')}</div>
-            <div class="analytics-row-bar"><div class="analytics-bar-fill" style="width:${Math.round((count/Math.max(...Object.values(typeCount)))*100)}%"></div></div>
+            <div class="analytics-row-label">${type}</div>
+            <div class="analytics-row-bar"><div class="analytics-bar-fill" style="width:${Math.round((count/maxV)*100)}%"></div></div>
             <div class="analytics-row-val">${count}</div>
           </div>`).join('')
       : `<p class="empty-state">${t('noSessions')}</p>`;
   }
 
   // Coach utilization
-  const { data: coachSessions } = await sb.from('sessions')
-    .select('coach_id, users!sessions_coach_id_fkey(name)').eq('gym_id', currentGymId);
-  const coachCount = {};
-  const coachNames = {};
-  (coachSessions||[]).forEach(s => {
+  const coachCount = {}; const coachNames = {};
+  (allSessionData||[]).forEach(s => {
     if (!s.coach_id) return;
     coachCount[s.coach_id] = (coachCount[s.coach_id]||0)+1;
     coachNames[s.coach_id] = s.users?.name || 'Coach';
   });
   const coachSorted = Object.entries(coachCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const maxC = coachSorted.length ? Math.max(...coachSorted.map(x=>x[1])) : 1;
   const utilEl = document.getElementById('coach-util-list');
   if (utilEl) {
-    utilEl.innerHTML = coachSorted.length
-      ? coachSorted.map(([id, count]) => `
+    if (!coachSorted.length) {
+      utilEl.innerHTML = `<p class="empty-state">${t('noCoaches')}</p>`;
+    } else {
+      utilEl.innerHTML = coachSorted.map(([id, count]) => `
           <div class="analytics-row">
             <div class="analytics-row-label">${coachNames[id]}</div>
-            <div class="analytics-row-bar"><div class="analytics-bar-fill" style="width:${Math.round((count/Math.max(...Object.values(coachCount)))*100)}%"></div></div>
+            <div class="analytics-row-bar"><div class="analytics-bar-fill" style="width:${Math.round((count/maxC)*100)}%"></div></div>
             <div class="analytics-row-val">${count} séances</div>
-          </div>`).join('')
-      : `<p class="empty-state">${t('noCoaches')}</p>`;
+          </div>`).join('');
+    }
   }
+  animateCounters();
 }
 
 // ── Save settings ─────────────────────────────────────────
@@ -757,7 +940,7 @@ async function changePassword() {
 // ── Sign out ──────────────────────────────────────────────
 document.getElementById('btn-logout').addEventListener('click', async () => {
   await sb.auth.signOut();
-  window.location.href = 'TW Login.html';
+  window.location.href = '/login';
 });
 
 // ── Page nav ──────────────────────────────────────────────
@@ -823,7 +1006,10 @@ document.getElementById('close-add-coach-modal').addEventListener('click', () =>
 document.getElementById('close-add-client-modal').addEventListener('click', () => document.getElementById('add-client-modal').classList.remove('show'));
 document.getElementById('close-session-modal').addEventListener('click', () => document.getElementById('create-session-modal').classList.remove('show'));
 document.getElementById('close-client-modal').addEventListener('click', () => document.getElementById('client-modal').classList.remove('show'));
-['coach-modal','add-coach-modal','add-client-modal','create-session-modal','client-modal'].forEach(id => {
+document.getElementById('close-edit-client-modal')?.addEventListener('click', () => document.getElementById('edit-client-modal').classList.remove('show'));
+document.getElementById('btn-save-edit-client')?.addEventListener('click', saveEditClient);
+document.getElementById('edit-client-modal')?.addEventListener('click', e => { if (e.target.id === 'edit-client-modal') e.target.classList.remove('show'); });
+['coach-modal','add-coach-modal','add-client-modal','create-session-modal','client-modal','edit-client-modal','edit-coach-modal'].forEach(id => {
   document.getElementById(id)?.addEventListener('click', e => { if (e.target.id === id) e.target.classList.remove('show'); });
 });
 
@@ -832,6 +1018,9 @@ document.getElementById('btn-submit-coach').addEventListener('click', submitNewC
 document.getElementById('btn-submit-client').addEventListener('click', submitNewClient);
 document.getElementById('btn-submit-session').addEventListener('click', submitNewSession);
 document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+document.getElementById('close-edit-coach-modal')?.addEventListener('click', () => document.getElementById('edit-coach-modal').classList.remove('show'));
+document.getElementById('btn-save-edit-coach')?.addEventListener('click', saveEditCoach);
+document.getElementById('edit-coach-modal')?.addEventListener('click', e => { if (e.target.id === 'edit-coach-modal') e.target.classList.remove('show'); });
 document.getElementById('btn-change-password')?.addEventListener('click', changePassword);
 
 // ── Toast ─────────────────────────────────────────────────
