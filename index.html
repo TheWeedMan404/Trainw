@@ -16,7 +16,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="index.css">
+  <link rel="stylesheet" href="index.css?v=20260330-2">
+  <link rel="stylesheet" href="trainw-enhancements.css?v=20260330-2">
 </head>
 <body>
 
@@ -35,7 +36,7 @@
           <button class="lang-btn" data-lang="ar">ع</button>
         </div>
         <a href="https://wa.me/21658000000?text=Bonjour%2C%20je%20voudrais%20une%20d%C3%A9mo%20de%20Trainw" class="nav-demo" target="_blank" data-i18n="navDemo">Réserver une démo</a>
-        <a href="TW Role.html" class="nav-cta" data-i18n="navLogin">Connexion</a>
+        <a href="role.html" class="nav-cta" data-i18n="navLogin">Connexion</a>
       </div>
     </div>
   </nav>
@@ -48,24 +49,69 @@
       <p class="hero-sub" data-i18n="heroSub">Trainw centralise vos réservations, vos coachs et vos clients dans un seul tableau de bord simple. Vos membres réservent. Vous gérez. Tout le monde est synchronisé.</p>
       <div class="hero-actions">
         <a href="https://wa.me/21658000000?text=Bonjour%2C%20je%20voudrais%20une%20d%C3%A9mo%20de%20Trainw" class="btn-primary" target="_blank" data-i18n="heroDemo">Réserver une démo gratuite →</a>
-        <a href="TW Role.html" class="btn-ghost" data-i18n="heroTry">Essayer gratuitement</a>
+        <a href="role.html" class="btn-ghost" data-i18n="heroTry">Essayer gratuitement</a>
       </div>
       <p class="hero-note" data-i18n="heroNote">30 jours gratuits · Sans carte bancaire · Installation en 10 minutes</p>
     </div>
     <div class="hero-visual">
-      <div class="hv-card hv-card-1">
-        <div class="hv-label" data-i18n="hvSessions">Séances aujourd'hui</div>
-        <div class="hv-value">12</div>
+      <div class="hv-window">
+        <div class="hv-titlebar">
+          <span class="hv-dot hv-dot-r"></span>
+          <span class="hv-dot hv-dot-y"></span>
+          <span class="hv-dot hv-dot-g"></span>
+          <span class="hv-url">trainw.app/dashboard</span>
+        </div>
+        <div class="hv-screen">
+          <div class="hv-sidebar">
+            <div class="hv-logo">TRAINW</div>
+            <div class="hv-navitem active" data-i18n="hvNavDash">Dashboard</div>
+            <div class="hv-navitem" data-i18n="hvNavClients">Clients</div>
+            <div class="hv-navitem" data-i18n="hvNavPlanning">Planning</div>
+            <div class="hv-navitem" data-i18n="hvNavAnalytics">Analytics</div>
+          </div>
+          <div class="hv-body">
+            <div class="hv-stat-row">
+              <div class="hv-stat hv-stat-pulse">
+                <div class="hv-stat-label" data-i18n="hvClients">Clients actifs</div>
+                <div class="hv-stat-val">47</div>
+              </div>
+              <div class="hv-stat">
+                <div class="hv-stat-label" data-i18n="hvSessionsWeek">Séances / sem.</div>
+                <div class="hv-stat-val">18</div>
+              </div>
+              <div class="hv-stat">
+                <div class="hv-stat-label" data-i18n="hvRevenueMonth">Revenu / mois</div>
+                <div class="hv-stat-val">2.8k</div>
+              </div>
+            </div>
+            <div class="hv-chart">
+              <div class="hv-bar" style="--h:60%"></div>
+              <div class="hv-bar" style="--h:80%"></div>
+              <div class="hv-bar" style="--h:45%"></div>
+              <div class="hv-bar" style="--h:90%"></div>
+              <div class="hv-bar" style="--h:70%"></div>
+              <div class="hv-bar" style="--h:55%"></div>
+              <div class="hv-bar hv-bar-ac" style="--h:95%"></div>
+            </div>
+            <div class="hv-row-item">
+              <div class="hv-avatar">AK</div>
+              <div class="hv-row-info">
+                <div class="hv-row-name">Amir Khelil</div>
+                <div class="hv-row-meta">CrossFit · 09:00</div>
+              </div>
+              <div class="hv-badge hv-badge-green" data-i18n="hvConfirmed">Confirmé</div>
+            </div>
+            <div class="hv-row-item">
+              <div class="hv-avatar">SB</div>
+              <div class="hv-row-info">
+                <div class="hv-row-name">Sarra Ben Ali</div>
+                <div class="hv-row-meta">Coaching · 10:30</div>
+              </div>
+              <div class="hv-badge" data-i18n="hvPending">En attente</div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="hv-card hv-card-2">
-        <div class="hv-label" data-i18n="hvClients">Clients actifs</div>
-        <div class="hv-value">47</div>
-      </div>
-      <div class="hv-card hv-card-3">
-        <div class="hv-label" data-i18n="hvCoaches">Coachs</div>
-        <div class="hv-value">4</div>
-      </div>
-      <div class="hv-demo-label" data-i18n="hvDemoLabel">Aperçu du tableau de bord</div>
     </div>
   </section>
 
@@ -112,21 +158,37 @@
     </div>
   </section>
 
+  <div class="proof-bar">
+    <div class="container">
+      <div class="proof-inner">
+        <span class="proof-label" data-i18n="proofLabel">Utilisé par des salles à</span>
+        <span class="proof-city" data-i18n="proofCity1">Tunis</span>
+        <span class="proof-sep">·</span>
+        <span class="proof-city" data-i18n="proofCity2">La Marsa</span>
+        <span class="proof-sep">·</span>
+        <span class="proof-city" data-i18n="proofCity3">Ariana</span>
+        <span class="proof-sep">·</span>
+        <span class="proof-city" data-i18n="proofCity4">Sfax</span>
+        <span class="proof-coming" data-i18n="proofComing">et bientôt dans toute la Tunisie →</span>
+      </div>
+    </div>
+  </div>
+
   <!-- STATS -->
   <div class="stats-row">
     <div class="stat-item">
-      <div class="stat-val">24/7</div>
-      <div class="stat-lbl" data-i18n="stat1">Réservations</div>
+      <div class="stat-val">2h</div>
+      <div class="stat-lbl" data-i18n="stat1">économisées par jour en moyenne</div>
     </div>
     <div class="stat-div"></div>
     <div class="stat-item">
-      <div class="stat-val">3</div>
-      <div class="stat-lbl" data-i18n="stat2">Tableaux de bord — Salle · Coach · Client</div>
+      <div class="stat-val">0</div>
+      <div class="stat-lbl" data-i18n="stat2">message WhatsApp à 23h</div>
     </div>
     <div class="stat-div"></div>
     <div class="stat-item">
       <div class="stat-val">10min</div>
-      <div class="stat-lbl" data-i18n="stat3">Pour être opérationnel</div>
+      <div class="stat-lbl" data-i18n="stat3">pour être opérationnel</div>
     </div>
   </div>
 
@@ -148,7 +210,7 @@
             <li data-i18n="gymB3">Gestion complète des membres</li>
             <li data-i18n="gymB4">Paramétrage de votre salle</li>
           </ul>
-          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
+          <a href="role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
         </div>
         <div class="who-card who-card-featured">
           <div class="who-icon">💪</div>
@@ -160,7 +222,7 @@
             <li data-i18n="coachB3">Notes de séance rapides</li>
             <li data-i18n="coachB4">Avis et évaluations clients</li>
           </ul>
-          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
+          <a href="role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
         </div>
         <div class="who-card">
           <div class="who-icon">🎯</div>
@@ -172,7 +234,7 @@
             <li data-i18n="clientB3">Guide nutrition personnalisé</li>
             <li data-i18n="clientB4">Historique complet des séances</li>
           </ul>
-          <a href="TW Role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
+          <a href="role.html" class="who-cta" data-i18n="whoCta">Commencer →</a>
         </div>
       </div>
     </div>
@@ -224,7 +286,7 @@
             <li data-i18n="pFF3">Tableau de bord coach et client</li>
             <li data-i18n="pFF4">Suivi des progrès</li>
           </ul>
-          <a href="TW Role.html" class="price-btn" data-i18n="pFreeBtn">Démarrer gratuitement</a>
+          <a href="role.html" class="price-btn" data-i18n="pFreeBtn">Démarrer gratuitement</a>
         </div>
         <div class="price-card price-featured">
           <div class="price-badge" data-i18n="pProBadge">Le plus choisi</div>
@@ -259,6 +321,42 @@
     </div>
   </section>
 
+  <!-- FAQ -->
+  <section class="faq-section">
+    <div class="container">
+      <div class="section-head">
+        <span class="section-tag" data-i18n="faqTag">Questions fréquentes</span>
+        <h2 class="section-title" data-i18n="faqTitle">On répond à tout</h2>
+      </div>
+      <div class="faq-grid">
+        <div class="faq-item">
+          <div class="faq-q" data-i18n="faq1q">Mes clients vont vraiment utiliser ça ?</div>
+          <div class="faq-a" data-i18n="faq1a">Oui. L'interface client est simple et en arabe, français et anglais. Vos membres reçoivent un lien direct. Aucune installation requise.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" data-i18n="faq2q">150 DT/mois, c'est rentable pour moi ?</div>
+          <div class="faq-a" data-i18n="faq2a">Une salle avec 50 clients qui récupère ne serait-ce que 2 no-shows par mois à 30 DT chacun = 60 DT récupérés. Trainw se rembourse en éliminant le chaos de planning.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" data-i18n="faq3q">Et si ça plante pendant une séance ?</div>
+          <div class="faq-a" data-i18n="faq3a">Trainw fonctionne sur Supabase, une infrastructure cloud avec 99.9% de disponibilité. Toutes les données sont sauvegardées en temps réel.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" data-i18n="faq4q">J'ai essayé un logiciel avant, ça n'a pas marché.</div>
+          <div class="faq-a" data-i18n="faq4a">La plupart des logiciels de salle sont conçus pour l'Europe ou l'Amérique. Trainw est conçu pour le contexte tunisien : paiement en DT, interface en arabe, support local.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" data-i18n="faq5q">Je peux essayer sans payer ?</div>
+          <div class="faq-a" data-i18n="faq5a">Oui. 30 jours gratuits, sans carte bancaire, sans engagement. Vous décidez ensuite.</div>
+        </div>
+        <div class="faq-item">
+          <div class="faq-q" data-i18n="faq6q">Combien de temps pour être opérationnel ?</div>
+          <div class="faq-a" data-i18n="faq6a">Moins de 10 minutes. Vous créez votre salle, ajoutez vos coachs, et envoyez les liens à vos clients. On peut le faire ensemble lors de la démo.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- FINAL CTA -->
   <section class="cta-section">
     <div class="container">
@@ -277,12 +375,12 @@
       <div class="footer-links">
         <a href="https://wa.me/21658000000?text=Bonjour%2C%20je%20voudrais%20une%20d%C3%A9mo%20de%20Trainw" target="_blank" class="footer-link" data-i18n="footerDemo">Réserver une démo</a>
         <span class="footer-sep">·</span>
-        <a href="TW Role.html" class="footer-link" data-i18n="footerLogin">Connexion</a>
+        <a href="role.html" class="footer-link" data-i18n="footerLogin">Connexion</a>
       </div>
       <p class="footer-copy">© 2026 Trainw · Tunisia</p>
     </div>
   </footer>
 
-  <script src="index.js"></script>
+  <script src="index.js?v=20260330-2"></script>
 </body>
 </html>

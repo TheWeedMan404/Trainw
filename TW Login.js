@@ -1,8 +1,7 @@
 // ── Supabase ──────────────────────────────────────────────
-const sb = window.supabase.createClient(
-  'https://bibqumevndfykmkssslb.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM'
-);
+const Trainw = window.TrainwCore;
+const sb = Trainw.createClient();
+Trainw.installGlobalErrorHandlers();
 
 // ── i18n ──────────────────────────────────────────────────
 const T = {
@@ -141,11 +140,11 @@ function onRoleChange() {
 // ── Routing ───────────────────────────────────────────────
 function route(role) {
   const map = {
-    gym_owner: 'TW Gym Acc.html',
-    gym:       'TW Gym Acc.html',
-    admin:     'TW Gym Acc.html',
-    coach:     'TW Coach Acc.html',
-    client:    'TW Client Acc.html',
+    gym_owner: 'dashboard.html',
+    gym:       'dashboard.html',
+    admin:     'dashboard.html',
+    coach:     'coach.html',
+    client:    'client.html',
   };
   const dest = map[role];
   if (dest) window.location.href = dest;
@@ -188,7 +187,7 @@ document.querySelectorAll('.eye').forEach(btn => {
   btn.addEventListener('click', () => {
     const input = document.getElementById(btn.dataset.target);
     input.type = input.type === 'password' ? 'text' : 'password';
-    btn.textContent = input.type === 'password' ? '👁' : '🙈';
+    btn.textContent = input.type === 'password' ? 'ðŸ‘' : 'ðŸ™ˆ';
   });
 });
 
@@ -221,11 +220,7 @@ async function doLogin() {
     }
 
     // ── FIX: fetch role then redirect ──
-    const { data: profile, error: pErr } = await sb
-      .from('users')
-      .select('role')
-      .eq('id', data.user.id)
-      .single();
+    const { profile, error: pErr } = await Trainw.auth.getProfile(sb, data.user.id, false);
 
     if (pErr || !profile) {
       await sb.auth.signOut();
@@ -295,7 +290,7 @@ async function doSignup() {
       }
       // Give trigger 500ms to finish writing rows
       await new Promise(r => setTimeout(r, 500));
-      const { data: profile } = await sb.from('users').select('role').eq('id', signIn.user.id).single();
+      const { profile } = await Trainw.auth.getProfile(sb, signIn.user.id, true);
       route(profile?.role || role);
     }, 800);
 
@@ -315,8 +310,15 @@ document.getElementById('forgot-link').addEventListener('click', async () => {
     document.getElementById('l-email').focus();
     return;
   }
-  await sb.auth.resetPasswordForEmail(email);
-  showOk('l-ok', t('okForgot'));
+
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email);
+    if (error) throw error;
+    showOk('l-ok', t('okForgot'));
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    showErr('l-err', t('eGeneric'));
+  }
 });
 
 // ── Enter key ─────────────────────────────────────────────
@@ -332,3 +334,16 @@ document.getElementById('btn-signup').addEventListener('click', doSignup);
 document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
 document.querySelector(`.lang-btn[data-lang="${lang}"]`)?.classList.add('active');
 applyTranslations();
+
+(async function restoreExistingSession() {
+  const { session, profile } = await Trainw.auth.getContext(sb, {
+    loginHref: null,
+    redirectOnMissing: false,
+    redirectOnMismatch: false,
+  });
+
+  if (session && profile?.role) {
+    route(profile.role);
+  }
+})();
+

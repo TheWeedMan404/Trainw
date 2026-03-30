@@ -1,11 +1,11 @@
 // ── Supabase ──────────────────────────────────────────────
-const sb = window.supabase.createClient(
-  'https://bibqumevndfykmkssslb.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM'
-);
+const Trainw = window.TrainwCore;
+const sb = Trainw.createClient();
+Trainw.installGlobalErrorHandlers();
 
 let currentUserId = null;
 let currentCoachProfileId = null;
+let currentGymId = null;
 let currentLang = localStorage.getItem('trainw_lang') || 'fr';
 
 // ── i18n ──────────────────────────────────────────────────
@@ -91,226 +91,104 @@ const T = {
 };
 const t = k => T[currentLang][k] || T.en[k] || k;
 
+function locale() {
+  return Trainw.localeForLang(currentLang);
+}
+
 function applyTranslations() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const k = el.getAttribute('data-i18n');
     if (T[currentLang]?.[k]) el.textContent = T[currentLang][k];
   });
   document.documentElement.setAttribute('dir', currentLang === 'ar' ? 'rtl' : 'ltr');
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === currentLang);
+  });
+}
+
+function enhanceSidebarNavigation() {
+  if (window.__trainwCoachNavEnhanced) {
+    window.lucide?.createIcons();
+    return;
+  }
+  window.__trainwCoachNavEnhanced = true;
+
+  const iconMap = {
+    dashboard: 'layout-dashboard',
+    sessions: 'calendar',
+    clients: 'user-check',
+    reviews: 'bar-chart-2',
+    profile: 'settings',
+  };
+
+  document.querySelectorAll('.nav-item').forEach(item => {
+    const page = item.dataset.page || '';
+    const iconEl = item.querySelector('.nav-icon');
+    if (iconEl) iconEl.innerHTML = `<i data-lucide="${iconMap[page] || 'circle'}"></i>`;
+
+    const label = Array.from(item.children).find(node => !node.classList?.contains('nav-icon'));
+    if (label) label.classList.add('nav-label');
+  });
+
+  window.lucide?.createIcons();
 }
 
 // ── Init ──────────────────────────────────────────────────
-(async () => {
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) { window.location.href = 'TW Login.html?role=coach'; return; }
-  currentUserId = session.user.id;
+async function legacyInitDisabled() {
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { window.location.href = 'login.html?role=coach'; return; }
+    currentUserId = session.user.id;
 
-  // Load user info
-  const { data: user } = await sb.from('users').select('name, phone').eq('id', currentUserId).single();
-  if (user) {
-    document.getElementById('sidebar-coach-name').textContent = user.name || 'Coach';
-    document.getElementById('profile-name').value  = user.name  || '';
-    document.getElementById('profile-phone').value = user.phone || '';
-    document.getElementById('profile-email').value = session.user.email || '';
+    const { data: user } = await sb.from('users').select('name, phone, gym_id').eq('id', currentUserId).single();
+    if (user) {
+      const sn = document.getElementById('sidebar-coach-name'); if(sn) sn.textContent = user.name || 'Coach';
+      const pn = document.getElementById('profile-name');  if(pn) pn.value = user.name  || '';
+      const pp = document.getElementById('profile-phone'); if(pp) pp.value = user.phone || '';
+      const pe = document.getElementById('profile-email'); if(pe) pe.value = session.user.email || '';
+      if (user.gym_id) currentGymId = user.gym_id;
+    }
+
+    const { data: coach } = await sb.from('coach_profiles')
+      .select('id, specialty, hourly_rate, bio, rating, total_reviews')
+      .eq('user_id', currentUserId).single();
+
+    if (coach) {
+      currentCoachProfileId = coach.id;
+      const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v ?? '—'; };
+      set('stat-rating', coach.rating || '—');
+      set('stat-reviews-count', (coach.total_reviews || 0) + ' avis');
+      const sr = document.getElementById('stat-rate'); if(sr) sr.innerHTML = (coach.hourly_rate || '—') + '<span class="stat-unit">DT</span>';
+      const sp = document.getElementById('profile-specialty'); if(sp) sp.value = coach.specialty || '';
+      const rp = document.getElementById('profile-rate');      if(rp) rp.value = coach.hourly_rate || '';
+      const bp = document.getElementById('profile-bio');       if(bp) bp.value = coach.bio || '';
+      set('rev-avg', coach.rating || '—');
+      set('rev-total', coach.total_reviews || 0);
+    }
+
+    await loadSessions();
+    await loadClients();
+    await loadReviews();
+    applyTranslations();
+  } catch(err) {
+    console.error('Coach init error:', err);
+    const toast_el = document.getElementById('toast');
+    const toast_msg = document.getElementById('toast-msg');
+    if(toast_el && toast_msg) { toast_msg.textContent = 'Erreur de chargement — rechargez la page'; toast_el.classList.add('show','toast-err'); }
   }
-
-  // Load coach_profiles row (FIXED: was querying 'coaches' — wrong table)
-  const { data: coach } = await sb.from('coach_profiles')
-    .select('id, specialty, hourly_rate, bio, rating, total_reviews')
-    .eq('user_id', currentUserId).single();
-
-  if (coach) {
-    currentCoachProfileId = coach.id;
-    document.getElementById('stat-rating').textContent  = coach.rating       || '—';
-    document.getElementById('stat-reviews-count').textContent = (coach.total_reviews || 0) + ' reviews';
-    document.getElementById('stat-rate').innerHTML = (coach.hourly_rate || '—') + '<span class="stat-unit">DT</span>';
-    document.getElementById('profile-specialty').value = coach.specialty    || '';
-    document.getElementById('profile-rate').value      = coach.hourly_rate  || '';
-    document.getElementById('profile-bio').value       = coach.bio          || '';
-    document.getElementById('rev-avg').textContent     = coach.rating       || '—';
-    document.getElementById('rev-total').textContent   = coach.total_reviews || 0;
-  }
-
-  await loadSessions();
-  await loadClients();
-  await loadReviews();
-  applyTranslations();
-})();
+}
 
 // ── Sessions ──────────────────────────────────────────────
-async function loadSessions() {
-  const today = new Date().toISOString().split('T')[0];
-  const { data: sessions } = await sb.from('sessions')
-    .select('id, session_date, start_time, duration_minutes, type, status, client_id, users!sessions_client_id_fkey(name)')
-    .eq('coach_id', currentUserId)
-    .order('session_date', { ascending: true });
-
-  if (!sessions || sessions.length === 0) {
-    ['today-sessions','all-sessions'].forEach(id => {
-      document.getElementById(id).innerHTML = `<p class="empty-state">${t('noSessions')}</p>`;
-    });
-    document.getElementById('stat-sessions').textContent = '0';
-    document.getElementById('stat-clients').textContent  = '0';
-    return;
-  }
-
-  // Week stats
-  const now = new Date();
-  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
-  const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
-  const weekCount = sessions.filter(s => { const d = new Date(s.session_date); return d >= weekStart && d <= weekEnd; }).length;
-  document.getElementById('stat-sessions').textContent = weekCount;
-
-  // Render helper
-  const renderSession = (s, showDate = false) => {
-    const clientName = s.users?.name || 'Client';
-    const time = s.start_time?.slice(0,5) || '—';
-    const type = (s.type || 'Training').replace(/_/g,' ');
-    const dateStr = showDate ? new Date(s.session_date).toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' }) : '';
-    return `<div class="session-item">
-      <div class="session-time-col"><div class="session-time">${time}</div><div class="session-dur">${s.duration_minutes ?? 60}min</div></div>
-      <div><div class="session-title">${clientName}</div><div class="session-meta">${type}${dateStr ? ' • ' + dateStr : ''}</div></div>
-      <div class="session-status status-${s.status || 'confirmed'}">${s.status || 'confirmed'}</div>
-    </div>`;
-  };
-
-  const todaySessions = sessions.filter(s => s.session_date === today);
-  const displayToday  = todaySessions.length > 0 ? todaySessions : sessions.slice(0, 5);
-  document.getElementById('today-sessions').innerHTML = displayToday.map(s => renderSession(s, todaySessions.length === 0)).join('') || `<p class="empty-state">${t('noSessions')}</p>`;
-  document.getElementById('all-sessions').innerHTML   = sessions.map(s => renderSession(s, true)).join('');
-}
-
-// ── Clients ───────────────────────────────────────────────
-async function loadClients() {
-  const { data: sessionData } = await sb.from('sessions')
-    .select('client_id, users!sessions_client_id_fkey(name)')
-    .eq('coach_id', currentUserId);
-
-  if (!sessionData || sessionData.length === 0) {
-    document.getElementById('clients-grid').innerHTML = `<p class="empty-state">${t('noClients')}</p>`;
-    document.getElementById('stat-clients').textContent = '0';
-    return;
-  }
-
-  // Deduplicate clients
-  const map = {};
-  sessionData.forEach(s => {
-    const id = s.client_id;
-    if (!map[id]) map[id] = { name: s.users?.name || 'Client', count: 0 };
-    map[id].count++;
-  });
-
-  const clients = Object.values(map);
-  document.getElementById('stat-clients').textContent = clients.length;
-  document.getElementById('clients-grid').innerHTML = clients.map(c => {
-    const initials = c.name.split(' ').map(n => n[0]).join('').slice(0,2);
-    return `<div class="person-card">
-      <div class="person-header">
-        <div class="person-avatar">${initials}</div>
-        <div><div class="person-name">${c.name}</div><div class="person-role">Client</div></div>
-      </div>
-      <div class="person-stats">
-        <div class="person-stat-item"><div class="person-stat-value">${c.count}</div><div class="person-stat-label">Sessions</div></div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// ── Reviews ───────────────────────────────────────────────
-async function loadReviews() {
-  if (!currentCoachProfileId) return;
-  const { data: reviews } = await sb.from('reviews')
-    .select('rating, comment, created_at, client_profiles(users(name))')
-    .eq('coach_id', currentCoachProfileId)
-    .order('created_at', { ascending: false });
-
-  if (!reviews || reviews.length === 0) {
-    document.getElementById('reviews-list').innerHTML = `<p class="empty-state">${t('noReviews')}</p>`;
-    return;
-  }
-
-  const fiveStar = reviews.filter(r => r.rating === 5).length;
-  document.getElementById('rev-five').textContent = fiveStar;
-
-  document.getElementById('reviews-list').innerHTML = reviews.map(r => {
-    const days = Math.floor((Date.now() - new Date(r.created_at)) / 86400000);
-    const when = days === 0 ? 'Today' : days === 1 ? 'Yesterday' : `${days} days ago`;
-    const name = r.client_profiles?.users?.name || 'Client';
-    return `<div class="review-item">
-      <div class="review-header"><span class="review-client">${name}</span><span class="review-rating">★ ${r.rating}</span></div>
-      <div class="review-text">${r.comment || ''}</div>
-      <div class="review-date">${when}</div>
-    </div>`;
-  }).join('');
-}
-
-// ── Save Profile ──────────────────────────────────────────
-async function saveProfile() {
-  const name      = document.getElementById('profile-name').value.trim();
-  const phone     = document.getElementById('profile-phone').value.trim();
-  const specialty = document.getElementById('profile-specialty').value.trim();
-  const rateRaw = document.getElementById('profile-rate').value;
-  const rate = rateRaw && !isNaN(parseFloat(rateRaw)) ? parseFloat(rateRaw) : null;
-  const bio       = document.getElementById('profile-bio').value.trim();
-
-  const btn = document.getElementById('btn-save-profile');
-  btn.textContent = '…'; btn.disabled = true;
-  try {
-    await sb.from('users').update({ name, phone }).eq('id', currentUserId);
-    if (currentCoachProfileId) {
-      await sb.from('coach_profiles').update({ specialty, hourly_rate: rate, bio }).eq('id', currentCoachProfileId);
-    }
-    document.getElementById('sidebar-coach-name').textContent = name;
-    toast(t('savedOk'));
-    const ss = document.getElementById('coach-save-status');
-    if (ss) { ss.textContent = t('savedOk'); ss.style.color = 'var(--ac)'; setTimeout(() => ss.textContent = '', 3000); }
-  } catch (err) {
-    toast('Error: ' + err.message);
-  } finally {
-    btn.textContent = t('saveChanges'); btn.disabled = false;
-  }
-}
-
-// ── Session Notes Generator ──────────────────────────────────────
-function generateNotes() {
-  const client  = document.getElementById('ai-client-name').value.trim();
-  const type    = document.getElementById('ai-session-type').value;
-  const highlights = document.getElementById('ai-highlights').value.trim();
-  if (!client || !highlights) { toast(t('errorMsg')); return; }
-
-  const notes = `SESSION NOTES — ${new Date().toLocaleDateString()}
-
-Client: ${client}
-Session Type: ${type}
-Duration: 60 minutes
-
-PERFORMANCE SUMMARY:
-${highlights}
-
-OBSERVATIONS:
-- Client demonstrated strong commitment throughout the session
-- Form and technique monitored with real-time corrections
-- Energy levels remained consistent
-
-RECOMMENDATIONS:
-- Continue current training intensity
-- Monitor any mentioned discomfort and adjust accordingly
-- Follow-up assessment in 2 weeks
-
-NEXT SESSION FOCUS:
-- Progressive overload on primary lifts
-- Address form weaknesses identified today
-- Add mobility work for injury prevention`;
-
-  document.getElementById('ai-output-text').textContent = notes;
-  document.getElementById('ai-output').classList.remove('hidden');
-  toast('Notes generated!');
-}
 
 // ── Sign Out ──────────────────────────────────────────────
 document.getElementById('btn-logout').addEventListener('click', async () => {
-  await sb.auth.signOut();
-  window.location.href = 'TW Login.html';
+  try {
+    const result = await Trainw.api.run(sb.auth.signOut(), { context: 'coach sign out' });
+    if (result.error) throw result.error;
+    window.location.href = 'login.html';
+  } catch (error) {
+    toast(error.message || t('errorMsg'), 'err');
+  }
 });
 
 // ── Nav ───────────────────────────────────────────────────
@@ -332,6 +210,9 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
     document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     applyTranslations();
+    loadSessions();
+    loadClients();
+    loadReviews();
   });
 });
 document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
@@ -342,11 +223,348 @@ document.getElementById('btn-gen-notes').addEventListener('click', generateNotes
 document.getElementById('btn-save-profile').addEventListener('click', saveProfile);
 
 // ── Toast ─────────────────────────────────────────────────
-function toast(msg) {
-  const el = document.getElementById('toast');
-  document.getElementById('toast-msg').textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 3000);
+function toast(msg, type) {
+  Trainw.ui.showToast(msg, type);
 }
 
-applyTranslations();
+async function loadSessions() {
+  const today = Trainw.dateOnly(new Date());
+  const todayEl = document.getElementById('today-sessions');
+  const allEl = document.getElementById('all-sessions');
+  if (!todayEl || !allEl || !currentUserId) return;
+
+  let query = sb.from('sessions')
+    .select('id, session_date, start_time, duration_minutes, type, status, client_id, session_name, users!sessions_client_id_fkey(name)')
+    .eq('coach_id', currentUserId)
+    .order('session_date', { ascending: true });
+  if (currentGymId) {
+    query = query.eq('gym_id', currentGymId);
+  }
+
+  const result = await Trainw.api.run(query, {
+    context: 'load coach sessions',
+    fallback: [],
+  });
+  const sessions = Array.isArray(result.data) ? result.data : [];
+
+  if (!sessions.length) {
+    todayEl.innerHTML = `<p class="empty-state">${t('noSessions')}</p>`;
+    allEl.innerHTML = `<p class="empty-state">${t('noSessions')}</p>`;
+    Trainw.ui.setText('stat-sessions', '0', '0');
+    if (!document.getElementById('stat-clients')?.textContent?.trim()) {
+      Trainw.ui.setText('stat-clients', '0', '0');
+    }
+    if (result.error) toast(t('errorMsg'), 'err');
+    return;
+  }
+
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(now.getDate() - now.getDay());
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  const weekCount = sessions.filter(session => {
+    const date = new Date(session.session_date);
+    return !Number.isNaN(date.getTime()) && date >= weekStart && date <= weekEnd;
+  }).length;
+  Trainw.ui.setText('stat-sessions', String(weekCount), '0');
+
+  const renderSession = function (session, showDate) {
+    const clientName = Trainw.escapeHtml(session.users?.name || 'Client');
+    const time = Trainw.escapeHtml(session.start_time?.slice(0, 5) || '—');
+    const typeLabel = Trainw.escapeHtml((session.session_name || session.type || 'Training').replace(/_/g, ' '));
+    const dateLabel = showDate
+      ? new Date(session.session_date).toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'short' })
+      : '';
+    const status = Trainw.escapeHtml(session.status || 'confirmed');
+
+    return `<div class="session-item">
+      <div class="session-time-col"><div class="session-time">${time}</div><div class="session-dur">${session.duration_minutes ?? 60}min</div></div>
+      <div><div class="session-title">${clientName}</div><div class="session-meta">${typeLabel}${dateLabel ? ' • ' + Trainw.escapeHtml(dateLabel) : ''}</div></div>
+      <div class="session-status status-${status}">${status}</div>
+    </div>`;
+  };
+
+  const todaySessions = sessions.filter(session => session.session_date === today);
+  const displayToday = todaySessions.length ? todaySessions : sessions.slice(0, 5);
+  todayEl.innerHTML = displayToday.length
+    ? displayToday.map(session => renderSession(session, todaySessions.length === 0)).join('')
+    : `<p class="empty-state">${t('noSessions')}</p>`;
+  allEl.innerHTML = sessions.map(session => renderSession(session, true)).join('');
+
+  if (result.error) {
+    toast(t('errorMsg'), 'err');
+  }
+}
+
+async function loadClients() {
+  const grid = document.getElementById('clients-grid');
+  if (!grid || !currentUserId) return;
+
+  const result = await Trainw.api.run(
+    sb.from('sessions')
+      .select('client_id, users!sessions_client_id_fkey(name)')
+      .eq('coach_id', currentUserId),
+    {
+      context: 'load coach clients',
+      fallback: [],
+    }
+  );
+  const sessionData = Array.isArray(result.data) ? result.data : [];
+
+  if (!sessionData.length) {
+    grid.innerHTML = `<p class="empty-state">${t('noClients')}</p>`;
+    Trainw.ui.setText('stat-clients', '0', '0');
+    if (result.error) toast(t('errorMsg'), 'err');
+    return;
+  }
+
+  const map = new Map();
+  sessionData.forEach(session => {
+    if (!session?.client_id) return;
+    if (!map.has(session.client_id)) {
+      map.set(session.client_id, {
+        name: session.users?.name || 'Client',
+        count: 0,
+      });
+    }
+    map.get(session.client_id).count += 1;
+  });
+
+  const clients = Array.from(map.values());
+  Trainw.ui.setText('stat-clients', String(clients.length), '0');
+  grid.innerHTML = clients.map(client => {
+    const safeName = Trainw.escapeHtml(client.name || 'Client');
+    const initials = Trainw.escapeHtml((client.name || 'C').split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase());
+    return `<div class="person-card">
+      <div class="person-header">
+        <div class="person-avatar">${initials}</div>
+        <div><div class="person-name">${safeName}</div><div class="person-role">Client</div></div>
+      </div>
+      <div class="person-stats">
+        <div class="person-stat-item"><div class="person-stat-value">${client.count}</div><div class="person-stat-label">Sessions</div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  if (result.error) {
+    toast(t('errorMsg'), 'err');
+  }
+}
+
+async function loadReviews() {
+  const el = document.getElementById('reviews-list');
+  if (!el) return;
+
+  const revFive = document.getElementById('rev-five');
+  if (!currentCoachProfileId) {
+    if (revFive) revFive.textContent = '0';
+    el.innerHTML = `<p class="empty-state">${t('noReviews')}</p>`;
+    return;
+  }
+
+  const result = await Trainw.api.run(
+    sb.from('reviews')
+      .select('rating, comment, created_at')
+      .eq('coach_id', currentCoachProfileId)
+      .order('created_at', { ascending: false }),
+    {
+      context: 'load coach reviews',
+      fallback: [],
+      silent: true,
+    }
+  );
+  const reviews = Array.isArray(result.data) ? result.data : [];
+
+  if (!reviews.length) {
+    if (revFive) revFive.textContent = '0';
+    el.innerHTML = `<p class="empty-state">${t('noReviews')}</p>`;
+    return;
+  }
+
+  const fiveStar = reviews.filter(review => Number(review.rating) === 5).length;
+  if (revFive) revFive.textContent = String(fiveStar);
+  el.innerHTML = reviews.map(review => {
+    const createdAt = new Date(review.created_at);
+    const diffDays = Number.isNaN(createdAt.getTime())
+      ? null
+      : Math.floor((Date.now() - createdAt.getTime()) / 86400000);
+    const when = diffDays === null
+      ? '—'
+      : diffDays === 0
+        ? 'Aujourd\'hui'
+        : diffDays === 1
+          ? 'Hier'
+          : `${diffDays} jours`;
+    return `<div class="review-item">
+      <div class="review-header"><span class="review-rating">★ ${Number(review.rating) || 0}</span></div>
+      <div class="review-text">${Trainw.escapeHtml(review.comment || '')}</div>
+      <div class="review-date">${Trainw.escapeHtml(when)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function saveProfile() {
+  const name = document.getElementById('profile-name')?.value.trim() || '';
+  const phone = document.getElementById('profile-phone')?.value.trim() || '';
+  const specialty = document.getElementById('profile-specialty')?.value.trim() || '';
+  const rateRaw = document.getElementById('profile-rate')?.value;
+  const rate = rateRaw && !Number.isNaN(parseFloat(rateRaw)) ? parseFloat(rateRaw) : null;
+  const bio = document.getElementById('profile-bio')?.value.trim() || '';
+  const btn = document.getElementById('btn-save-profile');
+  const status = document.getElementById('coach-save-status');
+
+  if (!name) {
+    toast(t('errorMsg'), 'err');
+    return;
+  }
+
+  Trainw.ui.setBusy(btn, true);
+  if (btn) btn.textContent = '…';
+  if (status) status.textContent = '';
+
+  try {
+    const userResult = await Trainw.api.run(
+      sb.from('users').update({ name, phone: phone || null }).eq('id', currentUserId),
+      {
+        context: 'save coach user profile',
+      }
+    );
+    if (userResult.error) throw userResult.error;
+
+    if (currentCoachProfileId) {
+      const coachResult = await Trainw.api.run(
+        sb.from('coach_profiles').update({
+          specialty: specialty || null,
+          hourly_rate: rate,
+          bio: bio || null,
+        }).eq('id', currentCoachProfileId),
+        {
+          context: 'save coach profile details',
+        }
+      );
+      if (coachResult.error) throw coachResult.error;
+    }
+
+    Trainw.ui.setText('sidebar-coach-name', name, 'Coach');
+    toast(t('savedOk'));
+    if (status) {
+      status.textContent = t('savedOk');
+      status.style.color = 'var(--ac)';
+      window.setTimeout(() => {
+        status.textContent = '';
+      }, 3000);
+    }
+  } catch (error) {
+    toast(error.message || t('errorMsg'), 'err');
+  } finally {
+    if (btn) btn.textContent = t('saveChanges');
+    Trainw.ui.setBusy(btn, false);
+  }
+}
+
+async function generateNotes() {
+  const client = document.getElementById('ai-client-name')?.value.trim() || '';
+  const type = document.getElementById('ai-session-type')?.value || '';
+  const highlights = document.getElementById('ai-highlights')?.value.trim() || '';
+  const btn = document.getElementById('btn-gen-notes');
+  const outEl = document.getElementById('ai-output-text');
+  const outWrap = document.getElementById('ai-output');
+
+  if (!client || !highlights) {
+    toast(t('errorMsg'), 'err');
+    return;
+  }
+
+  Trainw.ui.setBusy(btn, true);
+  if (btn) btn.textContent = '…';
+  if (outEl) outEl.textContent = 'Génération en cours…';
+  if (outWrap) outWrap.classList.remove('hidden');
+
+  try {
+    const data = await Trainw.api.edge(sb, 'session_notes', {
+      clientName: client,
+      sessionType: type,
+      highlights,
+    });
+    if (!data?.result) {
+      throw new Error('Empty notes response');
+    }
+    if (outEl) outEl.textContent = data.result;
+    toast(t('savedOk'));
+  } catch (error) {
+    const fallback = `NOTES DE SÉANCE — ${new Date().toLocaleDateString(locale())}\n\nClient: ${client}\nType: ${type}\n\nPoints clés:\n${highlights}\n\nÀ surveiller lors de la prochaine séance.`;
+    if (outEl) outEl.textContent = fallback;
+    toast(error.message ? `Notes générées (${error.message})` : 'Notes générées (mode local)');
+  } finally {
+    if (btn) btn.textContent = t('aiGenerate');
+    Trainw.ui.setBusy(btn, false);
+  }
+}
+
+async function initPage() {
+  enhanceSidebarNavigation();
+
+  const context = await Trainw.auth.getContext(sb, {
+    expectedRoles: ['coach'],
+    loginHref: 'login.html?role=coach',
+  });
+  if (!context.session || !context.profile) {
+    return;
+  }
+
+  currentUserId = context.session.user.id;
+  currentGymId = context.profile.gym_id || null;
+  document.querySelector('.main-content')?.classList.add('page-loaded');
+
+  Trainw.ui.setText('sidebar-coach-name', context.profile.name || 'Coach', 'Coach');
+  Trainw.ui.setValue('profile-name', context.profile.name || '', '');
+  Trainw.ui.setValue('profile-phone', context.profile.phone || '', '');
+  Trainw.ui.setValue('profile-email', context.session.user.email || context.profile.email || '', '');
+
+  const coachResult = await Trainw.api.run(
+    sb.from('coach_profiles')
+      .select('id, specialty, hourly_rate, bio, rating, total_reviews')
+      .eq('user_id', currentUserId)
+      .maybeSingle(),
+    {
+      context: 'load coach profile',
+      fallback: null,
+    }
+  );
+  const coach = coachResult.data;
+
+  if (coach) {
+    currentCoachProfileId = coach.id;
+    Trainw.ui.setText('stat-rating', coach.rating || '—', '—');
+    Trainw.ui.setText('stat-reviews-count', `${coach.total_reviews || 0} avis`, '0 avis');
+    const statRate = document.getElementById('stat-rate');
+    if (statRate) statRate.innerHTML = `${coach.hourly_rate || '—'}<span class="stat-unit">DT</span>`;
+    Trainw.ui.setValue('profile-specialty', coach.specialty || '', '');
+    Trainw.ui.setValue('profile-rate', coach.hourly_rate || '', '');
+    Trainw.ui.setValue('profile-bio', coach.bio || '', '');
+    Trainw.ui.setText('rev-avg', coach.rating || '—', '—');
+    Trainw.ui.setText('rev-total', coach.total_reviews || 0, '0');
+  } else {
+    currentCoachProfileId = null;
+    Trainw.ui.setText('rev-avg', '—', '—');
+    Trainw.ui.setText('rev-total', '0', '0');
+    Trainw.ui.setText('rev-five', '0', '0');
+  }
+
+  applyTranslations();
+  await Promise.all([loadSessions(), loadClients(), loadReviews()]);
+
+  if (!window.__trainwCoachAuthBound) {
+    window.__trainwCoachAuthBound = true;
+    Trainw.auth.watchAuth(sb, {
+      onSignedOut: function () {
+        window.location.href = 'login.html?role=coach';
+      },
+    });
+  }
+}
+
+initPage();
+

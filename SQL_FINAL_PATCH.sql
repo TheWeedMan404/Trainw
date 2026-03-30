@@ -109,8 +109,36 @@ CREATE INDEX IF NOT EXISTS idx_sessions_client_id        ON public.sessions(clie
 CREATE INDEX IF NOT EXISTS idx_coach_profiles_user_id    ON public.coach_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_client_profiles_user_id   ON public.client_profiles(user_id);
 
--- Step 6: Reload
+-- Step 6: Missing RLS for payments and reviews
+ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "payments_select" ON public.payments;
+DROP POLICY IF EXISTS "payments_insert" ON public.payments;
+DROP POLICY IF EXISTS "payments_update" ON public.payments;
+CREATE POLICY "payments_select" ON public.payments
+  FOR SELECT USING (gym_id = get_my_gym_id() OR user_id = auth.uid());
+CREATE POLICY "payments_insert" ON public.payments
+  FOR INSERT WITH CHECK (gym_id = get_my_gym_id() OR get_my_role() IN ('gym_owner', 'admin'));
+CREATE POLICY "payments_update" ON public.payments
+  FOR UPDATE USING (gym_id = get_my_gym_id());
+
+ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "reviews_select" ON public.reviews;
+DROP POLICY IF EXISTS "reviews_insert" ON public.reviews;
+CREATE POLICY "reviews_select" ON public.reviews
+  FOR SELECT USING (
+    gym_id = get_my_gym_id()
+    OR client_id = auth.uid()
+    OR coach_id IN (
+      SELECT id
+      FROM public.coach_profiles
+      WHERE user_id = auth.uid()
+    )
+  );
+CREATE POLICY "reviews_insert" ON public.reviews
+  FOR INSERT WITH CHECK (client_id = auth.uid());
+
+-- Step 7: Reload
 NOTIFY pgrst, 'reload schema';
 
--- Step 7: Verify
+-- Step 8: Verify
 SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;
