@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>Trainw - Acces</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="tw-role.css?v=20260403-1">
+  <link rel="stylesheet" href="trainw-enhancements.css">
+  <link rel="stylesheet" href="trainw-v14.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="noise"></div>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <div class="topbar">
+    <a href="/" class="back-btn">&larr; <span data-i18n="backBtn">Retour a l'accueil</span></a>
+    <div class="lang-toggle">
+      <button class="lang-btn" data-lang="en">EN</button>
+      <button class="lang-btn active" data-lang="fr">FR</button>
+      <button class="lang-btn" data-lang="ar">AR</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="logo-text">TRAINW</div>
+    <h1 class="card-title" data-i18n="cardTitle">Bienvenue</h1>
+    <p class="card-sub" data-i18n="cardSub">Choisissez votre type de compte pour continuer.</p>
+    <div class="role-label" data-i18n="roleLabel">Selectionnez votre role</div>
+
+    <div class="role-grid">
+      <a href="/tw-login.html?role=gym_owner" class="role-card">
+        <div class="role-icon">GY</div>
+        <div class="role-body">
+          <div class="role-title" data-i18n="gymTitle">Proprietaire de salle</div>
+          <div class="role-desc" data-i18n="gymDesc">Gerez votre salle, vos coachs, vos classes et vos revenus.</div>
+        </div>
+        <div class="role-arrow">&rarr;</div>
+      </a>
+
+      <a href="/tw-login.html?role=coach" class="role-card">
+        <div class="role-icon">CO</div>
+        <div class="role-body">
+          <div class="role-title" data-i18n="coachTitle">Coach</div>
+          <div class="role-desc" data-i18n="coachDesc">Suivez vos clients, vos programmes et vos seances.</div>
+        </div>
+        <div class="role-arrow">&rarr;</div>
+      </a>
+
+      <a href="/tw-login.html?role=client" class="role-card">
+        <div class="role-icon">CL</div>
+        <div class="role-body">
+          <div class="role-title" data-i18n="clientTitle">Client</div>
+          <div class="role-desc" data-i18n="clientDesc">Suivez votre progression, vos seances et votre programme.</div>
+        </div>
+        <div class="role-arrow">&rarr;</div>
+      </a>
+    </div>
+
+    <p class="footer-txt">
+      <span data-i18n="newHere">Nouveau sur Trainw ?</span>
+      <a href="/" data-i18n="learnMore">En savoir plus</a>
+    </p>
+  </div>
+
+  <script>
+    window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
+    window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
+  </script>
+  <script src="trainw-tenant-utils.js?v=20260412-1"></script>
+  <script src="trainw-core.js?v=20260403-1"></script>
+  <script src="tw-role.js?v=20260403-1"></script>
+</body>
+</html>

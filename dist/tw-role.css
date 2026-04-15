@@ -1,0 +1,242 @@
+:root {
+  --ac: #C8F135;
+  --bg: #060606;
+  --s1: #0d0d0d;
+  --s2: #131313;
+  --bd: #1f1f1f;
+  --txt: #efefef;
+  --mt: #555;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'DM Sans', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--txt);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 88px 20px;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: .1;
+  z-index: 0;
+  pointer-events: none;
+  animation: float 20s ease-in-out infinite;
+}
+
+.orb-1 { width: 500px; height: 500px; background: var(--ac); top: -250px; left: -250px; }
+.orb-2 { width: 400px; height: 400px; background: #3d8eff; bottom: -200px; right: -200px; animation-delay: 7s; }
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(.9); }
+}
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: rgba(6, 6, 6, .92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--bd);
+}
+
+.back-btn {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 9px 16px;
+  color: var(--mt);
+  text-decoration: none;
+  font-size: 13px;
+  transition: .2s;
+}
+
+.back-btn:hover { border-color: var(--ac); color: var(--ac); }
+
+.lang-toggle {
+  display: flex;
+  gap: 3px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.lang-btn {
+  padding: 6px 14px;
+  background: transparent;
+  border: none;
+  color: var(--mt);
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: .2s;
+}
+
+.lang-btn.active { background: var(--ac); color: var(--bg); font-weight: 600; }
+
+.card {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 460px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 18px;
+  padding: 40px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .6);
+  animation: fadeUp .5s ease both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.logo-text {
+  font-family: 'Bebas Neue', Impact, serif;
+  font-size: 36px;
+  color: var(--ac);
+  letter-spacing: 3px;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.card-title {
+  font-family: 'Bebas Neue', Impact, serif;
+  font-size: 28px;
+  color: var(--txt);
+  letter-spacing: 2px;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.card-sub {
+  text-align: center;
+  color: var(--mt);
+  font-size: 13px;
+  margin-bottom: 28px;
+}
+
+.role-label {
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--mt);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 14px;
+}
+
+.role-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.role-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--s2);
+  border: 2px solid var(--bd);
+  border-radius: 12px;
+  padding: 20px;
+  text-decoration: none;
+  transition: all .25s;
+}
+
+.role-card:hover {
+  border-color: var(--ac);
+  background: var(--s1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(200, 241, 53, .1);
+}
+
+.role-icon {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(200, 241, 53, .08);
+  border-radius: 10px;
+  color: var(--ac);
+  font-family: 'DM Mono', 'Courier New', monospace;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.role-body { flex: 1; }
+
+.role-title {
+  font-family: 'Bebas Neue', Impact, serif;
+  font-size: 22px;
+  color: var(--txt);
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+}
+
+.role-desc {
+  font-size: 12px;
+  color: var(--mt);
+  line-height: 1.5;
+}
+
+.role-arrow {
+  font-size: 20px;
+  color: var(--mt);
+  transition: all .2s;
+}
+
+.role-card:hover .role-arrow {
+  color: var(--ac);
+  transform: translateX(4px);
+}
+
+.footer-txt {
+  text-align: center;
+  font-size: 13px;
+  color: var(--mt);
+}
+
+.footer-txt a {
+  color: var(--ac);
+  text-decoration: none;
+  margin-left: 4px;
+}
+
+.footer-txt a:hover { opacity: .8; }
+
+@media (max-width: 640px) {
+  .topbar { padding: 12px 16px; }
+  .card { padding: 28px 22px; }
+  .role-card { gap: 14px; padding: 16px; }
+  .role-icon { width: 48px; height: 48px; }
+}

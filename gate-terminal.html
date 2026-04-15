@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>TRAINW Gate Terminal</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="gate-terminal.css">
+</head>
+<body>
+  <div class="terminal-shell">
+    <header class="terminal-topbar">
+      <div class="terminal-gym">
+        <div class="terminal-eyebrow">TRAINW Gate</div>
+        <h1 id="terminal-gym-name">Salle</h1>
+      </div>
+      <div class="terminal-status" id="terminal-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Connexion...</span>
+      </div>
+      <div class="terminal-clock" id="terminal-clock">00:00</div>
+    </header>
+
+    <main class="terminal-layout">
+      <section class="terminal-main">
+        <div class="result-card state-idle" id="result-card">
+          <div class="result-mode" id="result-mode-label">Mode QR</div>
+          <div class="result-icon" id="result-icon">SCAN</div>
+          <div class="result-title" id="result-title">Présentez un QR code ou un badge</div>
+          <div class="result-subtitle" id="result-subtitle">Le terminal est prêt à autoriser l'accès.</div>
+          <div class="result-meta" id="result-meta">En attente d'un passage...</div>
+        </div>
+
+        <div class="qr-panel" id="qr-panel">
+          <div class="qr-frame" id="qr-reader"></div>
+          <p class="qr-hint">Scannez le QR d'entrée depuis l'application client.</p>
+        </div>
+      </section>
+
+      <aside class="terminal-sidebar">
+        <div class="sidebar-card">
+          <div class="sidebar-title">Accès récents</div>
+          <div class="feed-list" id="access-feed"></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="terminal-bottombar">
+      <button class="mode-btn active" type="button" data-mode="qr">QR</button>
+      <button class="mode-btn" type="button" data-mode="rfid_card">Card</button>
+      <button class="mode-btn" type="button" data-mode="fingerprint">Fingerprint</button>
+      <button class="mode-btn" type="button" data-mode="face">Face</button>
+      <button class="mode-btn admin-btn" type="button" data-mode="admin">Admin</button>
+    </footer>
+  </div>
+
+  <div class="admin-modal hidden" id="admin-modal" aria-hidden="true">
+    <div class="admin-dialog">
+      <div class="admin-title">Code administrateur</div>
+      <div class="admin-display" id="admin-display">••••</div>
+      <div class="admin-error" id="admin-error"></div>
+      <div class="admin-pad">
+        <button type="button" data-key="1">1</button>
+        <button type="button" data-key="2">2</button>
+        <button type="button" data-key="3">3</button>
+        <button type="button" data-key="4">4</button>
+        <button type="button" data-key="5">5</button>
+        <button type="button" data-key="6">6</button>
+        <button type="button" data-key="7">7</button>
+        <button type="button" data-key="8">8</button>
+        <button type="button" data-key="9">9</button>
+        <button type="button" data-key="clear">C</button>
+        <button type="button" data-key="0">0</button>
+        <button type="button" data-key="enter">OK</button>
+      </div>
+      <button class="admin-close" type="button" id="admin-close">Fermer</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
+  <script>
+    window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
+    window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
+  </script>
+  <script src="trainw-core.js"></script>
+  <script src="gate-terminal.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "trainw-v13",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node env-config.js",
+    "dev": "node dev-server.js"
+  }
+}

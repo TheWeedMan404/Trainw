@@ -1,5 +1,24 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/role", "destination": "/tw-role.html" },
+    { "source": "/login", "destination": "/tw-login.html" },
+    { "source": "/dashboard/gym", "destination": "/tw-gym-acc.html" },
+    { "source": "/dashboard/coach", "destination": "/tw-coach-acc.html" },
+    { "source": "/dashboard/client", "destination": "/tw-client-acc.html" },
+    { "source": "/dashboard", "destination": "/tw-gym-acc.html" },
+    { "source": "/gate", "destination": "/gate-terminal.html" },
+    { "source": "/coach", "destination": "/tw-coach-acc.html" },
+    { "source": "/client", "destination": "/tw-client-acc.html" },
+    { "source": "/gate-terminal.html", "destination": "/gate-terminal.html" },
+    { "source": "/tw-gym-acc.html", "destination": "/tw-gym-acc.html" },
+    { "source": "/tw-coach-acc.html", "destination": "/tw-coach-acc.html" },
+    { "source": "/tw-client-acc.html", "destination": "/tw-client-acc.html" },
+    { "source": "/tw-login.html", "destination": "/tw-login.html" },
+    { "source": "/tw-role.html", "destination": "/tw-role.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

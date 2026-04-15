@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trainw - Client Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="tw-client-acc.css?v=20260403-1">
+  <link rel="stylesheet" href="trainw-enhancements.css">
+  <link rel="stylesheet" href="trainw-v14.css">
+  <link rel="stylesheet" href="tw-client-acc-v14.css?v=20260407-1">
+</head>
+<body>
+<div class="app-container account-shell client-shell">
+  <aside class="sidebar">
+    <div class="logo-section">
+      <div class="logo-text">TRAINW</div>
+      <p class="sidebar-kicker">Client workspace</p>
+    </div>
+
+    <div class="client-info account-info-card">
+      <div class="client-name" id="sidebar-client-name">-</div>
+      <div class="client-label" data-i18n="roleLabel">Client</div>
+      <div class="sidebar-meta-copy">Plan, bookings, progress and coach access in one place.</div>
+    </div>
+
+    <nav>
+      <div class="nav-section-label">Workspace</div>
+      <div class="nav-item active" data-page="dashboard">
+        <span class="nav-icon"><i data-lucide="layout-dashboard"></i></span>
+        <span class="nav-label" data-i18n="navDash">Dashboard</span>
+      </div>
+      <div class="nav-item" data-page="program">
+        <span class="nav-icon"><i data-lucide="calendar-plus"></i></span>
+        <span class="nav-label" data-i18n="navProgram">Booking Center</span>
+      </div>
+      <div class="nav-item" data-page="weight">
+        <span class="nav-icon"><i data-lucide="activity"></i></span>
+        <span class="nav-label" data-i18n="navWeight">Progress Hub</span>
+      </div>
+      <div class="nav-item" data-page="goals">
+        <span class="nav-icon"><i data-lucide="target"></i></span>
+        <span class="nav-label" data-i18n="navGoals">Goals</span>
+      </div>
+      <div class="nav-item" data-page="checkin">
+        <span class="nav-icon"><i data-lucide="scan-line"></i></span>
+        <span class="nav-label" data-i18n="navCheckin">Check-in</span>
+      </div>
+      <div class="nav-section-label">Communication</div>
+      <div class="nav-item" data-page="messages">
+        <span class="nav-icon"><i data-lucide="message-square"></i></span>
+        <span class="nav-label" data-i18n="navMessages">Messages</span>
+        <span class="nav-badge hidden" id="client-msg-badge">0</span>
+      </div>
+      <div class="nav-item" data-page="profile">
+        <span class="nav-icon"><i data-lucide="user-round"></i></span>
+        <span class="nav-label" data-i18n="navProfile">Profile</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-support-card">
+      <div class="sidebar-support-title">Fast access</div>
+      <button class="btn-secondary sidebar-mini-btn" type="button" data-open-page="program">Book session</button>
+      <button class="btn-secondary sidebar-mini-btn" type="button" data-open-page="messages">Open chat</button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="lang-toggle">
+        <button class="lang-btn" data-lang="en">EN</button>
+        <button class="lang-btn active" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="ar">AR</button>
+      </div>
+      <button class="logout-btn" id="btn-logout">&larr; <span data-i18n="signOut">Deconnexion</span></button>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <section id="dashboard-page" class="page">
+      <div class="hero-panel">
+        <div class="hero-copy">
+          <div class="hero-eyebrow">Client control panel</div>
+          <h1 class="page-title" data-i18n="navDash">Dashboard</h1>
+          <p class="page-subtitle" data-i18n="dashSub">Your training, bookings, and coach communication at a glance.</p>
+          <div class="hero-actions">
+            <button class="btn-primary" id="btn-dashboard-book" type="button" data-open-page="program">Quick booking</button>
+            <button class="btn-secondary" id="btn-dashboard-message" type="button" data-open-page="messages">Message coach</button>
+          </div>
+        </div>
+        <div class="hero-aside">
+          <div class="hero-highlight-card">
+            <span class="hero-highlight-label">Next focus</span>
+            <div class="hero-highlight-value" id="dashboard-next-focus">Loading...</div>
+            <div class="hero-highlight-meta" id="dashboard-next-focus-meta">Preparing your schedule.</div>
+          </div>
+          <div class="hero-highlight-card">
+            <span class="hero-highlight-label">Membership</span>
+            <div class="hero-highlight-value" id="dashboard-membership-status">-</div>
+            <div class="hero-highlight-meta" id="dashboard-membership-copy">Syncing your account.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statCheckins">Check-ins this month</div>
+          <div class="stat-value" id="stat-checkins">-</div>
+          <div class="stat-change" data-i18n="thisMonth">this month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statSessions">Sessions this week</div>
+          <div class="stat-value" id="stat-sessions">-</div>
+          <div class="stat-change" data-i18n="thisWeek">this week</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statStreak">Active streak</div>
+          <div class="stat-value" id="stat-streak">-</div>
+          <div class="stat-change" data-i18n="days">days</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statExpiry">Membership end</div>
+          <div class="stat-value" id="stat-expiry">-</div>
+          <div class="stat-change" id="stat-expiry-sub">-</div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid dashboard-grid-main">
+        <div class="card span-two">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Upcoming sessions</h2>
+              <p class="card-subtitle">Your booked coaching timeline and next actions.</p>
+            </div>
+            <button class="btn-secondary" type="button" data-open-page="program">Open booking center</button>
+          </div>
+          <div id="dashboard-upcoming-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Quick booking</h2>
+              <p class="card-subtitle">Jump back into scheduling without leaving the dashboard.</p>
+            </div>
+          </div>
+          <div id="dashboard-booking-card" class="dashboard-summary-card">
+            <p class="empty-state">Preparing your booking summary...</p>
+          </div>
+          <button class="btn-primary full-width-btn" type="button" data-open-page="program">Book now</button>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Recent activity</h2>
+              <p class="card-subtitle">Latest workouts, check-ins, messages, and sessions.</p>
+            </div>
+          </div>
+          <div id="dashboard-recent-activity"><p class="empty-state">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Goals and progress</h2>
+              <p class="card-subtitle">Where you are now and what to focus on next.</p>
+            </div>
+          </div>
+          <div id="dashboard-progress-focus"><p class="empty-state">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Today's training</h2>
+              <p class="card-subtitle">Start the active plan your coach prepared for today.</p>
+            </div>
+          </div>
+          <div id="dashboard-today-program"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+          <button class="btn-primary full-width-btn" id="btn-start-workout" type="button" data-i18n="startWorkout">Start workout</button>
+        </div>
+      </div>
+
+      <div class="card gate-card">
+        <div class="card-header gate-card-header">
+          <div>
+            <h2 class="card-title" data-i18n="gateAccessTitle">Gym Access</h2>
+            <p class="gate-card-sub" data-i18n="gateAccessSub">Show this rotating QR at the entrance for instant access.</p>
+          </div>
+          <span class="gate-status-pill" data-i18n="gateAccessLive">Live QR</span>
+        </div>
+        <div class="gate-qr-shell">
+          <div id="gate-qr-container" aria-live="polite"></div>
+        </div>
+        <span class="gate-qr-countdown" id="gate-qr-countdown">Preparing...</span>
+      </div>
+    </section>
+
+    <section id="program-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navProgram">Booking Center</h1>
+        <p class="page-subtitle" data-i18n="programSub">Book coaching sessions and keep your active plan close by.</p>
+      </div>
+
+      <div class="program-shell-grid">
+        <div class="card span-two">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="bookingTitle">Book a coach</h2>
+              <p class="card-subtitle">Select a coach, choose a date, and confirm a slot with a clear summary.</p>
+            </div>
+          </div>
+
+          <div class="booking-toolbar">
+            <div class="form-group">
+              <label class="form-label" data-i18n="searchCoachLabel">Search coaches</label>
+              <input class="form-input" id="booking-coach-search" type="text" data-i18n-ph="searchCoachPlaceholder">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="bookingDateLabel">Date</label>
+              <input class="form-input" id="booking-date-input" type="date">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="bookingNotesLabel">Notes</label>
+              <input class="form-input" id="booking-notes-input" type="text" data-i18n-ph="bookingNotesPlaceholder">
+            </div>
+          </div>
+
+          <div class="booking-layout">
+            <div class="booking-column">
+              <div class="booking-panel-head">
+                <h3>Coach cards</h3>
+                <p>Approved coaches available to you.</p>
+              </div>
+              <div id="booking-coach-list" class="coach-pick-grid">
+                <p class="empty-state" data-i18n="loading">Loading...</p>
+              </div>
+            </div>
+
+            <div class="booking-column">
+              <div class="booking-panel-head">
+                <h3>Calendar view</h3>
+                <p>Pick the date you want to book around.</p>
+              </div>
+              <div id="booking-calendar-grid" class="booking-calendar-grid">
+                <p class="empty-state">Select a coach to load the calendar.</p>
+              </div>
+              <div id="booking-day-sessions" class="booking-day-sessions">
+                <p class="empty-state">Your sessions for the selected date will appear here.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="booking-detail-grid">
+            <div class="booking-detail-card" id="booking-selected-coach">
+              <p class="empty-state" data-i18n="chooseCoachFirst">Choose a coach to see available slots.</p>
+            </div>
+            <div class="booking-detail-card">
+              <div class="card-header booking-slot-head">
+                <div>
+                  <h3 class="card-title" data-i18n="slotTitle">Available slots</h3>
+                  <p class="card-subtitle">Session cards update for the selected day and coach.</p>
+                </div>
+              </div>
+              <div id="booking-slot-list" class="slots-grid">
+                <p class="empty-state" data-i18n="chooseDatePrompt">Select a date to display bookable slots.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="booking-confirm-wrap">
+            <div id="booking-confirmation-card" class="booking-confirmation-card">
+              <p class="empty-state">Choose a coach, date, and slot to review your booking.</p>
+            </div>
+            <button class="btn-primary" id="btn-book-session" type="button" data-i18n="bookSessionCta">Confirm booking</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Plan snapshot</h2>
+              <p class="card-subtitle">Your active program stays visible while you schedule.</p>
+            </div>
+          </div>
+          <div id="program-accordion"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Recent workout logs</h2>
+              <p class="card-subtitle">Keep your recent outputs visible before you book again.</p>
+            </div>
+          </div>
+          <div id="program-log-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card span-three">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="pastSessionsTitle">History and reviews</h2>
+              <p class="card-subtitle">Past sessions, confirmations, cancellations, and post-session feedback.</p>
+            </div>
+          </div>
+          <div id="client-past-sessions-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="weight-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navWeight">Progress Hub</h1>
+        <p class="page-subtitle" data-i18n="weightSub">Track body metrics, target progress, and recent updates in one place.</p>
+      </div>
+
+      <div class="summary-chip-grid" id="weight-summary-grid">
+        <div class="summary-chip">
+          <span class="summary-chip-label">Start</span>
+          <strong id="weight-metric-start">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Current</span>
+          <strong id="weight-metric-current">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Change</span>
+          <strong id="weight-metric-change">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Target</span>
+          <strong id="weight-metric-target">-</strong>
+        </div>
+      </div>
+
+      <div class="progress-layout">
+        <div class="card span-two">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="weightEvolution">Evolution</h2>
+              <p class="card-subtitle">Weight and body-fat trends over time.</p>
+            </div>
+            <label class="switch-row">
+              <input type="checkbox" id="toggle-bodyfat">
+              <span data-i18n="showBodyFat">Show body fat</span>
+            </label>
+          </div>
+          <div class="chart-shell"><canvas id="weight-progress-chart"></canvas></div>
+          <div class="goal-progress-wrap">
+            <div class="goal-progress-bar"><div id="goal-progress-fill"></div></div>
+            <div id="goal-progress-copy">-</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="addMeasurement">Add measurement</h2>
+              <p class="card-subtitle">Log the latest data point that should count toward your trend.</p>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="weightKg">Weight (kg)</label>
+              <input class="form-input" id="weight-input" type="number" step="0.1">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="bodyFatPct">Body fat %</label>
+              <input class="form-input" id="bodyfat-input" type="number" step="0.1">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="dateLabel">Date</label>
+              <input class="form-input" id="weight-date-input" type="date">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="notesLabel">Notes</label>
+              <input class="form-input" id="weight-notes-input" type="text">
+            </div>
+          </div>
+          <button class="btn-primary full-width-btn" id="btn-save-weight" type="button" data-i18n="saveMeasurement">Save measurement</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title" data-i18n="measurementHistory">History</h2>
+            <p class="card-subtitle">Every measurement that feeds your visible progress curve.</p>
+          </div>
+        </div>
+        <div id="weight-table-wrap"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+      </div>
+    </section>
+
+    <section id="goals-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navGoals">Goals</h1>
+        <p class="page-subtitle" data-i18n="goalsSub">Keep a clear target, review the current plan, and update the finish line when needed.</p>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Current goal</h2>
+              <p class="card-subtitle">Live snapshot of the latest target saved for your account.</p>
+            </div>
+          </div>
+          <div id="goal-card-view"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="editGoal">Edit goal</h2>
+              <p class="card-subtitle">Adjust the target type, date, and notes without touching past records.</p>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="goalType">Type</label>
+              <select class="form-input" id="goal-type-input">
+                <option value="fat_loss">Fat loss</option>
+                <option value="muscle_gain">Muscle gain</option>
+                <option value="endurance">Endurance</option>
+                <option value="general">General</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="targetWeight">Target weight (kg)</label>
+              <input class="form-input" id="goal-target-weight" type="number" step="0.1">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="targetDate">Target date</label>
+              <input class="form-input" id="goal-date-input" type="date">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="notesLabel">Notes</label>
+              <input class="form-input" id="goal-notes-input" type="text">
+            </div>
+          </div>
+          <button class="btn-primary full-width-btn" id="btn-save-goal" type="button" data-i18n="saveGoal">Save goal</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="checkin-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navCheckin">Check-in</h1>
+        <p class="page-subtitle" data-i18n="checkinSub">Mark your visit, review consistency, and keep your routine visible.</p>
+      </div>
+
+      <div class="split-grid split-grid-tight">
+        <div class="card center-card">
+          <div class="checkin-action-copy">
+            <h2 class="card-title">Check in for today</h2>
+            <p class="card-subtitle">One tap updates your attendance and activity streak.</p>
+          </div>
+          <button class="btn-primary large-btn" id="btn-client-checkin" type="button" data-i18n="tapCheckin">Check in now</button>
+          <div id="client-checkin-feedback" class="checkin-feedback-copy"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="heatmapTitle">Monthly heatmap</h2>
+              <p class="card-subtitle">A fast visual on how consistent the last five weeks have been.</p>
+            </div>
+          </div>
+          <div id="client-checkin-heatmap" class="checkin-heatmap"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title" data-i18n="lastCheckins">Recent check-ins</h2>
+            <p class="card-subtitle">Your latest attendance records and check-in method.</p>
+          </div>
+        </div>
+        <div id="client-checkin-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+      </div>
+    </section>
+
+    <section id="messages-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navMessages">Messages</h1>
+        <p class="page-subtitle" data-i18n="messagesSub">Keep one clear conversation flow with your coach and the gym team.</p>
+      </div>
+
+      <div class="msg-layout">
+        <div class="msg-sidebar">
+          <div class="msg-sidebar-head">
+            <h2 class="card-title">Conversations</h2>
+            <p class="card-subtitle">Your latest coach and gym messages.</p>
+          </div>
+          <div id="client-thread-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="msg-conversation">
+          <div id="client-conv-empty" class="msg-empty-state">
+            <div class="msg-empty-icon"><i data-lucide="message-circle-more"></i></div>
+            <div class="msg-empty-title" data-i18n="selectThread">Choose a conversation</div>
+            <div class="msg-empty-copy">Open a thread to continue the discussion.</div>
+          </div>
+          <div id="client-conv-wrap" class="hidden conversation-shell">
+            <div class="msg-conv-header" id="client-conv-header"></div>
+            <div class="msg-conv-body" id="client-conv-messages"></div>
+            <div class="msg-conv-footer">
+              <textarea class="msg-textarea" id="client-msg-input" rows="1" data-i18n-ph="typeMessage"></textarea>
+              <button class="msg-send-btn" id="btn-send-client-message" type="button">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="profile-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navProfile">Profile</h1>
+        <p class="page-subtitle" data-i18n="profileSub">Personal details, goals, progress metrics, and plan information in one control panel.</p>
+      </div>
+
+      <div class="profile-layout">
+        <div class="card profile-form-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Personal info</h2>
+              <p class="card-subtitle">Manage the core account details attached to your client record.</p>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="nameLabel">Name</label>
+              <input class="form-input" id="profile-name" type="text">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="phoneLabel">Phone</label>
+              <input class="form-input" id="profile-phone" type="text">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="emailLabel">Email</label>
+              <input class="form-input" id="profile-email" type="email" disabled>
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="membershipLabel">Membership</label>
+              <input class="form-input" id="profile-membership" type="text" disabled>
+            </div>
+          </div>
+          <div class="profile-action-row">
+            <button class="btn-primary" id="btn-save-profile" type="button" data-i18n="saveChanges">Save</button>
+            <button class="btn-secondary" id="btn-reset-password" type="button" data-i18n="resetPassword">Reset password</button>
+          </div>
+        </div>
+
+        <div class="profile-summary-grid">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Coach</h2>
+                <p class="card-subtitle">Primary coach linked to your current journey.</p>
+              </div>
+            </div>
+            <div id="profile-coach-card"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Goal snapshot</h2>
+                <p class="card-subtitle">Main target, date, and the current direction of travel.</p>
+              </div>
+            </div>
+            <div id="profile-goal-card"><p class="empty-state">Loading...</p></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Progress metrics</h2>
+                <p class="card-subtitle">Current performance and attendance indicators.</p>
+              </div>
+            </div>
+            <div id="profile-progress-metrics"><p class="empty-state">Loading...</p></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h2 class="card-title">Plan information</h2>
+                <p class="card-subtitle">Latest active plan, cadence, and workout volume.</p>
+              </div>
+            </div>
+            <div id="profile-plan-card"><p class="empty-state">Loading...</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="trainw-panel-backdrop hidden" id="active-workout-backdrop"></div>
+<section class="active-workout-overlay hidden" id="active-workout-overlay">
+  <div class="active-workout-top">
+    <div class="active-workout-step" id="workout-step-copy">-</div>
+    <button class="tw-panel-close" type="button" id="btn-close-workout">&times;</button>
+  </div>
+  <div class="active-workout-body">
+    <div class="active-workout-exercise" id="workout-exercise-name">-</div>
+    <div class="active-workout-target" id="workout-exercise-target">-</div>
+    <div class="rest-timer" id="workout-rest-timer">00</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" data-i18n="repsDone">Reps done</label>
+        <input class="form-input" id="workout-reps-input" type="number">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="weightUsed">Weight used</label>
+        <input class="form-input" id="workout-weight-input" type="number" step="0.5">
+      </div>
+    </div>
+    <button class="btn-primary full-width-btn" id="btn-complete-set" type="button" data-i18n="completeSet">Complete set</button>
+    <div id="workout-summary" class="hidden">
+      <div class="card-title" data-i18n="workoutSummary">Summary</div>
+      <div id="workout-summary-copy"></div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="effortLabel">Perceived effort</label>
+        <input class="form-input" id="workout-effort-input" type="range" min="1" max="10" value="6">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="notesLabel">Notes</label>
+        <textarea class="form-input" id="workout-notes-input" rows="3"></textarea>
+      </div>
+      <button class="btn-primary full-width-btn" id="btn-finish-workout" type="button" data-i18n="finishWorkout">Finish</button>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  window.__TRAINW_URL__ = "https://bibqumevndfykmkssslb.supabase.co";
+  window.__TRAINW_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM";
+</script>
+<script src="trainw-core.js?v=20260403-1"></script>
+<script src="trainw-translations.js"></script>
+<script src="tw-client-acc.js?v=20260407-1"></script>
+</body>
+</html>

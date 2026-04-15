@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trainw - Coach Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="tw-coach-acc.css?v=20260403-1">
+  <link rel="stylesheet" href="trainw-enhancements.css">
+  <link rel="stylesheet" href="trainw-v14.css">
+  <link rel="stylesheet" href="tw-coach-acc-v14.css?v=20260407-1">
+</head>
+<body>
+<div class="app-container account-shell coach-shell">
+  <aside class="sidebar">
+    <div class="logo-section">
+      <div class="logo-text">TRAINW</div>
+      <p class="sidebar-kicker">Coach workspace</p>
+    </div>
+
+    <div class="coach-info account-info-card">
+      <div class="coach-name" id="sidebar-coach-name">-</div>
+      <div class="coach-label" data-i18n="roleLabel">Coach</div>
+      <div class="sidebar-meta-copy">Clients, schedule, progress data, and conversation flow in one console.</div>
+    </div>
+
+    <nav>
+      <div class="nav-section-label">Overview</div>
+      <div class="nav-item active" data-page="dashboard">
+        <span class="nav-icon"><i data-lucide="layout-dashboard"></i></span>
+        <span class="nav-label" data-i18n="navDash">Dashboard</span>
+      </div>
+      <div class="nav-item" data-page="clients">
+        <span class="nav-icon"><i data-lucide="users"></i></span>
+        <span class="nav-label" data-i18n="navClients">Client Ops</span>
+      </div>
+      <div class="nav-item" data-page="programs">
+        <span class="nav-icon"><i data-lucide="clipboard-list"></i></span>
+        <span class="nav-label" data-i18n="navPrograms">Programs</span>
+      </div>
+      <div class="nav-item" data-page="weight">
+        <span class="nav-icon"><i data-lucide="activity"></i></span>
+        <span class="nav-label" data-i18n="navWeight">Progress Tracking</span>
+      </div>
+      <div class="nav-item" data-page="sessions">
+        <span class="nav-icon"><i data-lucide="calendar-days"></i></span>
+        <span class="nav-label" data-i18n="navSessions">Schedule</span>
+      </div>
+      <div class="nav-section-label">Communication</div>
+      <div class="nav-item" data-page="messages">
+        <span class="nav-icon"><i data-lucide="message-square"></i></span>
+        <span class="nav-label" data-i18n="navMessages">Messages</span>
+        <span class="nav-badge hidden" id="coach-msg-badge">0</span>
+      </div>
+      <div class="nav-item" data-page="profile">
+        <span class="nav-icon"><i data-lucide="user-round"></i></span>
+        <span class="nav-label" data-i18n="navProfile">Profile</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-support-card">
+      <div class="sidebar-support-title">Quick actions</div>
+      <button class="btn-secondary sidebar-mini-btn" type="button" data-open-page="sessions">Open schedule</button>
+      <button class="btn-secondary sidebar-mini-btn" type="button" data-open-page="clients">Client list</button>
+      <button class="btn-secondary sidebar-mini-btn" type="button" data-open-page="messages">Inbox</button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="lang-toggle">
+        <button class="lang-btn" data-lang="en">EN</button>
+        <button class="lang-btn active" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="ar">AR</button>
+      </div>
+      <button class="logout-btn" id="btn-logout">&larr; <span data-i18n="signOut">Deconnexion</span></button>
+    </div>
+  </aside>
+
+  <main class="main-content">
+    <section id="dashboard-page" class="page">
+      <div class="hero-panel">
+        <div class="hero-copy">
+          <div class="hero-eyebrow">Coach control panel</div>
+          <h1 class="page-title" data-i18n="navDash">Dashboard</h1>
+          <p class="page-subtitle" data-i18n="dashSub">Clients, sessions, and actions that need attention today.</p>
+          <div class="hero-actions">
+            <button class="btn-primary" type="button" data-open-page="sessions">Open schedule</button>
+            <button class="btn-secondary" type="button" data-open-page="clients">Client management</button>
+            <button class="btn-secondary" type="button" data-open-page="messages">Messages</button>
+          </div>
+        </div>
+        <div class="hero-aside">
+          <div class="hero-highlight-card">
+            <span class="hero-highlight-label">Focus today</span>
+            <div class="hero-highlight-value" id="coach-hero-focus">Loading...</div>
+            <div class="hero-highlight-meta" id="coach-hero-focus-meta">Preparing today's agenda.</div>
+          </div>
+          <div class="hero-highlight-card">
+            <span class="hero-highlight-label">Availability</span>
+            <div class="hero-highlight-value" id="coach-hero-availability">-</div>
+            <div class="hero-highlight-meta" id="coach-hero-availability-meta">Syncing weekly slots.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statClients">Assigned clients</div>
+          <div class="stat-value" id="coach-stat-clients">-</div>
+          <div class="stat-change" data-i18n="assigned">assigned</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statSessions">Sessions this week</div>
+          <div class="stat-value" id="coach-stat-sessions">-</div>
+          <div class="stat-change" data-i18n="thisWeek">this week</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statCheckins">Today check-ins</div>
+          <div class="stat-value" id="coach-stat-checkins">-</div>
+          <div class="stat-change" data-i18n="today">today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" data-i18n="statActivity">Activity rate</div>
+          <div class="stat-value" id="coach-stat-activity">-</div>
+          <div class="stat-change" data-i18n="average">average</div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid coach-dashboard-grid">
+        <div class="card span-two">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="todaySessions">Today's sessions</h2>
+              <p class="card-subtitle">Confirmed and pending sessions ordered by time.</p>
+            </div>
+          </div>
+          <div id="coach-today-sessions"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Control panel</h2>
+              <p class="card-subtitle">Quick jumps into the areas you need most during the day.</p>
+            </div>
+          </div>
+          <div class="summary-stack" id="coach-quick-actions">
+            <button class="btn-primary full-width-btn" type="button" data-open-page="sessions">Manage schedule</button>
+            <button class="btn-secondary full-width-btn" type="button" data-open-page="clients">Open client profiles</button>
+            <button class="btn-secondary full-width-btn" type="button" data-open-page="programs">Edit programs</button>
+            <button class="btn-secondary full-width-btn" type="button" data-open-page="messages">Reply to messages</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Upcoming sessions</h2>
+              <p class="card-subtitle">The next sessions on deck after today.</p>
+            </div>
+          </div>
+          <div id="coach-upcoming-sessions"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Action queue</h2>
+              <p class="card-subtitle">Requests and bookings waiting for a coach decision.</p>
+            </div>
+          </div>
+          <div id="coach-watch-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Client pulse</h2>
+              <p class="card-subtitle">Quick view of who needs attention, follow-up, or momentum support.</p>
+            </div>
+          </div>
+          <div id="coach-client-pulse"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card span-two">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Availability summary</h2>
+              <p class="card-subtitle">Published weekly slots that feed the client booking flow.</p>
+            </div>
+          </div>
+          <div id="coach-availability-summary"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="clients-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navClients">Client Management</h1>
+        <p class="page-subtitle" data-i18n="clientsSub">Assigned clients, progress tracking, and fast profile access.</p>
+      </div>
+
+      <div class="summary-chip-grid" id="coach-clients-summary">
+        <div class="summary-chip">
+          <span class="summary-chip-label">Assigned</span>
+          <strong id="coach-client-summary-count">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Active today</span>
+          <strong id="coach-client-summary-active">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Low activity</span>
+          <strong id="coach-client-summary-risk">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">With weight logs</span>
+          <strong id="coach-client-summary-weight">-</strong>
+        </div>
+      </div>
+
+      <div class="card toolbar-card">
+        <div class="toolbar-row">
+          <div class="form-group flex-field">
+            <label class="form-label" data-i18n="searchClients">Search clients</label>
+            <input class="form-input" id="coach-client-search" type="text" data-i18n-ph="searchClients">
+          </div>
+          <button class="btn-secondary" type="button" data-open-page="weight">Open weight tracking</button>
+        </div>
+      </div>
+
+      <div id="coach-clients-grid" class="person-grid"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+    </section>
+
+    <section id="programs-page" class="page hidden">
+      <div class="page-header">
+        <div class="page-head-row">
+          <div>
+            <h1 class="page-title" data-i18n="navPrograms">Programs</h1>
+            <p class="page-subtitle" data-i18n="programsSub">Active plans, reusable templates, and direct client assignment.</p>
+          </div>
+          <div class="page-head-actions">
+            <button class="btn-primary" id="btn-new-plan" type="button" data-i18n="newProgram">New program</button>
+            <button class="btn-secondary" id="btn-new-template" type="button" data-i18n="newTemplate">New template</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="activePlans">Plans</h2>
+              <p class="card-subtitle">Programs currently created and ready to refine.</p>
+            </div>
+          </div>
+          <div id="coach-plan-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="templates">Templates</h2>
+              <p class="card-subtitle">Reusable training structures you can assign in one move.</p>
+            </div>
+          </div>
+          <div id="coach-template-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="weight-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navWeight">Progress Tracking</h1>
+        <p class="page-subtitle" data-i18n="weightSub">Weight and check-in data across all assigned clients.</p>
+      </div>
+
+      <div class="summary-chip-grid" id="coach-weight-summary">
+        <div class="summary-chip">
+          <span class="summary-chip-label">Tracked clients</span>
+          <strong id="coach-weight-summary-clients">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Fresh logs</span>
+          <strong id="coach-weight-summary-fresh">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Check-ins today</span>
+          <strong id="coach-weight-summary-checkins">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Latest view</span>
+          <strong id="coach-weight-summary-selected">-</strong>
+        </div>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Client list</h2>
+              <p class="card-subtitle">Log a new weight entry or open a trend instantly.</p>
+            </div>
+          </div>
+          <div id="coach-weight-table"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title" data-i18n="clientDetail">Client detail</h2>
+              <p class="card-subtitle">Trend chart, last check-in, and current spotlight profile.</p>
+            </div>
+          </div>
+          <div class="chart-shell"><canvas id="coach-weight-chart"></canvas></div>
+          <div id="coach-weight-detail"><p class="empty-state" data-i18n="selectClientWeight">Choose a client to view detail.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sessions-page" class="page hidden">
+      <div class="page-header">
+        <div class="page-head-row">
+          <div>
+            <h1 class="page-title" data-i18n="navSessions">Schedule</h1>
+            <p class="page-subtitle">Availability editor, weekly schedule, and upcoming session control.</p>
+          </div>
+          <div class="page-head-actions">
+            <button class="btn-secondary" id="btn-toggle-session-view" type="button" data-i18n="toggleList">Toggle list</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-chip-grid" id="coach-session-summary">
+        <div class="summary-chip">
+          <span class="summary-chip-label">Upcoming</span>
+          <strong id="coach-session-summary-upcoming">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Pending</span>
+          <strong id="coach-session-summary-pending">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">Published slots</span>
+          <strong id="coach-session-summary-availability">-</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-chip-label">This week</span>
+          <strong id="coach-session-summary-week">-</strong>
+        </div>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Availability editor</h2>
+              <p class="card-subtitle">Publish or remove weekly bookable windows without changing backend logic.</p>
+            </div>
+          </div>
+          <div class="availability-form-grid">
+            <div class="form-group">
+              <label class="form-label">Day</label>
+              <select class="form-input" id="availability-day-input">
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+                <option value="0">Sunday</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Start</label>
+              <input class="form-input" id="availability-start-input" type="time">
+            </div>
+            <div class="form-group">
+              <label class="form-label">End</label>
+              <input class="form-input" id="availability-end-input" type="time">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Slot (min)</label>
+              <select class="form-input" id="availability-slot-input">
+                <option value="30">30</option>
+                <option value="45">45</option>
+                <option value="60" selected>60</option>
+                <option value="90">90</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn-primary full-width-btn" id="btn-save-availability" type="button">Add availability</button>
+          <div id="coach-availability-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Upcoming sessions</h2>
+              <p class="card-subtitle">Chronological list of the next bookings and their current status.</p>
+            </div>
+          </div>
+          <div id="coach-session-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Weekly schedule</h2>
+            <p class="card-subtitle">A clean week view for sessions already booked into your calendar.</p>
+          </div>
+        </div>
+        <div id="coach-week-grid" class="week-grid"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+      </div>
+    </section>
+
+    <section id="messages-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navMessages">Messages</h1>
+        <p class="page-subtitle" data-i18n="messagesSub">Keep conversations with assigned clients organized and easy to answer.</p>
+      </div>
+
+      <div class="msg-layout">
+        <div class="msg-sidebar">
+          <div class="msg-sidebar-head">
+            <h2 class="card-title">Conversations</h2>
+            <p class="card-subtitle">All assigned client threads in one list.</p>
+          </div>
+          <div id="coach-thread-list"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+
+        <div class="msg-conversation">
+          <div id="coach-conv-empty" class="msg-empty-state">
+            <div class="msg-empty-icon"><i data-lucide="messages-square"></i></div>
+            <div class="msg-empty-title" data-i18n="selectThread">Choose a conversation</div>
+            <div class="msg-empty-copy">Open a client thread to read and reply.</div>
+          </div>
+          <div id="coach-conv-wrap" class="hidden conversation-shell">
+            <div class="msg-conv-header" id="coach-conv-header"></div>
+            <div class="msg-conv-body" id="coach-conv-messages"></div>
+            <div class="msg-conv-footer">
+              <textarea class="msg-textarea" id="coach-msg-input" rows="1" data-i18n-ph="typeMessage"></textarea>
+              <button class="msg-send-btn" id="btn-send-coach-message" type="button">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="profile-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navProfile">Profile</h1>
+        <p class="page-subtitle" data-i18n="profileSub">Contact details, specialty, pricing, and coaching summary.</p>
+      </div>
+
+      <div class="profile-layout">
+        <div class="card profile-form-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Coach profile</h2>
+              <p class="card-subtitle">Update the public details clients see when they book with you.</p>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="nameLabel">Name</label>
+              <input class="form-input" id="coach-name-input" type="text">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="phoneLabel">Phone</label>
+              <input class="form-input" id="coach-phone-input" type="text">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="emailLabel">Email</label>
+              <input class="form-input" id="coach-email-input" type="email" disabled>
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="specialityLabel">Specialty</label>
+              <input class="form-input" id="coach-speciality-input" type="text">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Experience (years)</label>
+              <input class="form-input" id="coach-experience-input" type="number" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rate / session (DT)</label>
+              <input class="form-input" id="coach-rate-input" type="number" min="0" step="5">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="bioLabel">Bio</label>
+            <textarea class="form-input" id="coach-bio-input" rows="4"></textarea>
+          </div>
+          <div class="profile-action-row">
+            <button class="btn-primary" id="btn-save-coach-profile" type="button" data-i18n="saveChanges">Save</button>
+            <button class="btn-secondary" id="btn-reset-coach-password" type="button" data-i18n="resetPassword">Reset password</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Profile summary</h2>
+              <p class="card-subtitle">Availability, client load, and current operating picture.</p>
+            </div>
+          </div>
+          <div id="coach-profile-summary"><p class="empty-state" data-i18n="loading">Loading...</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="trainw-panel-backdrop" id="coach-client-panel-backdrop" data-panel-target="coach-client-panel"></div>
+<aside class="trainw-slide-panel" id="coach-client-panel">
+  <div class="tw-panel-header">
+    <div>
+      <div class="tw-panel-title" id="coach-client-panel-title">Client</div>
+      <div class="page-subtitle" id="coach-client-panel-sub">-</div>
+    </div>
+    <button class="tw-panel-close" type="button" data-panel-close="coach-client-panel" data-panel-backdrop="coach-client-panel-backdrop">&times;</button>
+  </div>
+  <div class="client-panel-tabs" id="coach-client-tabs">
+    <button class="client-panel-tab active" data-client-tab="overview">Overview</button>
+    <button class="client-panel-tab" data-client-tab="weight">Weight</button>
+    <button class="client-panel-tab" data-client-tab="program">Program</button>
+    <button class="client-panel-tab" data-client-tab="history">History</button>
+  </div>
+  <div class="tw-panel-body" id="coach-client-panel-body"></div>
+</aside>
+
+<div class="modal" id="workout-plan-modal">
+  <div class="modal-content" style="max-width: 840px;">
+    <button class="modal-close" id="close-workout-plan-modal" aria-label="Close">&times;</button>
+    <h2 class="form-modal-title" id="workout-plan-title">New program</h2>
+    <input type="hidden" id="workout-plan-id">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" data-i18n="planTitle">Title</label>
+        <input class="form-input" id="plan-title-input" type="text">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="goalType">Goal</label>
+        <select class="form-input" id="plan-goal-input">
+          <option value="fat_loss">Fat loss</option>
+          <option value="muscle_gain">Muscle gain</option>
+          <option value="endurance">Endurance</option>
+          <option value="general">General</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label" data-i18n="frequencyLabel">Frequency / week</label>
+        <input class="form-input" id="plan-frequency-input" type="number" min="1" max="7">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="assignClientLabel">Client</label>
+        <select class="form-input" id="plan-client-input"></select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="descriptionLabel">Description</label>
+      <textarea class="form-input" id="plan-description-input" rows="3"></textarea>
+    </div>
+    <div class="plan-builder-actions">
+      <button class="btn-secondary" id="btn-add-plan-day" type="button" data-i18n="addDay">Add day</button>
+    </div>
+    <div id="plan-days-builder"></div>
+    <div class="page-head-actions">
+      <button class="btn-secondary" id="btn-save-template" type="button" data-i18n="saveTemplate">Save as template</button>
+      <button class="btn-primary" id="btn-save-plan" type="button" data-i18n="savePlan">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  window.__TRAINW_URL__ = "https://bibqumevndfykmkssslb.supabase.co";
+  window.__TRAINW_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM";
+</script>
+<script src="trainw-core.js?v=20260403-1"></script>
+<script src="trainw-translations.js"></script>
+<script src="tw-coach-acc.js?v=20260407-1"></script>
+</body>
+</html>

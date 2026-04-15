@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>Trainw - Connexion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="tw-login.css?v=20260403-1">
+  <link rel="stylesheet" href="trainw-enhancements.css">
+  <link rel="stylesheet" href="trainw-v14.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <div class="topbar">
+    <a href="/tw-role.html" class="back-btn">&larr; <span data-i18n="navBack">Retour</span></a>
+    <div class="lang-toggle">
+      <button class="lang-btn" data-lang="en">EN</button>
+      <button class="lang-btn active" data-lang="fr">FR</button>
+      <button class="lang-btn" data-lang="ar">AR</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="logo-text">TRAINW</div>
+
+    <div class="tabs">
+      <button class="tab active" id="tab-login" data-tab="login" data-i18n="tabLogin">Connexion</button>
+      <button class="tab" id="tab-signup" data-tab="signup" data-i18n="tabSignup">Creer un compte</button>
+    </div>
+
+    <div class="rbadge" id="rbadge"></div>
+
+    <div class="panel active" id="panel-login">
+      <p class="ptitle" data-i18n="loginTitle">Bon retour</p>
+      <p class="psub" data-i18n="loginSub">Connectez-vous a votre espace Trainw</p>
+
+      <div class="field">
+        <label data-i18n="lEmail">Email</label>
+        <input id="l-email" class="input" type="email" data-i18n-ph="phEmail" placeholder="you@example.com">
+        <div class="ferr" id="l-email-e"></div>
+      </div>
+
+      <div class="field">
+        <label data-i18n="lPw">Mot de passe</label>
+        <div class="pw-wrap">
+          <input id="l-pw" class="input" type="password" data-i18n-ph="phPassword" placeholder="••••••••">
+          <button class="eye" type="button" data-target="l-pw">Show</button>
+        </div>
+        <div class="ferr" id="l-pw-e"></div>
+      </div>
+
+      <div class="forgot"><a id="forgot-link" data-i18n="forgotPw">Mot de passe oublie ?</a></div>
+
+      <button class="btn" id="btn-login">
+        <span data-i18n="btnLogin">Connexion</span><span class="spin"></span>
+      </button>
+      <div class="alert aerr" id="l-err"></div>
+      <div class="alert aok" id="l-ok"></div>
+    </div>
+
+    <div class="panel" id="panel-signup">
+      <p class="ptitle" data-i18n="signupTitle">Rejoindre Trainw</p>
+      <p class="psub" data-i18n="signupSub">Creez votre compte en quelques secondes</p>
+
+      <div class="field">
+        <label data-i18n="lName">Nom complet</label>
+        <input id="s-name" class="input" type="text" data-i18n-ph="phName" placeholder="Ahmed Ben Ali">
+        <div class="ferr" id="s-name-e"></div>
+      </div>
+
+      <div class="field">
+        <label data-i18n="lEmail">Email</label>
+        <input id="s-email" class="input" type="email" data-i18n-ph="phEmail" placeholder="you@example.com">
+        <div class="ferr" id="s-email-e"></div>
+      </div>
+
+      <div class="field">
+        <label data-i18n="lPw">Mot de passe</label>
+        <div class="pw-wrap">
+          <input id="s-pw" class="input" type="password" data-i18n-ph="phMinPassword" placeholder="Min. 8 characters">
+          <button class="eye" type="button" data-target="s-pw">Show</button>
+        </div>
+        <div class="ferr" id="s-pw-e"></div>
+      </div>
+
+      <div class="field">
+        <label data-i18n="lConfirm">Confirmer le mot de passe</label>
+        <div class="pw-wrap">
+          <input id="s-pw2" class="input" type="password" data-i18n-ph="phRepeatPassword" placeholder="Repeat password">
+          <button class="eye" type="button" data-target="s-pw2">Show</button>
+        </div>
+        <div class="ferr" id="s-pw2-e"></div>
+      </div>
+
+      <div class="field">
+        <label data-i18n="lRole">Je suis</label>
+        <select id="s-role" class="input">
+          <option value="client">Client</option>
+          <option value="coach">Coach</option>
+          <option value="gym_owner">Gym Owner</option>
+        </select>
+      </div>
+
+      <div class="gym-name-wrap" id="gym-name-wrap">
+        <div class="field" style="margin-bottom:0;">
+          <label data-i18n="lGymName">Nom de la salle</label>
+          <input id="s-gym-name" class="input" type="text" data-i18n-ph="phGymName" placeholder="Ex: Trainw Ariana">
+          <div class="ferr" id="s-gym-name-e"></div>
+        </div>
+      </div>
+
+      <button class="btn" id="btn-signup">
+        <span data-i18n="btnSignup">Creer un compte</span><span class="spin"></span>
+      </button>
+      <div class="alert aerr" id="s-err"></div>
+      <div class="alert aok" id="s-ok"></div>
+    </div>
+  </div>
+
+  <script>
+    window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
+    window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
+  </script>
+  <script src="trainw-tenant-utils.js?v=20260412-1"></script>
+  <script src="trainw-core.js?v=20260403-1"></script>
+  <script src="tw-login.js?v=20260403-1"></script>
+</body>
+</html>

@@ -1,0 +1,397 @@
+const Trainw=window.TrainwCore;const sb=Trainw.createClient();Trainw.installGlobalErrorHandlers();const LOGIN_HREF='/tw-login.html?role=coach';let currentLang=localStorage.getItem('trainw_lang')||'fr',currentUserId=null,currentGymId=null,currentProfile=null,coachProfile=null;let assignedClients=[],sessions=[],availability=[],plans=[],templates=[],threads=[],activeThreadId='',sessionListMode=false,clientPanel={id:null,tab:'overview',data:null,chart:null},coachWeightChart=null;
+let coachRealtimeChannels=[],coachReloadTimer=null,coachReloadInflight=false;
+const T={fr:{roleLabel:'Coach',signOut:'DÃ©connexion',navDash:'Dashboard',navClients:'Mes Clients',navPrograms:'Programmes',navWeight:'Suivi poids',navSessions:'SÃ©ances',navMessages:'Messages',navProfile:'Mon Profil',dashSub:'Vos clients, vos sÃ©ances, vos alertes.',clientsSub:'Tous vos clients assignÃ©s.',programsSub:'Plans actifs et modÃ¨les.',weightSub:'Vue rapide sur tous les clients assignÃ©s.',sessionsSub:'Semaine en cours.',messagesSub:'Ã‰crivez Ã  vos clients assignÃ©s.',profileSub:'Vos coordonnÃ©es et votre spÃ©cialitÃ©.',statClients:'Clients assignÃ©s',statSessions:'SÃ©ances cette semaine',statCheckins:'Check-ins du jour',statActivity:'Taux activitÃ©',assigned:'assignÃ©s',thisWeek:'cette semaine',today:'aujourd\'hui',average:'moyenne',todaySessions:'SÃ©ances aujourd\'hui',watchClients:'Clients Ã  surveiller',searchClients:'Rechercher un client...',newProgram:'Nouveau programme',newTemplate:'Nouveau modÃ¨le',activePlans:'Plans',templates:'ModÃ¨les',toggleList:'Basculer liste',selectThread:'Choisissez une conversation',typeMessage:'Ã‰crivez un message...',saveChanges:'Enregistrer',resetPassword:'RÃ©initialiser le mot de passe',specialityLabel:'SpÃ©cialitÃ©',bioLabel:'Bio',nameLabel:'Nom',phoneLabel:'TÃ©lÃ©phone',emailLabel:'Email',loading:'Chargement...',clientDetail:'DÃ©tail client',selectClientWeight:'Choisissez un client pour voir le dÃ©tail.',planTitle:'Titre',goalType:'Objectif',frequencyLabel:'FrÃ©quence / semaine',assignClientLabel:'Client',descriptionLabel:'Description',addDay:'Ajouter un jour',saveTemplate:'Enregistrer comme modÃ¨le',savePlan:'Enregistrer',overview:'AperÃ§u',weight:'Poids',program:'Programme',history:'Historique',noClients:'Aucun client assignÃ©.',noPlans:'Aucun plan.',noMessages:'Aucun message.',messageSent:'Message envoyÃ©.',profileSaved:'Profil enregistrÃ©.',passwordResetSent:'Email de rÃ©initialisation envoyÃ©.',planSaved:'Programme enregistrÃ©.',weightSaved:'Mesure enregistrÃ©e.',removeClient:'Retirer',days:'jours',day:'Jour',exercise:'Exercice',sets:'SÃ©ries',reps:'Reps',rest:'Repos',notes:'Notes',addExercise:'Ajouter un exercice',duplicateDay:'Dupliquer ce jour',deleteDay:'Supprimer',openClient:'Ouvrir',weightKg:'Poids',lastCheckin:'Dernier check-in',currentPlan:'Plan actif',activityRate:'Taux activitÃ©',coachNote:'Pour modifier, contactez le gÃ©rant.',coachCanMessage:'Conversation',historyCheckin:'Check-in',historyWeight:'Poids',historyWorkout:'EntraÃ®nement',historyMessage:'Message',noHistory:'Aucun historique.',sessionEnrollments:'Clients inscrits',saveMeasurement:'Ajouter la mesure',noWorkout:'Aucun programme.',noSessions:'Aucune sÃ©ance.'},en:{roleLabel:'Coach',signOut:'Sign out',navDash:'Dashboard',navClients:'My Clients',navPrograms:'Programs',navWeight:'Weight Follow-up',navSessions:'Sessions',navMessages:'Messages',navProfile:'My Profile',dashSub:'Your clients, sessions and alerts.',clientsSub:'All assigned clients.',programsSub:'Active plans and templates.',weightSub:'Quick view across assigned clients.',sessionsSub:'Current week.',messagesSub:'Message your assigned clients.',profileSub:'Your details and specialty.',statClients:'Assigned clients',statSessions:'Sessions this week',statCheckins:'Today check-ins',statActivity:'Activity rate',assigned:'assigned',thisWeek:'this week',today:'today',average:'average',todaySessions:'Today sessions',watchClients:'Clients to watch',searchClients:'Search a client...',newProgram:'New program',newTemplate:'New template',activePlans:'Plans',templates:'Templates',toggleList:'Toggle list',selectThread:'Choose a conversation',typeMessage:'Write a message...',saveChanges:'Save',resetPassword:'Reset password',specialityLabel:'Specialty',bioLabel:'Bio',nameLabel:'Name',phoneLabel:'Phone',emailLabel:'Email',loading:'Loading...',clientDetail:'Client detail',selectClientWeight:'Pick a client to view details.',planTitle:'Title',goalType:'Goal',frequencyLabel:'Frequency / week',assignClientLabel:'Client',descriptionLabel:'Description',addDay:'Add day',saveTemplate:'Save as template',savePlan:'Save',overview:'Overview',weight:'Weight',program:'Program',history:'History',noClients:'No assigned clients.',noPlans:'No plans.',noMessages:'No messages.',messageSent:'Message sent.',profileSaved:'Profile saved.',passwordResetSent:'Password reset email sent.',planSaved:'Program saved.',weightSaved:'Measurement saved.',removeClient:'Remove',days:'days',day:'Day',exercise:'Exercise',sets:'Sets',reps:'Reps',rest:'Rest',notes:'Notes',addExercise:'Add exercise',duplicateDay:'Duplicate day',deleteDay:'Delete',openClient:'Open',weightKg:'Weight',lastCheckin:'Last check-in',currentPlan:'Current plan',activityRate:'Activity rate',coachNote:'For changes, contact the gym owner.',coachCanMessage:'Conversation',historyCheckin:'Check-in',historyWeight:'Weight',historyWorkout:'Workout',historyMessage:'Message',noHistory:'No history.',sessionEnrollments:'Enrolled clients',saveMeasurement:'Add measurement',noWorkout:'No program.',noSessions:'No sessions.'},ar:{roleLabel:'????',signOut:'????? ??????',navDash:'????????',navClients:'??????',navPrograms:'???????',navWeight:'?????? ?????',navSessions:'???????',navMessages:'???????',navProfile:'????',dashSub:'?????? ??????? ?????????.',clientsSub:'?? ??????? ???????? ??.',programsSub:'????? ?????? ????????.',weightSub:'??? ???? ??? ??????? ????????.',sessionsSub:'??????? ??????.',messagesSub:'???? ?????? ????????.',profileSub:'??????? ??????.',statClients:'??????? ????????',statSessions:'????? ??? ???????',statCheckins:'???? ?????',statActivity:'???? ??????',assigned:'??????',thisWeek:'??? ???????',today:'?????',average:'???????',todaySessions:'????? ?????',watchClients:'????? ????????',searchClients:'???? ?? ????...',newProgram:'?????? ????',newTemplate:'???? ????',activePlans:'?????',templates:'???????',toggleList:'????? ???????',selectThread:'???? ??????',typeMessage:'???? ?????...',saveChanges:'???',resetPassword:'????? ????? ???? ??????',specialityLabel:'??????',bioLabel:'????',nameLabel:'?????',phoneLabel:'??????',emailLabel:'??????',loading:'??? ???????...',clientDetail:'?????? ??????',selectClientWeight:'???? ????? ???? ????????.',planTitle:'???????',goalType:'?????',frequencyLabel:'????? / ?????',assignClientLabel:'??????',descriptionLabel:'?????',addDay:'????? ???',saveTemplate:'??? ?????',savePlan:'???',overview:'???? ????',weight:'?????',program:'????????',history:'?????',noClients:'?? ???? ????? ??????.',noPlans:'?? ???? ???.',noMessages:'?? ???? ?????.',messageSent:'?? ????? ???????.',profileSaved:'?? ??? ?????.',passwordResetSent:'?? ????? ???? ????? ???????.',planSaved:'?? ??? ????????.',weightSaved:'?? ??? ??????.',removeClient:'?????',days:'????',day:'?????',exercise:'???????',sets:'?????????',reps:'??????',rest:'??????',notes:'???????',addExercise:'????? ?????',duplicateDay:'????? ?????',deleteDay:'???',openClient:'???',weightKg:'?????',lastCheckin:'??? ????',currentPlan:'????? ???????',activityRate:'???? ??????',coachNote:'??????? ????? ?? ??????.',coachCanMessage:'????????',historyCheckin:'??????',historyWeight:'?????',historyWorkout:'???????',historyMessage:'???????',noHistory:'?? ???? ???.',sessionEnrollments:'??????? ????????',saveMeasurement:'????? ??????',noWorkout:'?? ???? ??????.',noSessions:'?? ???? ?????.'}};if(window.TrainwTranslations?.coachDashboardAr)T.ar=Object.assign({},T.ar||{},window.TrainwTranslations.coachDashboardAr);const t=k=>T[currentLang]?.[k]||T.fr[k]||T.en[k]||'...';const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));const safe=v=>Trainw.safeVal(v,'â€”');const fmt=v=>Trainw.formatDate(v,currentLang);const fmtDT=v=>v?new Date(v).toLocaleString(Trainw.localeForLang(currentLang),{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'â€”';const ini=v=>String(v||'?').split(' ').map(x=>x[0]||'').join('').slice(0,2).toUpperCase();
+function applyTranslations(){Trainw.applyDocumentLanguage(currentLang,'.app-container');$$('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));$$('[data-i18n-ph]').forEach(el=>el.placeholder=t(el.dataset.i18nPh));$$('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===currentLang));$$('#coach-client-tabs [data-client-tab]').forEach(b=>{if(b.dataset.clientTab==='overview')b.textContent=t('overview');if(b.dataset.clientTab==='weight')b.textContent=t('weight');if(b.dataset.clientTab==='program')b.textContent=t('program');if(b.dataset.clientTab==='history')b.textContent=t('history')})}
+T.ar={
+  roleLabel:'مدرب',
+  signOut:'تسجيل الخروج',
+  navDash:'لوحة التحكم',
+  navClients:'العملاء',
+  navPrograms:'البرامج',
+  navWeight:'متابعة الوزن',
+  navSessions:'الجلسات',
+  navMessages:'الرسائل',
+  navProfile:'ملفي',
+  dashSub:'عملاؤك وجلساتك وتنبيهاتك.',
+  clientsSub:'جميع العملاء المعيّنين لك.',
+  programsSub:'الخطط النشطة والقوالب.',
+  weightSub:'نظرة سريعة على جميع العملاء المعيّنين.',
+  sessionsSub:'الأسبوع الحالي.',
+  messagesSub:'راسل العملاء المعيّنين لك.',
+  profileSub:'بياناتك وتخصصك.',
+  statClients:'العملاء المعيّنون',
+  statSessions:'جلسات هذا الأسبوع',
+  statCheckins:'حضور اليوم',
+  statActivity:'معدل النشاط',
+  assigned:'مُعيَّنون',
+  thisWeek:'هذا الأسبوع',
+  today:'اليوم',
+  average:'المتوسط',
+  todaySessions:'جلسات اليوم',
+  watchClients:'عملاء يحتاجون متابعة',
+  searchClients:'ابحث عن عميل...',
+  newProgram:'برنامج جديد',
+  newTemplate:'قالب جديد',
+  activePlans:'الخطط',
+  templates:'القوالب',
+  toggleList:'تبديل العرض',
+  selectThread:'اختر محادثة',
+  typeMessage:'اكتب رسالة...',
+  saveChanges:'حفظ التغييرات',
+  resetPassword:'إعادة تعيين كلمة المرور',
+  specialityLabel:'التخصص',
+  bioLabel:'نبذة',
+  nameLabel:'الاسم',
+  phoneLabel:'الهاتف',
+  emailLabel:'البريد الإلكتروني',
+  loading:'جار التحميل…',
+  clientDetail:'تفاصيل العميل',
+  selectClientWeight:'اختر عميلاً لعرض التفاصيل.',
+  planTitle:'العنوان',
+  goalType:'الهدف',
+  frequencyLabel:'الوتيرة / الأسبوع',
+  assignClientLabel:'العميل',
+  descriptionLabel:'الوصف',
+  addDay:'إضافة يوم',
+  saveTemplate:'حفظ كقالب',
+  savePlan:'حفظ',
+  overview:'نظرة عامة',
+  weight:'الوزن',
+  program:'البرنامج',
+  history:'السجل',
+  noClients:'لا يوجد عملاء مُعيَّنون.',
+  noPlans:'لا توجد خطط.',
+  noMessages:'لا توجد رسائل.',
+  messageSent:'تم إرسال الرسالة.',
+  profileSaved:'تم حفظ الملف الشخصي.',
+  passwordResetSent:'تم إرسال رسالة إعادة تعيين كلمة المرور.',
+  planSaved:'تم حفظ البرنامج.',
+  weightSaved:'تم حفظ القياس.',
+  removeClient:'إزالة',
+  days:'أيام',
+  day:'يوم',
+  exercise:'التمرين',
+  sets:'المجموعات',
+  reps:'التكرارات',
+  rest:'الراحة',
+  notes:'ملاحظات',
+  addExercise:'إضافة تمرين',
+  duplicateDay:'تكرار هذا اليوم',
+  deleteDay:'حذف',
+  openClient:'فتح',
+  weightKg:'الوزن',
+  lastCheckin:'آخر حضور',
+  currentPlan:'الخطة الحالية',
+  activityRate:'معدل النشاط',
+  coachNote:'لإجراء التعديلات، تواصل مع مالك الصالة.',
+  coachCanMessage:'المحادثة',
+  historyCheckin:'الحضور',
+  historyWeight:'الوزن',
+  historyWorkout:'التمرين',
+  historyMessage:'الرسالة',
+  noHistory:'لا يوجد سجل.',
+  sessionEnrollments:'العملاء المسجلون',
+  saveMeasurement:'إضافة قياس',
+  noWorkout:'لا يوجد برنامج.',
+  noSessions:'لا توجد جلسات.'
+};
+if(window.TrainwTranslations?.coachDashboardAr)T.ar=Object.assign({},T.ar,window.TrainwTranslations.coachDashboardAr);
+function showPage(p){$$('.page').forEach(x=>x.classList.add('hidden'));$('#'+p+'-page')?.classList.remove('hidden');$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===p))}
+function setCoachBusy(el,on){Trainw.ui.setBusy(el,Boolean(on))}
+function coachDecisionCopy(kind){if(currentLang==='fr'){if(kind==='confirm')return'Confirmer cette reservation ?';if(kind==='complete')return'Marquer cette seance comme terminee ?';if(kind==='cancel')return'Annuler/refuser cette seance ?';return'Confirmer cette action ?'}if(currentLang==='ar'){if(kind==='confirm')return'تأكيد هذا الحجز؟';if(kind==='complete')return'تعيين هذه الجلسة كمكتملة؟';if(kind==='cancel')return'إلغاء/رفض هذه الجلسة؟';return'تأكيد هذا الإجراء؟'}if(kind==='confirm')return'Confirm this booking?';if(kind==='complete')return'Mark this session as completed?';if(kind==='cancel')return'Cancel or decline this session?';return'Confirm this action?'}
+function markCoachThreadReadLocal(id){const th=threads.find(x=>x.id===id);if(!th)return;th.messages=th.messages.map(m=>m.receiver_id===currentUserId&&m.sender_id===id?{...m,is_read:true}:m)}
+function clearCoachRealtime(){coachRealtimeChannels.forEach(ch=>{try{sb.removeChannel(ch)}catch(e){}});coachRealtimeChannels=[]}
+async function runCoachReload(){if(coachReloadInflight)return;coachReloadInflight=true;try{await bootstrap()}catch(error){console.error(error)}finally{coachReloadInflight=false}}
+function queueCoachReload(delay){if(coachReloadInflight)return;clearTimeout(coachReloadTimer);coachReloadTimer=setTimeout(()=>{runCoachReload()},delay||320)}async function inferCoachGymId(){if(currentGymId||!currentUserId)return currentGymId;const [profileRes,sessionRes,availabilityRes,assignmentRes]=await Promise.all([Trainw.api.run(sb.from('coach_profiles').select('gym_id').eq('user_id',currentUserId).maybeSingle(),{context:'infer coach gym profile',fallback:null,toastOnError:false,silent:true}),Trainw.api.run(sb.from('sessions').select('gym_id').eq('coach_id',currentUserId).order('session_date',{ascending:false}).order('start_time',{ascending:false}).limit(5),{context:'infer coach gym sessions',fallback:[],toastOnError:false,silent:true}),Trainw.api.run(sb.from('coach_availability').select('gym_id').eq('coach_id',currentUserId).order('updated_at',{ascending:false}).limit(5),{context:'infer coach gym availability',fallback:[],toastOnError:false,silent:true}),Trainw.api.run(sb.from('coach_client_assignments').select('gym_id').eq('coach_id',currentUserId).order('assigned_at',{ascending:false}).limit(5),{context:'infer coach gym assignments',fallback:[],toastOnError:false,silent:true})]);currentGymId=profileRes.data?.gym_id||sessionRes.data?.find(row=>row.gym_id)?.gym_id||availabilityRes.data?.find(row=>row.gym_id)?.gym_id||assignmentRes.data?.find(row=>row.gym_id)?.gym_id||null;if(currentProfile&&currentGymId)currentProfile.gym_id=currentGymId;return currentGymId}
+function subscribeCoachRealtime(){clearCoachRealtime();if(!currentGymId||!currentUserId)return;const add=ch=>{coachRealtimeChannels.push(ch);return ch};add(sb.channel(`coach-msg-${currentUserId}`).on('postgres_changes',{event:'*',schema:'public',table:'messages',filter:`gym_id=eq.${currentGymId}`},payload=>{const row=payload.new||payload.old||{};if(row.sender_id===currentUserId||row.receiver_id===currentUserId)queueCoachReload(180)}).subscribe());add(sb.channel(`coach-sessions-${currentUserId}`).on('postgres_changes',{event:'*',schema:'public',table:'sessions',filter:`coach_id=eq.${currentUserId}`},()=>queueCoachReload(220)).subscribe());add(sb.channel(`coach-checkins-${currentUserId}`).on('postgres_changes',{event:'*',schema:'public',table:'check_ins',filter:`gym_id=eq.${currentGymId}`},()=>queueCoachReload(260)).subscribe());add(sb.channel(`coach-weights-${currentUserId}`).on('postgres_changes',{event:'*',schema:'public',table:'weight_logs',filter:`gym_id=eq.${currentGymId}`},()=>queueCoachReload(260)).subscribe())}
+async function bootstrap(){
+  const ctx=await Trainw.auth.getContext(sb,{expectedRoles:['coach'],loginHref:LOGIN_HREF,recoveryRole:'coach'});
+  if(!ctx.session||!ctx.profile)return;
+  currentProfile=ctx.profile;
+  currentUserId=ctx.session.user.id;
+  currentGymId=ctx.profile.gym_id||null;
+  currentLang=localStorage.getItem('trainw_lang')||ctx.profile.language_preference||currentLang;
+
+  currentGymId=currentGymId||await inferCoachGymId();
+  if(!currentGymId){coachProfile=null;assignedClients=[];sessions=[];availability=[];plans=[];templates=[];threads=[];renderAll();subscribeCoachRealtime();if(!window.__coachUnloadBound){window.__coachUnloadBound=true;window.addEventListener('beforeunload',()=>{clearCoachRealtime();clearTimeout(coachReloadTimer)})}
+
+  if(!window.__coachAuthBound){window.__coachAuthBound=true;Trainw.auth.watchAuth(sb,{onSignedOut:()=>{localStorage.removeItem('trainw_active_gym');window.location.href=LOGIN_HREF}})}return}
+
+  const [cp,assignsRes,sessRes,avRes,plansRes,templRes,msgRes]=await Promise.all([
+    Trainw.api.run(sb.from('coach_profiles').select('*').eq('user_id',currentUserId).maybeSingle(),{context:'load coach profile',fallback:null}),
+    Trainw.api.run(sb.from('coach_client_assignments').select('client_id').eq('coach_id',currentUserId).eq('gym_id',currentGymId).eq('is_active',true),{context:'load assigned clients',fallback:[]}),
+    Trainw.api.run(sb.from('sessions').select('id,gym_id,client_id,session_date,start_time,end_time,duration_minutes,status,session_name,notes,cancellation_reason,booked_at,confirmed_at,completed_at,coach_id,type,client:users!sessions_client_id_fkey(id,name,phone,email)').eq('coach_id',currentUserId).order('session_date',{ascending:true}).order('start_time',{ascending:true}),{context:'load coach sessions',fallback:[]}),
+    Trainw.api.run(sb.from('coach_availability').select('*').eq('coach_id',currentUserId).order('day_of_week',{ascending:true}).order('start_time',{ascending:true}),{context:'load coach availability',fallback:[]}),
+    Trainw.api.run(sb.from('workout_plans').select('*').eq('created_by',currentUserId).eq('is_template',false).order('updated_at',{ascending:false}),{context:'load coach plans',fallback:[]}),
+    Trainw.api.run(sb.from('workout_plans').select('*').eq('created_by',currentUserId).eq('is_template',true).order('updated_at',{ascending:false}),{context:'load coach templates',fallback:[]}),
+    Trainw.api.run(sb.from('messages').select('*').eq('gym_id',currentGymId).or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`).order('created_at',{ascending:false}).limit(200),{context:'load coach messages',fallback:[]})
+  ]);
+
+  coachProfile=cp.data||null;
+  sessions=Array.isArray(sessRes.data)?sessRes.data:[];
+  availability=Array.isArray(avRes.data)?avRes.data:[];
+  plans=Array.isArray(plansRes.data)?plansRes.data:[];
+  templates=Array.isArray(templRes.data)?templRes.data:[];
+
+  const assignedIds=(assignsRes.data||[]).map(x=>x.client_id).filter(Boolean);
+  const sessionClientIds=sessions.map(x=>x.client_id).filter(Boolean);
+  const ids=Array.from(new Set([...assignedIds,...sessionClientIds]));
+
+  if(ids.length){
+    const [usersRes,profilesRes,checksRes,weightsRes]=await Promise.all([
+      Trainw.api.run(sb.from('users').select('id,name,phone,email').in('id',ids),{context:'load coach users',fallback:[]}),
+      Trainw.api.run(sb.from('client_profiles').select('*').in('user_id',ids),{context:'load coach client profiles',fallback:[]}),
+      Trainw.api.run(sb.from('check_ins').select('client_id,checked_in_at,method').in('client_id',ids).eq('gym_id',currentGymId).order('checked_in_at',{ascending:false}),{context:'load coach checkins',fallback:[]}),
+      Trainw.api.run(sb.from('weight_logs').select('client_id,weight_kg,logged_at').in('client_id',ids).order('logged_at',{ascending:false}),{context:'load coach weights',fallback:[]})
+    ]);
+
+    const userMap=new Map((usersRes.data||[]).map(u=>[u.id,u]));
+    sessions.forEach(s=>{if(s.client_id&&!userMap.has(s.client_id)&&s.client){userMap.set(s.client_id,{id:s.client_id,name:s.client.name,phone:s.client.phone,email:s.client.email})}});
+
+    const pmap=new Map((profilesRes.data||[]).map(x=>[x.user_id,x]));
+    const cmap=new Map();
+    (checksRes.data||[]).forEach(x=>{const arr=cmap.get(x.client_id)||[];arr.push(x);cmap.set(x.client_id,arr)});
+    const wmap=new Map();
+    (weightsRes.data||[]).forEach(x=>{const arr=wmap.get(x.client_id)||[];arr.push(x);wmap.set(x.client_id,arr)});
+    const assignmentSet=new Set(assignedIds);
+    const sessionMap=new Map();
+    sessions.forEach(s=>{if(!s.client_id)return;const arr=sessionMap.get(s.client_id)||[];arr.push(s);sessionMap.set(s.client_id,arr)});
+
+    assignedClients=Array.from(userMap.values())
+      .map(u=>({id:u.id,name:u.name,phone:u.phone,email:u.email,profile:pmap.get(u.id)||{},checkins:cmap.get(u.id)||[],weights:wmap.get(u.id)||[],isAssigned:assignmentSet.has(u.id),sessions:sessionMap.get(u.id)||[]}))
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{sensitivity:'base'}));
+  }else assignedClients=[];
+
+  threads=assignedClients.map(c=>({id:c.id,name:c.name,role:'Client',messages:(msgRes.data||[]).filter(m=>m.sender_id===c.id||m.receiver_id===c.id).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))}));
+  if(!threads.some(tg=>tg.id===activeThreadId))activeThreadId='';
+  renderAll();
+  subscribeCoachRealtime();
+  if(!window.__coachUnloadBound){
+    window.__coachUnloadBound=true;
+    window.addEventListener('beforeunload',()=>{clearCoachRealtime();clearTimeout(coachReloadTimer)});
+  }
+
+  if(!window.__coachAuthBound){
+    window.__coachAuthBound=true;
+    Trainw.auth.watchAuth(sb,{onSignedOut:()=>{localStorage.removeItem('trainw_active_gym');window.location.href=LOGIN_HREF}});
+  }
+}
+function clientActivityRate(c){const cutoff=Trainw.addDays(new Date(),-14);const days=new Set((c.checkins||[]).filter(x=>new Date(x.checked_in_at)>=cutoff).map(x=>String(x.checked_in_at).slice(0,10)));return Math.round((days.size/14)*100)}
+function lastCheck(c){return(c.checkins||[])[0]?.checked_in_at||null}function lastWeight(c){return(c.weights||[])[0]?.weight_kg||null}
+function copy(fr,en,ar=en){return currentLang==='fr'?fr:currentLang==='en'?en:ar}
+function sessionStart(s){return new Date(`${s.session_date}T${s.start_time||'00:00:00'}`)}
+function isFutureSession(s){const at=sessionStart(s);return s.status!=='cancelled'&&!Number.isNaN(at.getTime())&&at.getTime()>=Date.now()}
+function clientNextSession(c){return[...(c.sessions||[])].filter(isFutureSession).sort((a,b)=>sessionTs(a)-sessionTs(b))[0]||null}
+function latestPlanForClient(clientId){return plans.find(p=>p.client_id===clientId)||null}
+function recentWeightDelta(c){const pts=(c.weights||[]).slice(0,2);if(pts.length<2)return null;const delta=(+pts[0].weight_kg||0)-(+pts[1].weight_kg||0);return Math.round(delta*10)/10}
+function lowMomentumClients(){return[...assignedClients].map(c=>({client:c,rate:clientActivityRate(c),next:clientNextSession(c)})).sort((a,b)=>a.rate-b.rate||(sessionTs(a.next||{session_date:'9999-12-31',start_time:'23:59:59'})-sessionTs(b.next||{session_date:'9999-12-31',start_time:'23:59:59'}))).slice(0,4)}
+function activeCheckinsToday(){const today=Trainw.dateOnly(new Date());return assignedClients.filter(c=>(c.checkins||[]).some(x=>String(x.checked_in_at).slice(0,10)===today)).length}
+function renderProfileSummary(){const target=$('#coach-profile-summary');if(!target)return;const activeAvailability=availability.filter(a=>a.is_active);const pending=sessions.filter(s=>s.status==='pending').length;const upcoming=sessions.filter(isFutureSession).length;target.innerHTML=`<div class="summary-chip-grid compact-summary-grid"><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(copy('Clients actifs','Active clients','Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡'))}</span><strong>${Trainw.escapeHTML(String(assignedClients.length))}</strong></div><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(copy('Disponibilites','Availability','Ø§Ù„ØªÙˆÙØ±'))}</span><strong>${Trainw.escapeHTML(String(activeAvailability.length))}</strong></div><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(copy('A venir','Upcoming','Ø§Ù„Ù‚Ø§Ø¯Ù…'))}</span><strong>${Trainw.escapeHTML(String(upcoming))}</strong></div><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(copy('En attente','Pending','Ù‚ÙŠØ¯ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±'))}</span><strong>${Trainw.escapeHTML(String(pending))}</strong></div></div><div class="summary-stack" style="margin-top:18px;"><div class="summary-line"><span class="summary-line-label">${Trainw.escapeHTML(copy('Specialite','Specialty','Ø§Ù„ØªØ®ØµØµ'))}</span><strong>${Trainw.escapeHTML(safe(coachProfile?.specialty||copy('Coaching general','General coaching','ØªØ¯Ø±ÙŠØ¨ Ø¹Ø§Ù…')))}</strong></div><div class="summary-line"><span class="summary-line-label">${Trainw.escapeHTML(copy('Tarif','Rate','Ø§Ù„Ø³Ø¹Ø±'))}</span><strong>${Trainw.escapeHTML(coachProfile?.price_per_session||coachProfile?.hourly_rate?`${coachProfile?.price_per_session??coachProfile?.hourly_rate} DT`:copy('A definir','Set your rate','Ø­Ø¯Ø¯ Ø§Ù„Ø³Ø¹Ø±'))}</strong></div><div class="summary-line"><span class="summary-line-label">${Trainw.escapeHTML(copy('Check-ins du jour','Today check-ins','ØªØ³Ø¬ÙŠÙ„Ø§Øª Ø§Ù„ÙŠÙˆÙ…'))}</span><strong>${Trainw.escapeHTML(String(activeCheckinsToday()))}</strong></div><div class="summary-note">${Trainw.escapeHTML(copy('Le resume se met a jour a partir des sessions, disponibilites et clients deja charges.','This summary is driven entirely by the existing sessions, availability, and client data already loaded.','ÙŠØªÙ… ØªØ­Ø¯ÙŠØ« Ù‡Ø°Ø§ Ø§Ù„Ù…Ù„Ø®Øµ Ù…Ù† Ø§Ù„Ø¬Ù„Ø³Ø§Øª ÙˆØ§Ù„ØªÙˆÙØ± ÙˆØ¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ Ø§Ù„Ø­Ø§Ù„ÙŠØ©.'))}</div></div>`}
+function renderAll(){applyTranslations();$('#sidebar-coach-name').textContent=safe(currentProfile?.name||currentProfile?.email||'Coach');$('#coach-name-input').value=currentProfile?.name||'';$('#coach-phone-input').value=currentProfile?.phone||'';$('#coach-email-input').value=currentProfile?.email||'';$('#coach-speciality-input').value=coachProfile?.specialty||'';$('#coach-experience-input').value=coachProfile?.experience_years??'';$('#coach-rate-input').value=coachProfile?.price_per_session??coachProfile?.hourly_rate??'';$('#coach-bio-input').value=coachProfile?.bio||'';renderDashboard();renderClients();renderPrograms();renderWeightRows();renderSessions();renderMessages();renderProfileSummary();lucide.createIcons()}
+function renderDashboard(){
+  Trainw.ui.setText('coach-stat-clients',String(assignedClients.length));
+  const ws=new Date();
+  ws.setDate(ws.getDate()-ws.getDay());
+  ws.setHours(0,0,0,0);
+  const we=new Date(ws);
+  we.setDate(we.getDate()+7);
+  const sessionsThisWeek=sessions.filter(s=>{const z=sessionStart(s);return!Number.isNaN(z.getTime())&&z>=ws&&z<we&&s.status!=='cancelled'});
+  Trainw.ui.setText('coach-stat-sessions',String(sessionsThisWeek.length));
+  const today=Trainw.dateOnly(new Date());
+  const todayChecks=activeCheckinsToday();
+  Trainw.ui.setText('coach-stat-checkins',String(todayChecks));
+  const avg=assignedClients.length?Math.round(assignedClients.reduce((n,c)=>n+clientActivityRate(c),0)/assignedClients.length):0;
+  Trainw.ui.setText('coach-stat-activity',avg+'%');
+  const todaySessions=sessions.filter(s=>s.session_date===today&&s.status!=='cancelled').sort((a,b)=>sessionTs(a)-sessionTs(b));
+  const upcoming=sessions.filter(s=>isFutureSession(s)&&s.session_date!==today).sort((a,b)=>sessionTs(a)-sessionTs(b)).slice(0,5);
+  const pendingSessions=sessions.filter(s=>s.status==='pending').sort((a,b)=>sessionTs(a)-sessionTs(b));
+  const activeAvailability=availability.filter(a=>a.is_active);
+  const heroSession=todaySessions[0]||upcoming[0]||null;
+  Trainw.ui.setText('coach-hero-focus',todaySessions.length?copy(`${todaySessions.length} sessions`,`${todaySessions.length} sessions`,`${todaySessions.length} جلسات`):(heroSession?copy('Prochaine session','Next session','الجلسة التالية'):copy('Journee libre','Open day','يوم مفتوح')));
+  Trainw.ui.setText('coach-hero-focus-meta',heroSession?`${fmt(heroSession.session_date)} · ${String(heroSession.start_time||'').slice(0,5)} · ${heroSession.client?.name||assignedClients.find(c=>c.id===heroSession.client_id)?.name||'Client'}`:copy('Aucune session confirmee pour le moment.','No confirmed sessions on deck yet.','لا توجد جلسات مؤكدة بعد.'));
+  Trainw.ui.setText('coach-hero-availability',activeAvailability.length?copy(`${activeAvailability.length} creneaux`,`${activeAvailability.length} slots`,`${activeAvailability.length} فترات`):copy('Aucun','None','لا يوجد'));
+  Trainw.ui.setText('coach-hero-availability-meta',activeAvailability[0]?`${dayLabel(activeAvailability[0].day_of_week)} · ${String(activeAvailability[0].start_time||'').slice(0,5)} - ${String(activeAvailability[0].end_time||'').slice(0,5)}`:copy('Publiez des horaires pour ouvrir la reservation client.','Publish availability to power client booking.','انشر التوفر لتفعيل الحجز.'));
+  $('#coach-today-sessions').innerHTML=todaySessions.length?`<div class="coach-session-stack">${todaySessions.map(s=>renderSessionCard(s,true)).join('')}</div>`:`<p class="empty-state">${t('noSessions')}</p>`;
+  $('#coach-upcoming-sessions').innerHTML=upcoming.length?`<div class="coach-session-stack">${upcoming.map(s=>renderSessionCard(s,true)).join('')}</div>`:`<p class="empty-state">${Trainw.escapeHTML(copy('Aucune session a venir.','No upcoming sessions.','لا توجد جلسات قادمة.'))}</p>`;
+  $('#coach-watch-list').innerHTML=pendingSessions.length?`<div class="coach-session-stack">${pendingSessions.map(s=>renderSessionCard(s,true)).join('')}</div>`:`<p class="empty-state">${Trainw.escapeHTML(copy('Aucune demande en attente.','No requests waiting.','لا توجد طلبات معلقة.'))}</p>`;
+  const pulse=lowMomentumClients();
+  $('#coach-client-pulse').innerHTML=pulse.length?`<div class="coach-pulse-grid">${pulse.map(({client,rate,next})=>`<article class="coach-pulse-card" data-open-client="${client.id}"><div class="coach-pulse-top"><div class="person-avatar">${Trainw.escapeHTML(ini(client.name))}</div><div class="list-item-main"><div class="coach-pick-name">${Trainw.escapeHTML(client.name||'Client')}</div><div class="coach-pick-meta">${Trainw.escapeHTML(client.profile?.membership_tier||copy('Membre','Member','عضو'))}</div></div></div><div class="mini-metric-grid"><div class="mini-metric-card"><span class="mini-metric-label">${Trainw.escapeHTML(t('activityRate'))}</span><strong>${Trainw.escapeHTML(String(rate))}%</strong></div><div class="mini-metric-card"><span class="mini-metric-label">${Trainw.escapeHTML(t('lastCheckin'))}</span><strong>${Trainw.escapeHTML(lcText(client))}</strong></div></div><div class="summary-note">${Trainw.escapeHTML(next?`${fmt(next.session_date)} · ${String(next.start_time||'').slice(0,5)}`:copy('Pas de prochaine session reservee.','No next session booked yet.','لا توجد جلسة قادمة محجوزة.'))}</div></article>`).join('')}</div>`:`<p class="empty-state">${Trainw.escapeHTML(copy('Tous les clients gardent un bon rythme.','Clients are maintaining a healthy rhythm.','العملاء يحافظون على وتيرة جيدة.'))}</p>`;
+  $('#coach-availability-summary').innerHTML=activeAvailability.length?`<div class="availability-list">${activeAvailability.map(a=>availabilityCard(a,false)).join('')}</div>`:`<p class="empty-state">${Trainw.escapeHTML(copy('Aucune disponibilite publiee.','No published availability.','لا يوجد توفر منشور.'))}</p>`;
+}
+function lcText(c){return lastCheck(c)?fmtDT(lastCheck(c)):'â€”'}
+function filteredClients(){
+  const q=String($('#coach-client-search').value||'').trim().toLowerCase();
+  return assignedClients.filter(c=>!q||[c.name,c.phone,c.profile?.membership_tier,c.profile?.fitness_goal].map(v=>String(v||'').toLowerCase()).some(v=>v.includes(q)));
+}
+function renderClients(){
+  const list=filteredClients();
+  Trainw.ui.setText('coach-client-summary-count',String(assignedClients.length));
+  Trainw.ui.setText('coach-client-summary-active',String(activeCheckinsToday()));
+  Trainw.ui.setText('coach-client-summary-risk',String(assignedClients.filter(c=>clientActivityRate(c)<35).length));
+  Trainw.ui.setText('coach-client-summary-weight',String(assignedClients.filter(c=>(c.weights||[]).length).length));
+  $('#coach-clients-grid').innerHTML=list.length?list.map(c=>{const next=clientNextSession(c);const plan=latestPlanForClient(c.id);const rate=clientActivityRate(c);return`<article class="person-card modern-person-card"><div class="person-header"><div class="person-avatar">${Trainw.escapeHTML(ini(c.name))}</div><div><div class="person-name">${Trainw.escapeHTML(c.name||'Client')}</div><div class="person-role">${Trainw.escapeHTML(String(c.profile?.membership_tier||'basic').toUpperCase())}</div></div></div><div class="person-meta-row"><span class="client-pill">${Trainw.escapeHTML(c.profile?.fitness_goal||copy('Objectif non defini','Goal not set','بدون هدف محدد'))}</span><span class="client-pill">${Trainw.escapeHTML(plan?.title||copy('Aucun plan actif','No active plan','لا توجد خطة'))}</span></div><div class="person-stats"><div class="person-stat-item"><div class="person-stat-value">${Trainw.escapeHTML(lastWeight(c)==null?'—':String(lastWeight(c))+' kg')}</div><div class="person-stat-label">${Trainw.escapeHTML(t('weightKg'))}</div></div><div class="person-stat-item"><div class="person-stat-value">${Trainw.escapeHTML(String(rate))}%</div><div class="person-stat-label">${Trainw.escapeHTML(t('activityRate'))}</div></div><div class="person-stat-item"><div class="person-stat-value">${Trainw.escapeHTML(lcText(c))}</div><div class="person-stat-label">${Trainw.escapeHTML(t('lastCheckin'))}</div></div></div><div class="summary-stack compact-stack"><div class="summary-line"><span class="summary-line-label">${Trainw.escapeHTML(copy('Prochaine session','Next session','الجلسة التالية'))}</span><strong>${Trainw.escapeHTML(next?`${fmt(next.session_date)} · ${String(next.start_time||'').slice(0,5)}`:copy('Aucune reservee','None booked','لا توجد'))}</strong></div><div class="summary-line"><span class="summary-line-label">${Trainw.escapeHTML(copy('Telephone','Phone','الهاتف'))}</span><strong>${Trainw.escapeHTML(safe(c.phone||copy('Non renseigne','Not provided','غير متوفر')))}</strong></div></div><div class="page-head-actions" style="margin-top:14px;"><button class="btn-secondary" type="button" data-open-client="${c.id}">${Trainw.escapeHTML(t('openClient'))}</button><button class="btn-primary" type="button" data-open-page="messages">${Trainw.escapeHTML(copy('Messages','Messages','الرسائل'))}</button></div></article>`}).join(''):`<p class="empty-state">${t('noClients')}</p>`;
+}
+function renderPrograms(){const item=x=>`<div class="plan-card"><div class="plan-card-title">${Trainw.escapeHTML(x.title||'Plan')}</div><div class="plan-card-sub">${Trainw.escapeHTML(String(x.goal||''))} Â· ${Trainw.escapeHTML(String(x.frequency_per_week||0))}/7</div><div class="plan-card-sub">${Trainw.escapeHTML(x.description||'')}</div><div class="page-head-actions" style="margin-top:12px;"><button class="btn-secondary" data-edit-plan="${x.id}">${Trainw.escapeHTML(t('saveChanges'))}</button></div></div>`;$('#coach-plan-list').innerHTML=plans.length?plans.map(item).join(''):`<p class="empty-state">${t('noPlans')}</p>`;$('#coach-template-list').innerHTML=templates.length?templates.map(item).join(''):`<p class="empty-state">${t('noPlans')}</p>`;fillPlanClientSelect()}
+function sparkline(weights){if(!weights.length)return '<svg class="sparkline" viewBox="0 0 80 28"></svg>';const pts=[...weights].slice(0,8).reverse(),vals=pts.map(x=>+x.weight_kg||0),min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;const d=vals.map((v,i)=>`${i===0?'M':'L'} ${i*(80/Math.max(1,vals.length-1))} ${28-((v-min)/range)*24}`).join(' ');return `<svg class="sparkline" viewBox="0 0 80 28"><path d="${d}" fill="none" stroke="#C8F135" stroke-width="2.5" stroke-linecap="round"/></svg>`}
+function renderWeightRows(){
+  const rows=assignedClients;
+  const freshCutoff=Date.now()-(7*24*60*60*1000);
+  Trainw.ui.setText('coach-weight-summary-clients',String(rows.length));
+  Trainw.ui.setText('coach-weight-summary-fresh',String(rows.filter(c=>{const ts=(c.weights||[])[0]?.logged_at;return ts&&new Date(ts).getTime()>=freshCutoff}).length));
+  Trainw.ui.setText('coach-weight-summary-checkins',String(activeCheckinsToday()));
+  $('#coach-weight-table').innerHTML=rows.length?rows.map(c=>{const delta=recentWeightDelta(c);return`<div class="coach-weight-row" data-weight-row="${c.id}"><div class="weight-row-main"><div class="activity-title">${Trainw.escapeHTML(c.name||'Client')}</div><div class="activity-meta">${Trainw.escapeHTML(t('lastCheckin'))}: ${Trainw.escapeHTML(lcText(c))}</div></div><div class="weight-row-spark">${sparkline(c.weights||[])}</div><div class="weight-row-stats"><span class="client-pill">${Trainw.escapeHTML(lastWeight(c)==null?'—':String(lastWeight(c))+' kg')}</span><span class="client-pill ${delta==null?'':delta<=0?'pill-positive':'pill-alert'}">${Trainw.escapeHTML(delta==null?copy('Pas assez de donnees','Not enough data','بيانات غير كافية'):delta>0?`+${delta} kg`:`${delta} kg`)}</span></div><div class="coach-inline-form"><input class="form-input" type="number" step="0.1" placeholder="kg" data-weight-input="${c.id}"><button class="btn-secondary" data-save-weight="${c.id}">${Trainw.escapeHTML(t('saveMeasurement'))}</button></div></div>`}).join(''):`<p class="empty-state">${t('noClients')}</p>`;
+  const selectedId=$('#coach-weight-detail')?.dataset.selectedClientId||'';
+  const selected=rows.find(c=>c.id===selectedId)||rows[0]||null;
+  if(selected)drawClientWeight(selected);else Trainw.ui.setText('coach-weight-summary-selected',copy('Aucun','None','لا يوجد'));
+}
+function drawClientWeight(c){
+  const ctx=$('#coach-weight-chart');
+  if(!ctx||!window.Chart)return;
+  $('#coach-weight-detail').dataset.selectedClientId=c.id;
+  Trainw.ui.setText('coach-weight-summary-selected',c.name||'Client');
+  coachWeightChart?.destroy();
+  const pts=[...(c.weights||[])].reverse();
+  coachWeightChart=new Chart(ctx,{type:'line',data:{labels:pts.map(x=>fmt(x.logged_at)),datasets:[{label:t('weightKg'),data:pts.map(x=>+x.weight_kg||0),borderColor:'#C8F135',backgroundColor:'rgba(200,241,53,.12)',fill:true,tension:.3,borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#efefef'}}},scales:{x:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}},y:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}}}}});
+  const delta=recentWeightDelta(c);
+  $('#coach-weight-detail').innerHTML=`<div class="client-mini-grid"><div class="client-mini-card"><strong>${Trainw.escapeHTML(c.name||'Client')}</strong><p class="client-mini-copy">${Trainw.escapeHTML(t('weightKg'))}: ${Trainw.escapeHTML(lastWeight(c)==null?'—':String(lastWeight(c))+' kg')}</p></div><div class="client-mini-card"><strong>${Trainw.escapeHTML(t('lastCheckin'))}</strong><p class="client-mini-copy">${Trainw.escapeHTML(lcText(c))}</p></div><div class="client-mini-card"><strong>${Trainw.escapeHTML(copy('Variation recente','Recent change','التغير الأخير'))}</strong><p class="client-mini-copy">${Trainw.escapeHTML(delta==null?copy('Pas assez de donnees','Not enough data','بيانات غير كافية'):delta>0?`+${delta} kg`:`${delta} kg`)}</p></div></div>`;
+}
+function sessionTs(s){return new Date(`${s.session_date}T${s.start_time||'00:00:00'}`).getTime()}
+function dayLabel(day){const map={fr:['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'],en:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'],ar:['Ø§Ù„Ø§Ø­Ø¯','Ø§Ù„Ø§Ø«Ù†ÙŠÙ†','Ø§Ù„Ø«Ù„Ø§Ø«Ø§Ø¡','Ø§Ù„Ø§Ø±Ø¨Ø¹Ø§Ø¡','Ø§Ù„Ø®Ù…ÙŠØ³','Ø§Ù„Ø¬Ù…Ø¹Ø©','Ø§Ù„Ø³Ø¨Øª']};return(map[currentLang]||map.fr)[Number(day)||0]}
+function shortDayLabel(day){const map={fr:['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'],en:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],ar:['Ø§Ø­Ø¯','Ø§Ø«Ù†','Ø«Ù„Ø§','Ø§Ø±Ø¨Ø¹','Ø®Ù…ÙŠ','Ø¬Ù…Ø¹','Ø³Ø¨Øª']};return(map[currentLang]||map.fr)[Number(day)||0]}
+function sessionStatusMeta(status){const map={pending:{label:currentLang==='fr'?'En attente':currentLang==='en'?'Pending':'Ù‚ÙŠØ¯ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±',cls:'pending'},confirmed:{label:currentLang==='fr'?'Confirmee':currentLang==='en'?'Confirmed':'Ù…Ø¤ÙƒØ¯',cls:'confirmed'},completed:{label:currentLang==='fr'?'Terminee':currentLang==='en'?'Completed':'Ù…ÙƒØªÙ…Ù„',cls:'completed'},cancelled:{label:currentLang==='fr'?'Annulee':currentLang==='en'?'Cancelled':'Ù…Ù„ØºÙŠ',cls:'cancelled'}};return map[status]||map.pending}
+function canCompleteSession(s){if(s.status!=='confirmed')return false;const end=new Date(`${s.session_date}T${s.end_time||s.start_time||'00:00:00'}`);return!Number.isNaN(end.getTime())&&end.getTime()<=Date.now()}
+function availabilityCard(a,withActions){const badge=a.is_active?'Actif':'Pause';return `<article class="availability-card"><div class="availability-card-top"><div><div class="availability-title">${Trainw.escapeHTML(dayLabel(a.day_of_week))}</div><div class="availability-meta">${Trainw.escapeHTML(String(a.start_time||'').slice(0,5))} - ${Trainw.escapeHTML(String(a.end_time||'').slice(0,5))} Â· ${Trainw.escapeHTML(String(a.slot_minutes||60))} min</div></div><span class="availability-badge">${Trainw.escapeHTML(badge)}</span></div>${withActions?`<div class="coach-session-actions"><button class="btn-secondary" type="button" data-remove-availability="${a.id}">Supprimer</button></div>`:''}</article>`}
+function renderAvailabilityList(){const list=availability.length?`<div class="availability-list">${availability.map(a=>availabilityCard(a,true)).join('')}</div>`:'<p class="empty-state">Aucune disponibilite enregistree.</p>';const target=$('#coach-availability-list');if(target)target.innerHTML=list}
+function renderSessionCard(s,withActions){const meta=sessionStatusMeta(s.status||'pending'),clientName=s.client?.name||assignedClients.find(c=>c.id===s.client_id)?.name||'Client';const endCopy=s.end_time?` - ${String(s.end_time).slice(0,5)}`:'';const actions=[];if(withActions&&s.client_id)actions.push(`<button class="btn-secondary" type="button" data-open-client="${s.client_id}">${Trainw.escapeHTML(t('openClient'))}</button>`);if(withActions&&s.status==='pending'){actions.push(`<button class="btn-primary" type="button" data-session-action="confirm" data-session-id="${s.id}">Confirmer</button>`);actions.push(`<button class="btn-secondary" type="button" data-session-action="cancel" data-session-id="${s.id}">Refuser</button>`)}if(withActions&&s.status==='confirmed'){if(canCompleteSession(s))actions.push(`<button class="btn-primary" type="button" data-session-action="complete" data-session-id="${s.id}">Terminer</button>`);actions.push(`<button class="btn-secondary" type="button" data-session-action="cancel" data-session-id="${s.id}">Annuler</button>`)}return `<article class="coach-session-card"><div class="coach-session-top"><div><div class="coach-session-title">${Trainw.escapeHTML(s.session_name||'Coach session')}</div><div class="coach-session-meta">${Trainw.escapeHTML(fmt(s.session_date))} Â· ${Trainw.escapeHTML(String(s.start_time||'').slice(0,5))}${Trainw.escapeHTML(endCopy)} Â· ${Trainw.escapeHTML(clientName)}</div>${s.notes?`<div class="coach-session-note">${Trainw.escapeHTML(s.notes)}</div>`:''}${s.cancellation_reason?`<div class="coach-session-note">${Trainw.escapeHTML(s.cancellation_reason)}</div>`:''}</div><span class="coach-status-pill ${meta.cls}">${Trainw.escapeHTML(meta.label)}</span></div>${actions.length?`<div class="coach-session-actions">${actions.join('')}</div>`:''}</article>`}
+function renderSessions(){
+  renderAvailabilityList();
+  const ws=new Date();
+  ws.setDate(ws.getDate()-ws.getDay());
+  ws.setHours(0,0,0,0);
+  const weekEnd=Trainw.addDays(ws,7);
+  const weekSessions=sessions.filter(s=>{const at=sessionStart(s);return!Number.isNaN(at.getTime())&&at>=ws&&at<weekEnd&&s.status!=='cancelled'});
+  const upcoming=[...sessions].filter(isFutureSession).sort((a,b)=>sessionTs(a)-sessionTs(b));
+  Trainw.ui.setText('coach-session-summary-upcoming',String(upcoming.length));
+  Trainw.ui.setText('coach-session-summary-pending',String(sessions.filter(s=>s.status==='pending').length));
+  Trainw.ui.setText('coach-session-summary-availability',String(availability.filter(a=>a.is_active).length));
+  Trainw.ui.setText('coach-session-summary-week',String(weekSessions.length));
+  $('#coach-week-grid').innerHTML=Array.from({length:7},(_,i)=>{const day=Trainw.addDays(ws,i),key=Trainw.dateOnly(day),list=sessions.filter(s=>s.session_date===key).sort((a,b)=>sessionTs(a)-sessionTs(b));return `<div class="week-col"><div class="week-col-title">${shortDayLabel(i)} · ${day.getDate()}</div>${list.length?`<div class="coach-session-grid">${list.map(s=>renderSessionCard(s,true)).join('')}</div>`:'<p class="empty-state">-</p>'}</div>`}).join('');
+  $('#coach-session-list').innerHTML=upcoming.length?`<div class="coach-session-stack">${upcoming.map(s=>renderSessionCard(s,true)).join('')}</div>`:`<p class="empty-state">${t('noSessions')}</p>`;
+  const weekCard=$('#coach-week-grid')?.closest('.card');
+  if(weekCard)weekCard.classList.toggle('hidden',sessionListMode);
+}
+function renderMessages(){
+  const badge=$('#coach-msg-badge');
+  const unread=threads.reduce((n,t)=>n+t.messages.filter(m=>m.receiver_id===currentUserId&&!m.is_read).length,0);
+  badge.textContent=String(unread);
+  badge.classList.toggle('hidden',!unread);
+  $('#coach-thread-list').innerHTML=threads.length?threads.map(th=>{
+    const last=th.messages[th.messages.length-1];
+    const threadUnread=th.messages.filter(m=>m.receiver_id===currentUserId&&!m.is_read).length;
+    return `<div class="thread-item ${activeThreadId===th.id?'active':''}" data-thread="${th.id}"><div class="thread-item-top"><div class="thread-item-name">${Trainw.escapeHTML(th.name)}</div><div class="thread-item-time">${Trainw.escapeHTML(last?.created_at?fmtDT(last.created_at):'')}</div></div><div class="thread-item-sub">${Trainw.escapeHTML(last?.content||copy('Aucun message pour le moment.','No messages yet.','لا توجد رسائل بعد.'))}</div>${threadUnread?`<span class="thread-unread-pill">${threadUnread}</span>`:''}</div>`;
+  }).join(''):`<p class="empty-state">${t('noMessages')}</p>`;
+  if(!activeThreadId&&threads[0])openThread(threads[0].id);
+}
+async function openThread(id){
+  activeThreadId=id;
+  renderMessages();
+  const th=threads.find(x=>x.id===id);
+  if(!th)return;
+  $('#coach-conv-empty').classList.add('hidden');
+  $('#coach-conv-wrap').classList.remove('hidden');
+  $('#coach-conv-header').innerHTML=`<div class="thread-header-main"><div class="person-avatar">${Trainw.escapeHTML(ini(th.name))}</div><div><strong>${Trainw.escapeHTML(th.name)}</strong><div class="activity-meta">${Trainw.escapeHTML(copy('Client actif','Active client','عميل نشط'))}</div></div></div>`;
+  $('#coach-conv-messages').innerHTML=th.messages.length?th.messages.map(m=>`<div class="thread-message ${m.sender_id===currentUserId?'mine':''}"><div>${Trainw.escapeHTML(m.content||'')}</div><div class="thread-message-meta">${Trainw.escapeHTML(fmtDT(m.created_at))}</div></div>`).join(''):`<p class="empty-state">${t('noMessages')}</p>`;
+  $('#coach-conv-messages').scrollTop=$('#coach-conv-messages').scrollHeight;
+  await Trainw.api.run(sb.from('messages').update({is_read:true}).eq('receiver_id',currentUserId).eq('sender_id',id),{context:'mark coach messages read',fallback:null,silent:true});
+  markCoachThreadReadLocal(id);
+  renderMessages();
+}
+async function openClientPanel(id){const c=assignedClients.find(x=>x.id===id);if(!c)return;const [goalRes,planRes,logsRes,msgRes]=await Promise.all([Trainw.api.run(sb.from('client_goals').select('*').eq('client_id',id).eq('gym_id',currentGymId).order('created_at',{ascending:false}).limit(1),{context:'client goal panel',fallback:[]}),Trainw.api.run(sb.from('workout_plans').select('*').eq('client_id',id).eq('gym_id',currentGymId).order('updated_at',{ascending:false}).limit(1),{context:'client plan panel',fallback:[]}),Trainw.api.run(sb.from('workout_logs').select('*').eq('client_id',id).eq('gym_id',currentGymId).order('completed_at',{ascending:false}).limit(8),{context:'client logs panel',fallback:[]}),Trainw.api.run(sb.from('messages').select('*').or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${currentUserId})`).order('created_at',{ascending:false}).limit(40),{context:'client msg panel',fallback:[]})]);const plan=(planRes.data||[])[0]||null;const ex=plan?await Trainw.api.run(sb.from('workout_exercises').select('*').eq('plan_id',plan.id).order('order_index',{ascending:true}),{context:'client ex panel',fallback:[]}):{data:[]};clientPanel={id,tab:'overview',data:{client:c,goal:(goalRes.data||[])[0]||null,plan,ex:ex.data||[],logs:logsRes.data||[],messages:msgRes.data||[]},chart:null};renderClientPanel();Trainw.openPanel('coach-client-panel','coach-client-panel-backdrop')}
+function renderClientPanel(){
+  const D=clientPanel.data;
+  if(!D)return;
+  $('#coach-client-panel-title').textContent=safe(D.client.name||'Client');
+  $('#coach-client-panel-sub').textContent=safe(D.client.profile?.membership_tier||'');
+  $$('#coach-client-tabs [data-client-tab]').forEach(b=>b.classList.toggle('active',b.dataset.clientTab===clientPanel.tab));
+  const box=$('#coach-client-panel-body');
+  if(clientPanel.tab==='overview'){
+    const next=clientNextSession(D.client);
+    box.innerHTML=`<div class="panel-stack"><div class="summary-chip-grid compact-summary-grid"><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(copy('Objectif','Goal','الهدف'))}</span><strong>${Trainw.escapeHTML(safe(D.goal?.goal_type||D.client.profile?.fitness_goal||'—'))}</strong></div><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(t('activityRate'))}</span><strong>${Trainw.escapeHTML(String(clientActivityRate(D.client)))}%</strong></div><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(t('lastCheckin'))}</span><strong>${Trainw.escapeHTML(lcText(D.client))}</strong></div><div class="summary-chip"><span class="summary-chip-label">${Trainw.escapeHTML(copy('Prochaine session','Next session','الجلسة التالية'))}</span><strong>${Trainw.escapeHTML(next?`${fmt(next.session_date)} · ${String(next.start_time||'').slice(0,5)}`:copy('Aucune','None','لا توجد'))}</strong></div></div><div class="panel-grid two"><div class="panel-card"><div class="panel-card-title">${Trainw.escapeHTML(copy('Infos client','Client info','معلومات العميل'))}</div><div class="panel-row"><div><div class="panel-row-title">${Trainw.escapeHTML(D.client.name||'Client')}</div><div class="panel-row-sub">${Trainw.escapeHTML(safe(D.client.email||D.client.phone||copy('Aucune coordonnee','No contact info','لا توجد معلومات اتصال')))}</div></div></div><div class="panel-row"><div><div class="panel-row-title">${Trainw.escapeHTML(copy('Notes / objectif','Notes / goal','الملاحظات / الهدف'))}</div><div class="panel-row-sub">${Trainw.escapeHTML(safe(D.goal?.notes||D.client.profile?.training_type||copy('Pas de note ajoutee.','No notes added.','لا توجد ملاحظات.')))}</div></div></div></div><div class="panel-card"><div class="panel-card-title">${Trainw.escapeHTML(copy('Plan actif','Active plan','الخطة الحالية'))}</div><div class="panel-row"><div><div class="panel-row-title">${Trainw.escapeHTML(D.plan?.title||copy('Aucun programme','No program','لا يوجد برنامج'))}</div><div class="panel-row-sub">${Trainw.escapeHTML(D.plan?`${safe(D.plan.goal)} · ${safe(D.plan.frequency_per_week)} / 7`:copy('Attribuez ou modifiez un plan depuis Programmes.','Assign or edit a plan from Programs.','قم بتعيين أو تعديل خطة من البرامج.'))}</div></div></div></div></div></div>`;
+  }
+  if(clientPanel.tab==='weight'){
+    box.innerHTML=`<div class="panel-card"><div class="panel-card-title">${Trainw.escapeHTML(t('weight'))}</div><div class="chart-shell"><canvas id="coach-client-weight-chart"></canvas></div><div class="page-head-actions" style="margin-top:14px;"><input class="form-input" type="number" step="0.1" id="coach-client-weight-input" placeholder="kg"><button class="btn-primary" id="btn-save-client-weight">${Trainw.escapeHTML(t('saveMeasurement'))}</button></div></div>`;
+    const ctx=$('#coach-client-weight-chart');
+    clientPanel.chart?.destroy();
+    if(ctx&&window.Chart){
+      const pts=[...(D.client.weights||[])].reverse();
+      clientPanel.chart=new Chart(ctx,{type:'line',data:{labels:pts.map(x=>fmt(x.logged_at)),datasets:[{label:t('weightKg'),data:pts.map(x=>+x.weight_kg||0),borderColor:'#C8F135',backgroundColor:'rgba(200,241,53,.12)',fill:true,tension:.3,borderWidth:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#efefef'}}},scales:{x:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}},y:{ticks:{color:'#888'},grid:{color:'rgba(255,255,255,0.06)'}}}}});
+    }
+  }
+  if(clientPanel.tab==='program'){
+    const groups=(D.ex||[]).reduce((m,x)=>((m[x.day_label||'Jour']=m[x.day_label||'Jour']||[]).push(x),m),{});
+    box.innerHTML=`<div class="panel-stack"><div class="panel-card"><div class="panel-card-title">${Trainw.escapeHTML(D.plan?.title||t('noWorkout'))}</div><div class="panel-row-sub">${Trainw.escapeHTML(D.plan?.description||copy('Ajustez ce programme depuis l espace Programmes.','Refine this program from the Programs area.','قم بتعديل هذا البرنامج من قسم البرامج.'))}</div>${Object.entries(groups).length?Object.entries(groups).map(([day,it])=>`<div class="program-day-card open"><div class="program-day-head"><div class="program-day-title">${Trainw.escapeHTML(day)}</div></div><div class="program-day-body" style="display:flex;">${it.map(x=>`<div class="program-ex-row"><strong>${Trainw.escapeHTML(x.exercise_name)}</strong><span>${Trainw.escapeHTML(String(safe(x.sets)))} x ${Trainw.escapeHTML(String(safe(x.reps)))} · ${Trainw.escapeHTML(String(safe(x.rest_seconds,0)))}s</span></div>`).join('')}</div></div>`).join(''):`<p class="empty-state">${t('noWorkout')}</p>`}<div class="page-head-actions" style="margin-top:16px;"><button class="btn-primary" data-plan-client="${D.client.id}">${Trainw.escapeHTML(t('saveChanges'))}</button></div></div></div>`;
+  }
+  if(clientPanel.tab==='history'){
+    const items=[...(D.client.checkins||[]).map(x=>({at:x.checked_in_at,title:t('historyCheckin'),copy:x.method||'manual'})),...(D.client.weights||[]).map(x=>({at:x.logged_at,title:t('historyWeight'),copy:String(safe(x.weight_kg))+' kg'})),...(D.logs||[]).map(x=>({at:x.completed_at,title:t('historyWorkout'),copy:`${safe(x.duration_minutes)} min · RPE ${safe(x.perceived_effort)}`})),...(D.messages||[]).map(x=>({at:x.created_at,title:t('historyMessage'),copy:x.content||''}))].sort((a,b)=>new Date(b.at)-new Date(a.at));
+    box.innerHTML=items.length?items.map(x=>`<article class="history-item"><div class="history-item-head"><div class="history-item-title">${Trainw.escapeHTML(x.title)}</div><div class="history-item-time">${Trainw.escapeHTML(fmtDT(x.at))}</div></div><div class="history-item-copy">${Trainw.escapeHTML(x.copy)}</div></article>`).join(''):`<p class="empty-state">${t('noHistory')}</p>`;
+  }
+}
+function fillPlanClientSelect(){const sel=$('#plan-client-input');if(!sel)return;sel.innerHTML=`<option value="">-</option>${assignedClients.map(c=>`<option value="${c.id}">${Trainw.escapeHTML(c.name||'Client')}</option>`).join('')}`}
+function newExerciseRow(x={}){return `<div class="exercise-builder-row"><div class="form-row"><div class="form-group"><label class="form-label">${t('exercise')}</label><input class="form-input" data-ex-name type="text" value="${Trainw.escapeHTML(x.exercise_name||'')}"></div><div class="form-group"><label class="form-label">${t('sets')}</label><input class="form-input" data-ex-sets type="number" value="${Trainw.escapeHTML(String(x.sets||''))}"></div></div><div class="form-row"><div class="form-group"><label class="form-label">${t('reps')}</label><input class="form-input" data-ex-reps type="text" value="${Trainw.escapeHTML(String(x.reps||''))}"></div><div class="form-group"><label class="form-label">${t('rest')}</label><input class="form-input" data-ex-rest type="number" value="${Trainw.escapeHTML(String(x.rest_seconds||''))}"></div></div><div class="form-group"><label class="form-label">${t('notes')}</label><input class="form-input" data-ex-notes type="text" value="${Trainw.escapeHTML(x.notes||'')}"></div><button class="btn-secondary" type="button" data-remove-ex>Ã—</button></div>`}
+function addDayBuilder(label='',items=[]){const wrap=document.createElement('div');wrap.className='plan-day-card';wrap.innerHTML=`<div class="plan-day-head"><div class="plan-day-title">${t('day')}</div><div class="page-head-actions"><button class="btn-secondary" type="button" data-dup-day>${t('duplicateDay')}</button><button class="btn-secondary" type="button" data-del-day>${t('deleteDay')}</button></div></div><div class="form-group"><label class="form-label">${t('day')}</label><input class="form-input" data-day-label type="text" value="${Trainw.escapeHTML(label)}"></div><div class="day-exercises">${(items.length?items:[{}]).map(newExerciseRow).join('')}</div><button class="btn-secondary" type="button" data-add-ex>${t('addExercise')}</button>`;$('#plan-days-builder').appendChild(wrap)}
+async function openPlanModal(id,isTemplate){const plan=(isTemplate?templates:plans).find(x=>x.id===id)||null;$('#workout-plan-id').value=plan?.id||'';$('#workout-plan-title').textContent=plan?plan.title:t('newProgram');$('#plan-title-input').value=plan?.title||'';$('#plan-goal-input').value=plan?.goal||'general';$('#plan-frequency-input').value=plan?.frequency_per_week||'';fillPlanClientSelect();$('#plan-client-input').value=plan?.client_id||'';$('#plan-description-input').value=plan?.description||'';$('#plan-days-builder').innerHTML='';let items=[];if(plan){items=(await Trainw.api.run(sb.from('workout_exercises').select('*').eq('plan_id',plan.id).order('order_index',{ascending:true}),{context:'load plan exercises',fallback:[]})).data||[]}const groups=items.reduce((m,x)=>((m[x.day_label||'Jour']=m[x.day_label||'Jour']||[]).push(x),m),{});const days=Object.entries(groups);if(days.length)days.forEach(([day,it])=>addDayBuilder(day,it));else addDayBuilder();$('#workout-plan-modal').classList.add('show')}
+async function savePlan(asTemplate){const id=$('#workout-plan-id').value||'',payload={gym_id:currentGymId,created_by:currentUserId,client_id:asTemplate?null:($('#plan-client-input').value||null),title:$('#plan-title-input').value.trim()||'Plan',goal:$('#plan-goal-input').value||null,frequency_per_week:+($('#plan-frequency-input').value||0)||null,description:$('#plan-description-input').value||null,is_template:!!asTemplate};const planRes=id?await Trainw.api.run(sb.from('workout_plans').update(payload).eq('id',id).select('id').maybeSingle(),{context:'update plan',fallback:null}):await Trainw.api.run(sb.from('workout_plans').insert(payload).select('id').maybeSingle(),{context:'insert plan',fallback:null});if(planRes.error||!planRes.data?.id)return;const planId=planRes.data.id;await Trainw.api.run(sb.from('workout_exercises').delete().eq('plan_id',planId),{context:'clear exercises',fallback:null});const rows=[];$$('#plan-days-builder .plan-day-card').forEach((dayCard,dayIndex)=>{const label=dayCard.querySelector('[data-day-label]')?.value||`Jour ${dayIndex+1}`;dayCard.querySelectorAll('.exercise-builder-row').forEach((row,i)=>{rows.push({plan_id:planId,day_label:label,exercise_name:row.querySelector('[data-ex-name]')?.value||'Exercise',sets:+(row.querySelector('[data-ex-sets]')?.value||0)||null,reps:row.querySelector('[data-ex-reps]')?.value||null,rest_seconds:+(row.querySelector('[data-ex-rest]')?.value||0)||null,notes:row.querySelector('[data-ex-notes]')?.value||null,order_index:i})})});if(rows.length)await Trainw.api.run(sb.from('workout_exercises').insert(rows),{context:'save exercises',fallback:null});Trainw.ui.showToast(t('planSaved'),'success');$('#workout-plan-modal').classList.remove('show');await bootstrap()}
+async function saveInlineWeight(clientId){const val=+($(`[data-weight-input="${clientId}"]`)?.value||0);if(!Number.isFinite(val)||val<=0){Trainw.ui.showToast(t('weightKg'),'info');return}const btn=$(`[data-save-weight="${clientId}"]`)||$('#btn-save-client-weight');setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.from('weight_logs').insert({client_id:clientId,gym_id:currentGymId,logged_by:currentUserId,weight_kg:val,logged_at:new Date().toISOString()}),{context:'coach save weight',fallback:null});if(r.error)return;Trainw.ui.showToast(t('weightSaved'),'success');await runCoachReload();const c=assignedClients.find(x=>x.id===clientId);if(c)drawClientWeight(c)}finally{setCoachBusy(btn,false)}}
+async function saveAvailability(){const day=+($('#availability-day-input').value||0),start=$('#availability-start-input').value,end=$('#availability-end-input').value,slot=+($('#availability-slot-input').value||60);if(!start||!end||start>=end){Trainw.ui.showToast(currentLang==='fr'?'Verifiez les horaires de disponibilite.':'Check the availability time range.','info');return}if(!Number.isFinite(slot)||slot<=0){Trainw.ui.showToast(currentLang==='fr'?'Duree de slot invalide.':'Invalid slot duration.','info');return}const btn=$('#btn-save-availability');setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.from('coach_availability').insert({coach_id:currentUserId,gym_id:currentGymId,day_of_week:day,start_time:start,end_time:end,slot_minutes:slot,is_active:true}),{context:'save coach availability',fallback:null});if(r.error)return;$('#availability-start-input').value='';$('#availability-end-input').value='';Trainw.ui.showToast(currentLang==='fr'?'Disponibilite ajoutee.':'Availability saved.','success');await runCoachReload()}finally{setCoachBusy(btn,false)}}
+async function removeAvailability(id){const r=await Trainw.api.run(sb.from('coach_availability').delete().eq('id',id),{context:'delete coach availability',fallback:null});if(r.error)return;await bootstrap()}
+async function respondToBooking(sessionId,decision){if(!window.confirm(coachDecisionCopy(decision==='confirmed'?'confirm':'cancel')))return;const btn=$(`[data-session-action="${decision==='confirmed'?'confirm':'cancel'}"][data-session-id="${sessionId}"]`);setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.rpc('respond_to_session_booking',{p_session_id:sessionId,p_decision:decision}),{context:'respond to booking',fallback:null});if(r.error)return;await runCoachReload()}finally{setCoachBusy(btn,false)}}
+async function cancelCoachSession(sessionId){if(!window.confirm(coachDecisionCopy('cancel')))return;const btn=$(`[data-session-action="cancel"][data-session-id="${sessionId}"]`);setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.rpc('cancel_session_booking',{p_session_id:sessionId,p_reason:null}),{context:'cancel coach session',fallback:null});if(r.error)return;await runCoachReload()}finally{setCoachBusy(btn,false)}}
+async function completeBooking(sessionId){if(!window.confirm(coachDecisionCopy('complete')))return;const btn=$(`[data-session-action="complete"][data-session-id="${sessionId}"]`);setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.rpc('complete_session_booking',{p_session_id:sessionId}),{context:'complete coach session',fallback:null});if(r.error)return;await runCoachReload()}finally{setCoachBusy(btn,false)}}
+async function sendCoachMessage(){const thread=threads.find(x=>x.id===activeThreadId),content=$('#coach-msg-input').value.trim();if(!thread||!content)return;const btn=$('#btn-send-coach-message');setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.from('messages').insert({sender_id:currentUserId,receiver_id:thread.id,gym_id:currentGymId,content}),{context:'send coach message',fallback:null});if(r.error)return;$('#coach-msg-input').value='';Trainw.ui.showToast(t('messageSent'),'success');queueCoachReload(120)}finally{setCoachBusy(btn,false)}}
+async function saveCoachProfile(){const name=$('#coach-name-input').value.trim(),phone=$('#coach-phone-input').value.trim(),rate=$('#coach-rate-input').value?+$('#coach-rate-input').value:null;if(!name){Trainw.ui.showToast(t('nameLabel'),'info');return}if(rate!==null&&(!Number.isFinite(rate)||rate<0)){Trainw.ui.showToast(currentLang==='fr'?'Tarif invalide.':'Invalid rate.','info');return}const btn=$('#btn-save-coach-profile');setCoachBusy(btn,true);try{const userRes=await Trainw.api.run(sb.from('users').update({name,phone:phone||null,language_preference:currentLang}).eq('id',currentUserId),{context:'save coach user',fallback:null});if(userRes.error)return;const profilePayload={user_id:currentUserId,gym_id:currentGymId,specialty:$('#coach-speciality-input').value.trim()||null,bio:$('#coach-bio-input').value.trim()||null,experience_years:$('#coach-experience-input').value?+$('#coach-experience-input').value:null,price_per_session:rate};const profileRes=coachProfile?.id?await Trainw.api.run(sb.from('coach_profiles').update(profilePayload).eq('id',coachProfile.id),{context:'save coach profile',fallback:null}):await Trainw.api.run(sb.from('coach_profiles').insert(profilePayload),{context:'create coach profile',fallback:null});if(profileRes?.error)return;Trainw.ui.showToast(t('profileSaved'),'success');await runCoachReload()}finally{setCoachBusy(btn,false)}}
+function handleCoachSessionClick(e){
+  const action=e.target.closest('[data-session-action]');
+  if(action){
+    const id=action.dataset.sessionId,kind=action.dataset.sessionAction;
+    if(kind==='confirm')return respondToBooking(id,'confirmed');
+    if(kind==='cancel')return cancelCoachSession(id);
+    if(kind==='complete')return completeBooking(id);
+  }
+  const client=e.target.closest('[data-open-client]');
+  if(client)openClientPanel(client.dataset.openClient);
+}
+$$('.nav-item').forEach(n=>n.addEventListener('click',()=>showPage(n.dataset.page)));
+$$('.lang-btn').forEach(b=>b.addEventListener('click',()=>{currentLang=b.dataset.lang;localStorage.setItem('trainw_lang',currentLang);renderAll()}));
+document.body.addEventListener('click',e=>{const jump=e.target.closest('[data-open-page]');if(jump)showPage(jump.dataset.openPage)});
+$('#coach-client-search').addEventListener('input',renderClients);
+$('#coach-weight-table').addEventListener('click',e=>{const s=e.target.closest('[data-save-weight]');if(s)return saveInlineWeight(s.dataset.saveWeight);const r=e.target.closest('[data-weight-row]');if(r){const c=assignedClients.find(x=>x.id===r.dataset.weightRow);if(c)drawClientWeight(c)}});
+$('#coach-clients-grid').addEventListener('click',e=>{const b=e.target.closest('[data-open-client]');if(b)openClientPanel(b.dataset.openClient)});
+$('#coach-client-pulse').addEventListener('click',e=>{const b=e.target.closest('[data-open-client]');if(b)openClientPanel(b.dataset.openClient)});
+$('#coach-today-sessions').addEventListener('click',handleCoachSessionClick);
+$('#coach-upcoming-sessions').addEventListener('click',handleCoachSessionClick);
+$('#coach-watch-list').addEventListener('click',handleCoachSessionClick);
+$('#coach-week-grid').addEventListener('click',handleCoachSessionClick);
+$('#coach-session-list').addEventListener('click',handleCoachSessionClick);
+$('#btn-toggle-session-view').addEventListener('click',()=>{sessionListMode=!sessionListMode;renderSessions()});
+$('#btn-save-availability').addEventListener('click',saveAvailability);
+$('#coach-availability-list').addEventListener('click',e=>{const b=e.target.closest('[data-remove-availability]');if(b)removeAvailability(b.dataset.removeAvailability)});
+$('#coach-thread-list').addEventListener('click',e=>{const b=e.target.closest('[data-thread]');if(b)openThread(b.dataset.thread)});
+$('#btn-send-coach-message').addEventListener('click',sendCoachMessage);
+$('#coach-msg-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendCoachMessage()}});
+$('#btn-save-coach-profile').addEventListener('click',saveCoachProfile);
+$('#btn-reset-coach-password').addEventListener('click',async()=>{const btn=$('#btn-reset-coach-password');setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.auth.resetPasswordForEmail(currentProfile.email),{context:'coach reset password',fallback:null,toastOnError:false});if(r.error)return;Trainw.ui.showToast(t('passwordResetSent'),'success')}finally{setCoachBusy(btn,false)}});
+$('#btn-new-plan').addEventListener('click',()=>openPlanModal());
+$('#btn-new-template').addEventListener('click',()=>openPlanModal('',true));
+$('#coach-plan-list').addEventListener('click',e=>{const b=e.target.closest('[data-edit-plan]');if(b)openPlanModal(b.dataset.editPlan,false)});
+$('#coach-template-list').addEventListener('click',e=>{const b=e.target.closest('[data-edit-plan]');if(b)openPlanModal(b.dataset.editPlan,true)});
+$('#close-workout-plan-modal').addEventListener('click',()=>$('#workout-plan-modal').classList.remove('show'));
+$('#btn-add-plan-day').addEventListener('click',()=>addDayBuilder());
+$('#plan-days-builder').addEventListener('click',e=>{const add=e.target.closest('[data-add-ex]');if(add)return add.previousElementSibling.insertAdjacentHTML('beforeend',newExerciseRow());const rm=e.target.closest('[data-remove-ex]');if(rm)return rm.closest('.exercise-builder-row').remove();const dd=e.target.closest('[data-del-day]');if(dd)return dd.closest('.plan-day-card').remove();const cp=e.target.closest('[data-dup-day]');if(cp){const card=cp.closest('.plan-day-card'),label=card.querySelector('[data-day-label]')?.value||'',items=Array.from(card.querySelectorAll('.exercise-builder-row')).map(r=>({exercise_name:r.querySelector('[data-ex-name]')?.value||'',sets:r.querySelector('[data-ex-sets]')?.value||'',reps:r.querySelector('[data-ex-reps]')?.value||'',rest_seconds:r.querySelector('[data-ex-rest]')?.value||'',notes:r.querySelector('[data-ex-notes]')?.value||''}));addDayBuilder(label+' copy',items)}});
+$('#btn-save-plan').addEventListener('click',()=>savePlan(false));
+$('#btn-save-template').addEventListener('click',()=>savePlan(true));
+$('#coach-client-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-client-tab]');if(!b)return;clientPanel.tab=b.dataset.clientTab;renderClientPanel()});
+$('#coach-client-panel-body').addEventListener('click',e=>{if(e.target.id==='btn-save-client-weight'){const c=$('#coach-client-weight-input').value;if(!c||!clientPanel.id)return;saveInlineWeight(clientPanel.id)}const b=e.target.closest('[data-plan-client]');if(b){$('#workout-plan-id').value='';$('#plan-client-input').value=b.dataset.planClient;openPlanModal()}});
+$('#btn-logout').addEventListener('click',async()=>{clearCoachRealtime();clearTimeout(coachReloadTimer);await sb.auth.signOut({scope:'global'});localStorage.removeItem('trainw_active_gym');window.location.href=LOGIN_HREF});
+bootstrap();
+
+

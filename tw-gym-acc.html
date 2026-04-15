@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>Trainw - Tableau de bord</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="tw-gym-acc.css?v=20260403-1">
+  <link rel="stylesheet" href="trainw-enhancements.css">
+  <link rel="stylesheet" href="trainw-v14.css">
+  <link rel="stylesheet" href="tw-gym-acc-v14.css?v=20260403-1">
+  <style>
+    .settings-hub-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+    .settings-hub-tab{border:1px solid var(--bd);background:var(--s2);color:var(--txt);padding:10px 16px;border-radius:999px;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+    .settings-hub-tab.active{background:var(--ac);color:var(--bg);border-color:var(--ac)}
+    .settings-hub-panel.hidden{display:none}
+    .staff-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:20px}
+    .staff-stat-chip{background:var(--s2);border:1px solid var(--bd);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:8px;min-height:112px}
+    .staff-stat-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mt);font-family:'DM Mono',monospace}
+    .staff-stat-value{font-family:'Bebas Neue',sans-serif;font-size:44px;line-height:.95;color:var(--txt)}
+    .staff-stat-copy,.staff-stat-mini{font-size:13px;color:var(--txt)}
+    .staff-stat-breakdown{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .staff-stat-breakdown strong{display:block;font-family:'DM Mono',monospace;font-size:16px;color:var(--ac)}
+    .staff-team-stack{display:flex;flex-direction:column;gap:18px}
+    .staff-team-card{background:var(--s2);border:1px solid var(--bd);border-radius:20px;padding:18px}
+    .staff-team-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+    .staff-team-card-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.04em}
+    .staff-team-card-sub{font-size:13px;color:var(--mt);max-width:720px}
+    .staff-team-directory{display:flex;flex-direction:column;gap:12px}
+    .staff-directory-row{display:grid;grid-template-columns:minmax(240px,1.7fr) minmax(120px,.8fr) minmax(110px,.7fr) minmax(120px,.85fr) minmax(120px,.8fr) minmax(110px,.8fr) minmax(110px,.8fr) auto;gap:12px;align-items:center;padding:16px;border:1px solid var(--bd);border-radius:18px;background:rgba(255,255,255,.02)}
+    .staff-directory-header{background:transparent;border:none;padding:0 4px 4px;border-radius:0;color:var(--mt);font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-family:'DM Mono',monospace}
+    .staff-member-main{display:flex;align-items:center;gap:12px;min-width:0}
+    .staff-member-avatar,.staff-panel-avatar-fallback{width:48px;height:48px;border-radius:16px;background:var(--ac);color:var(--bg);display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:26px;flex-shrink:0;overflow:hidden}
+    .staff-member-avatar img,.staff-panel-avatar-image{width:100%;height:100%;object-fit:cover}
+    .staff-member-name{font-weight:700;color:var(--txt)}
+    .staff-member-meta,.staff-member-subcopy,.staff-pending-meta{font-size:13px;color:var(--mt)}
+    .staff-pill{display:inline-flex;align-items:center;justify-content:center;padding:7px 10px;border-radius:999px;border:1px solid var(--bd);font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:var(--bg);color:var(--txt)}
+    .staff-pill.portal-admin{color:var(--ac);border-color:rgba(200,241,53,.45)}
+    .staff-pill.portal-coach{color:#7ed0ff;border-color:rgba(126,208,255,.35)}
+    .staff-pill.portal-client{color:#999;border-color:rgba(255,255,255,.12)}
+    .staff-pill.status-pending{color:var(--yl);border-color:rgba(255,190,0,.35)}
+    .staff-pill.status-active{color:var(--ac);border-color:rgba(200,241,53,.35)}
+    .staff-pill.status-accepted{color:var(--or);border-color:rgba(255,140,0,.35)}
+    .staff-pill.status-suspended,.staff-pill.status-revoked{color:var(--rd);border-color:rgba(255,61,61,.35)}
+    .staff-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .staff-role-inline{display:flex;align-items:center;gap:8px}
+    .staff-role-inline .form-input{min-width:180px;margin:0}
+    .staff-pending-list{display:flex;flex-direction:column;gap:12px}
+    .staff-pending-row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--bd);border-radius:16px;background:rgba(255,255,255,.02)}
+    .staff-pending-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .role-builder-layout{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.3fr);gap:18px}
+    .role-builder-sidebar,.role-builder-editor{background:var(--s2);border:1px solid var(--bd);border-radius:20px;padding:18px}
+    .role-builder-list{display:flex;flex-direction:column;gap:12px}
+    .role-builder-card{width:100%;text-align:left;background:var(--bg);border:1px solid var(--bd);border-radius:16px;padding:14px;display:flex;justify-content:space-between;gap:10px;cursor:pointer}
+    .role-builder-card.active{border-color:var(--ac);box-shadow:0 0 0 1px rgba(200,241,53,.2)}
+    .role-card-content{min-width:0}
+    .role-builder-card-name{font-weight:700;color:var(--txt)}
+    .role-builder-card-meta{font-size:12px;color:var(--mt);margin-top:4px}
+    .role-builder-card-badges,.role-builder-card-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+    .role-system-badge{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;background:rgba(200,241,53,.08);border:1px solid rgba(200,241,53,.24);color:var(--ac);font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+    .role-editor-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+    .role-portal-toggle{display:flex;gap:8px;flex-wrap:wrap}
+    .role-portal-btn{border:1px solid var(--bd);background:var(--bg);color:var(--txt);padding:10px 14px;border-radius:999px;font-family:'DM Mono',monospace;font-size:12px;cursor:pointer}
+    .role-portal-btn.active{background:var(--ac);color:var(--bg);border-color:var(--ac)}
+    .permission-category{border:1px solid var(--bd);border-radius:18px;padding:16px;background:rgba(255,255,255,.02)}
+    .permissions-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .permission-option{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid var(--bd);border-radius:14px;background:var(--bg)}
+    .permission-option-head{display:flex;gap:8px;align-items:flex-start}
+    .permission-option-code{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt)}
+    .permission-option-copy{font-size:13px;color:var(--mt)}
+    .role-editor-note{font-size:13px;color:var(--mt)}
+    .staff-panel-layout{display:flex;flex-direction:column;gap:18px}
+    .staff-panel-avatar-block{display:grid;grid-template-columns:96px minmax(0,1fr);gap:14px;align-items:center}
+    .staff-panel-avatar-shell{width:96px;height:96px;border-radius:24px;background:var(--s2);border:1px solid var(--bd);overflow:hidden;display:flex;align-items:center;justify-content:center}
+    .staff-panel-avatar-fallback{width:100%;height:100%;font-size:44px;border-radius:0}
+    .staff-panel-avatar-meta{display:flex;flex-direction:column;gap:10px}
+    .staff-panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .staff-schedule-grid{display:flex;flex-direction:column;gap:10px}
+    .staff-schedule-row{display:grid;grid-template-columns:110px 120px 1fr 1fr;gap:10px;align-items:center;padding:12px;border:1px solid var(--bd);border-radius:14px;background:var(--s2)}
+    .staff-schedule-day{font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt)}
+    .staff-schedule-toggle{display:flex;align-items:center;gap:8px;color:var(--txt)}
+    .staff-schedule-row input[type="time"]:disabled{opacity:.45}
+    @media (max-width: 1180px){
+      .staff-summary-grid,.role-builder-layout,.staff-panel-grid{grid-template-columns:1fr 1fr}
+      .staff-directory-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .staff-directory-header{display:none}
+      .staff-actions{justify-content:flex-start}
+    }
+    @media (max-width: 820px){
+      .staff-summary-grid,.role-builder-layout,.staff-panel-grid,.permissions-grid{grid-template-columns:1fr}
+      .staff-directory-row,.staff-schedule-row,.staff-panel-avatar-block{grid-template-columns:1fr}
+      .staff-member-main{align-items:flex-start}
+    }
+  </style>
+</head>
+<body>
+<div class="app-container">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo-section">
+      <img id="sidebar-gym-logo" class="hidden" style="height:32px;width:auto;object-fit:contain;max-width:120px;display:block" alt="Gym Logo">
+      <div class="logo-text" id="sidebar-logo-fallback">TRAINW</div>
+    </div>
+    <div class="gym-info">
+      <div class="gym-name" id="sidebar-gym-name">Chargement…</div>
+      <div class="gym-label" data-i18n="gymOwner">Propriétaire</div>
+    </div>
+    <nav>
+      <div class="nav-item active" data-page="dashboard"><span class="nav-icon"><i data-lucide="layout-dashboard"></i></span><span class="nav-label" data-i18n="navDashboard">Tableau de Bord</span></div>
+      <div class="nav-item" data-page="schedule"><span class="nav-icon"><i data-lucide="calendar"></i></span><span class="nav-label" data-i18n="navSchedule">Planning</span></div>
+      <div class="nav-item" data-page="coaches"><span class="nav-icon"><i data-lucide="users"></i></span><span class="nav-label" data-i18n="navCoaches">Coachs</span></div>
+      <div class="nav-item" data-page="clients"><span class="nav-icon"><i data-lucide="user-check"></i></span><span class="nav-label" data-i18n="navClients">Clients</span></div>
+      <div class="nav-item" data-page="analytics"><span class="nav-icon"><i data-lucide="bar-chart-2"></i></span><span class="nav-label" data-i18n="navAnalytics">Analytiques</span></div>
+      <div class="nav-item" data-page="checkin"><span class="nav-icon"><i data-lucide="scan-line"></i></span><span class="nav-label" data-i18n="navCheckIn">Check-In</span></div>
+      <div class="nav-item" data-page="messages"><span class="nav-icon"><i data-lucide="message-square"></i></span><span class="nav-label" data-i18n="navMessages">Messages</span></div>
+      <div class="nav-item" data-page="classes"><span class="nav-icon"><i data-lucide="dumbbell"></i></span><span class="nav-label" data-i18n="navClasses">Classes</span></div>
+      <div class="nav-item" data-page="settings"><span class="nav-icon"><i data-lucide="settings"></i></span><span class="nav-label" data-i18n="navSettings">Paramètres</span></div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="lang-toggle">
+        <button class="lang-btn" data-lang="en">EN</button>
+        <button class="lang-btn active" data-lang="fr">FR</button>
+        <button class="lang-btn" data-lang="ar">AR</button>
+      </div>
+      <button class="logout-btn" id="btn-logout">&larr; <span data-i18n="signOut">Déconnexion</span></button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main-content">
+
+    <!-- DASHBOARD -->
+    <div id="dashboard-page" class="page">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navDashboard">Tableau de Bord</h1>
+        <p class="page-subtitle" data-i18n="dashSub">Votre salle en un coup d'œil</p>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label" data-i18n="statClients">Clients Actifs</div><div class="stat-value" id="stat-clients">—</div><div class="stat-change" data-i18n="thisMonth">ce mois</div><div class="stat-glow"></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statCoaches">Coachs Actifs</div><div class="stat-value" id="stat-coaches">—</div><div class="stat-change" data-i18n="onStaff">en staff</div><div class="stat-glow"></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statSessions">Séances Cette Semaine</div><div class="stat-value" id="stat-sessions">—</div><div class="stat-change" data-i18n="vsLastWeek">cette semaine</div><div class="stat-glow"></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statRevenue">Revenu Mensuel</div><div class="stat-value" id="stat-revenue">—</div><div class="stat-change" id="stat-revenue-delta">—</div><div class="stat-glow"></div></div>
+        <div class="stat-card"><div class="stat-label" data-i18n="statCheckins">Check-ins Aujourd'hui</div><div class="stat-value" id="stat-checkins">—</div><div class="stat-change">aujourd'hui</div><div class="stat-glow"></div></div>
+      </div>
+      <div class="content-grid">
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title" data-i18n="topCoaches">Meilleurs Coachs</h2></div>
+          <div id="top-coaches-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+        </div>
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title" data-i18n="recentSessions">Séances Récentes</h2></div>
+          <div id="recent-sessions-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+        </div>
+      </div>
+      <div class="content-grid">
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title">Bookings Overview</h2></div>
+          <div id="gym-bookings-overview"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+        </div>
+        <div class="card card-animated">
+          <div class="card-header"><h2 class="card-title">Coach Approval</h2></div>
+          <div id="gym-coach-approval"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE / SESSIONS -->
+    <div id="schedule-page" class="page hidden">
+      <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <h1 class="page-title" data-i18n="navSchedule">Planning</h1>
+            <p class="page-subtitle" data-i18n="schedSub">Toutes les séances de votre salle</p>
+          </div>
+          <button class="btn-primary" id="btn-create-session" data-i18n="createSession">+ Créer une Séance</button>
+        </div>
+      </div>
+      <div class="schedule-toolbar">
+        <input type="text" class="search-input" id="schedule-search" placeholder="Rechercher par nom, coach…" style="flex:1;min-width:180px;margin-bottom:0;">
+        <div class="filter-row" style="margin:0;">
+          <button class="filter-btn active" data-filter="all" data-i18n="filterAll">Tout</button>
+          <button class="filter-btn" data-filter="confirmed" data-i18n="filterConfirmed">Confirmé</button>
+          <button class="filter-btn" data-filter="pending" data-i18n="filterPending">En attente</button>
+          <button class="filter-btn" data-filter="completed" data-i18n="filterCompleted">Terminé</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Vue Réservations</h2></div>
+        <div id="schedule-booking-overview"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+      </div>
+      <div class="session-cards-grid" id="schedule-list">
+        <p class="empty-state" data-i18n="loading">Chargement…</p>
+      </div>
+    </div>
+
+    <!-- COACHES -->
+    <div id="coaches-page" class="page hidden">
+      <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+          <div>
+            <h1 class="page-title" data-i18n="navCoaches">Coachs</h1>
+            <p class="page-subtitle" data-i18n="coachesSub">Gérez votre équipe de coachs</p>
+          </div>
+          <button class="btn-primary" id="btn-add-coach" data-i18n="addCoach">+ Ajouter un Coach</button>
+        </div>
+      </div>
+      <!-- Coach search -->
+      <div class="coaches-search-bar">
+        <input type="text" class="search-input" id="coaches-search" placeholder="Rechercher par nom ou spécialité…" style="margin-bottom:0;">
+      </div>
+      <!-- Carousel -->
+      <div class="carousel-wrapper">
+        <button class="carousel-arrow carousel-prev" id="carousel-prev" aria-label="Précédent">&#8249;</button>
+        <div class="carousel-track-outer" id="carousel-track-outer">
+          <div class="carousel-track" id="coaches-carousel">
+            <p class="empty-state" style="padding:40px;" data-i18n="loading">Chargement…</p>
+          </div>
+        </div>
+        <button class="carousel-arrow carousel-next" id="carousel-next" aria-label="Suivant">&#8250;</button>
+      </div>
+      <div class="carousel-dots" id="carousel-dots"></div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Coach Approval Queue</h2></div>
+        <div id="coach-approval-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+      </div>
+    </div>
+
+    <!-- CLIENTS -->
+    <div id="clients-page" class="page hidden">
+      <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <h1 class="page-title" data-i18n="navClients">Clients</h1>
+            <p class="page-subtitle" data-i18n="clientsSub">Tous les membres de votre salle</p>
+          </div>
+          <button class="btn-primary" id="btn-add-client" data-i18n="addClient">+ Ajouter un Client</button>
+        </div>
+      </div>
+      <input type="text" class="search-input" id="clients-search" placeholder="Rechercher un client…">
+      <div class="filter-row">
+        <button class="filter-btn active" data-cfilter="all" data-i18n="filterAll">Tout</button>
+        <button class="filter-btn" data-cfilter="paid" data-i18n="filterPaid">Payé</button>
+        <button class="filter-btn" data-cfilter="pending" data-i18n="filterPending">En attente</button>
+      </div>
+      <div class="clients-grid" id="clients-grid"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div id="analytics-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navAnalytics">Analytiques</h1>
+        <p class="page-subtitle" data-i18n="analyticsSub">Métriques clés de votre activité</p>
+      </div>
+      <div class="prediction-card">
+        <div class="prediction-header">
+          <span class="prediction-badge">Smart Analytics</span>
+          <div class="prediction-title">Prévision Intelligente</div>
+        </div>
+        <div class="prediction-grid">
+          <div class="prediction-item"><div class="prediction-val" id="pred-monthly">—</div><div class="prediction-lbl" data-i18n="revenueMonth">Revenus ce Mois</div></div>
+          <div class="prediction-item"><div class="prediction-val" id="pred-sessions">—</div><div class="prediction-lbl">Séances / Semaine</div></div>
+          <div class="prediction-item"><div class="prediction-val" id="pred-retention">—</div><div class="prediction-lbl">Taux Activité</div></div>
+        </div>
+      </div>
+      <div id="expiring-alert" class="expiring-alert hidden"></div>
+      <div class="analytics-section-title" data-i18n="bizMetrics">Métriques Générales</div>
+      <div class="analytics-wow-grid">
+        <div class="wow-card"><div class="wow-card-header"><div class="wow-card-title" data-i18n="statClients">Clients Actifs</div><div class="wow-card-icon">?</div></div><div class="wow-card-value" id="an-clients">—</div><div class="wow-card-sub" data-i18n="thisMonth">ce mois</div></div>
+        <div class="wow-card"><div class="wow-card-header"><div class="wow-card-title" data-i18n="statCoaches">Coachs Actifs</div><div class="wow-card-icon">?</div></div><div class="wow-card-value" id="an-coaches">—</div><div class="wow-card-sub" data-i18n="onStaff">en staff</div></div>
+        <div class="wow-card"><div class="wow-card-header"><div class="wow-card-title" data-i18n="statSessions">Séances Cette Semaine</div><div class="wow-card-icon">?</div></div><div class="wow-card-value" id="an-sessions">—</div><div class="wow-card-sub" data-i18n="vsLastWeek">cette semaine</div></div>
+      </div>
+      <div class="analytics-section-title" data-i18n="membersExpiring">Membres à Renouveler</div>
+      <div class="card" style="margin-bottom:24px;"><div id="expiring-members-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
+      <div class="analytics-section-title" data-i18n="opsMetrics">Opérations</div>
+      <div class="analytics-grid">
+        <div class="card"><div class="card-header"><h2 class="card-title" data-i18n="popularClasses">Cours Populaires</h2></div><div id="popular-classes-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
+        <div class="card"><div class="card-header"><h2 class="card-title" data-i18n="coachUtil">Utilisation des Coachs</h2></div><div id="coach-util-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
+      </div>
+    </div>
+    <!-- CLASSES -->
+    <div id="classes-page" class="page hidden">
+      <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+          <div>
+            <h1 class="page-title" data-i18n="classesTitle">Classes</h1>
+            <p class="page-subtitle" data-i18n="classesSub">Gerez vos classes et planifiez des seances a partir des templates.</p>
+          </div>
+          <button class="btn-primary" id="btn-add-class-template" data-i18n="addClass">+ Nouvelle classe</button>
+        </div>
+      </div>
+      <div id="gym-classes-list" class="classes-grid"><p class="empty-state" data-i18n="loading">Chargement...</p></div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="settings-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="navSettings">Paramètres</h1>
+        <p class="page-subtitle" data-i18n="settingsSub">Configurez votre salle</p>
+      </div>
+      <div class="card settings-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="gymInfo">Informations de la Salle</h2></div>
+        <div class="form-group"><label class="form-label" data-i18n="gymNameLbl">Nom de la Salle</label><input type="text" class="form-input" id="gym-name-input"></div>
+        <div class="form-group"><label class="form-label" data-i18n="addressLbl">Adresse</label><input type="text" class="form-input" id="gym-address-input"></div>
+        <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="gym-phone-input"></div>
+        <div class="form-group"><label class="form-label" data-i18n="descLbl">Description</label><textarea class="form-input" id="gym-desc-input" rows="3"></textarea></div>
+        <button class="btn-primary" id="btn-save-settings" data-i18n="saveChanges">Enregistrer</button>
+        <div class="save-status" id="save-status"></div>
+      </div>
+      <div class="card settings-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title">Tarifs de la Salle</h2></div>
+        <p style="font-size:13px;color:var(--mt);margin-bottom:16px;">Ces tarifs seront utilisés pour le suivi des revenus et les rapports.</p>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;"><label class="form-label">Mensuel (DT)</label><input type="number" class="form-input" id="gym-price-monthly" placeholder="150" min="0" step="5"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Trimestriel (DT)</label><input type="number" class="form-input" id="gym-price-quarterly" placeholder="400" min="0" step="5"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Annuel (DT)</label><input type="number" class="form-input" id="gym-price-annual" placeholder="1400" min="0" step="10"></div>
+        </div>
+        <button class="btn-primary" id="btn-save-pricing">Enregistrer les Tarifs</button>
+        <div class="save-status" id="pricing-status"></div>
+      </div>
+      <div class="card settings-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="accountSettings">Compte</h2></div>
+        <div class="form-group"><label class="form-label" data-i18n="currentEmail">Email actuel</label><input type="email" class="form-input" id="account-email" disabled style="opacity:.5;"></div>
+        <div class="settings-actions"><button class="btn-secondary" id="btn-change-password" data-i18n="changePassword">Changer le mot de passe</button></div>
+        <div class="save-status" id="pw-status"></div>
+      </div>
+      <div class="card settings-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="subscription">Abonnement</h2></div>
+        <div class="subscription-tier">
+          <div class="sub-tier-badge" id="sub-tier-badge">FREE</div>
+          <div><div class="sub-tier-name" id="sub-tier-name" data-i18n="freeTier">Essai Gratuit</div><div class="sub-tier-desc" data-i18n="subDesc">Passez au plan Pro pour débloquer toutes les fonctionnalités</div></div>
+        </div>
+        <a href="https://wa.me/21658000000?text=Je%20veux%20passer%20au%20plan%20Pro%20Trainw" target="_blank" class="btn-primary" style="display:inline-block;text-decoration:none;margin-top:16px;" data-i18n="upgradePro">Passer au Pro ?</a>
+      </div>
+      <div class="card settings-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="langSettings">Langue</h2></div>
+        <div class="lang-options">
+          <button class="lang-option-btn active" data-lang="fr">Français</button>
+          <button class="lang-option-btn" data-lang="en">English</button>
+          <button class="lang-option-btn" data-lang="ar">العربية</button>
+        </div>
+      </div>
+      <div class="card settings-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title">Branding</h2></div>
+        <div class="branding-layout">
+          <div class="branding-preview-card">
+            <div class="branding-preview-label">Logo actuel</div>
+            <div class="branding-preview-shell">
+              <img id="gym-logo-preview" class="branding-preview-image hidden" alt="Gym logo">
+              <div id="gym-logo-fallback" class="branding-preview-fallback">TW</div>
+            </div>
+            <div class="branding-preview-meta" id="gym-logo-meta">Aucun logo importe</div>
+          </div>
+          <div class="branding-upload-card">
+            <div class="form-group">
+              <label class="form-label">Fichier logo</label>
+              <input type="file" class="form-input" id="gym-logo-file" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+            </div>
+            <div class="settings-actions">
+              <button class="btn-primary" id="btn-upload-logo" type="button">Importer le logo</button>
+            </div>
+            <div class="save-status" id="gym-logo-status"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card settings-section" id="staff-management-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="staffAccessPanel">Accès &amp; Rôles</h2></div>
+        <div class="settings-hub-tabs">
+          <button class="settings-hub-tab active" type="button" data-settings-team-tab="team" id="btn-settings-team-tab" data-i18n="teamTab">Équipe</button>
+          <button class="settings-hub-tab" type="button" data-settings-team-tab="roles" id="btn-settings-roles-tab" data-i18n="rolesTab">Rôles &amp; Permissions</button>
+        </div>
+
+        <div class="settings-hub-panel" id="settings-staff-tab-team">
+          <div id="staff-stats-row" class="staff-summary-grid">
+            <div class="staff-stat-chip"></div>
+            <div class="staff-stat-chip"></div>
+            <div class="staff-stat-chip"></div>
+            <div class="staff-stat-chip"></div>
+          </div>
+
+          <div class="staff-team-stack">
+            <section class="staff-team-card" id="team-invite-card">
+              <div class="staff-team-card-header">
+                <div>
+                  <div class="staff-team-card-title" data-i18n="inviteMemberTitle">Inviter un membre</div>
+                  <div class="staff-team-card-sub" data-i18n="inviteMemberSub">Ajoutez un membre à votre équipe et préparez sa fiche staff dès l’invitation.</div>
+                </div>
+              </div>
+              <div class="invite-grid">
+                <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="invite-member-name" placeholder="Sana Ben Ali"></div>
+                <div class="form-group"><label class="form-label" data-i18n="emailLbl">Email</label><input type="email" class="form-input" id="invite-member-email" placeholder="sana@salle.tn"></div>
+                <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="invite-member-phone" placeholder="+216 92 123 456"></div>
+                <div class="form-group"><label class="form-label" data-i18n="roleLbl">Rôle</label><select class="form-input" id="invite-role-select"></select></div>
+                <div class="form-group"><label class="form-label" data-i18n="jobTitleLbl">Titre du poste</label><input type="text" class="form-input" id="invite-member-job-title" placeholder="Réceptionniste"></div>
+                <div class="form-group"><label class="form-label" data-i18n="departmentLbl">Département</label><input type="text" class="form-input" id="invite-member-department" placeholder="Front Desk"></div>
+                <div class="form-group"><label class="form-label" data-i18n="employmentTypeLbl">Type de contrat</label><select class="form-input" id="invite-member-employment-type"><option value="full_time" data-i18n="employmentFullTime">Temps plein</option><option value="part_time" data-i18n="employmentPartTime">Temps partiel</option><option value="freelance" data-i18n="employmentFreelance">Freelance</option><option value="intern" data-i18n="employmentIntern">Stagiaire</option></select></div>
+                <div class="form-group"><label class="form-label" data-i18n="hireDateLbl">Date d'embauche</label><input type="date" class="form-input" id="invite-member-hire-date"></div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn-primary" id="btn-send-member-invite" type="button" data-i18n="sendInviteBtn">Envoyer l’invitation</button>
+              </div>
+              <div class="save-status" id="invite-member-status"></div>
+            </section>
+
+            <section class="staff-team-card">
+              <div class="staff-team-card-header">
+                <div>
+                  <div class="staff-team-card-title" data-i18n="staffDirectoryTitle">Annuaire de l’équipe</div>
+                  <div class="staff-team-card-sub" data-i18n="staffDirectorySub">Visualisez les rôles, profils et statuts de toute l’équipe de votre salle.</div>
+                </div>
+              </div>
+              <div id="staff-directory-list" class="staff-team-directory"><p class="empty-state">Chargement...</p></div>
+            </section>
+
+            <section class="staff-team-card">
+              <div class="staff-team-card-header">
+                <div>
+                  <div class="staff-team-card-title" data-i18n="pendingInvitesTitle">Invitations en attente</div>
+                  <div class="staff-team-card-sub" data-i18n="pendingInvitesSub">Suivez les invitations non acceptées et relancez-les si besoin.</div>
+                </div>
+              </div>
+              <div id="staff-pending-list" class="staff-pending-list"><p class="empty-state">Chargement...</p></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="settings-hub-panel hidden" id="settings-staff-tab-roles">
+          <div class="role-builder-layout">
+            <div class="role-builder-sidebar">
+              <div class="staff-team-card-header" style="margin-bottom:12px;">
+                <div>
+                  <div class="staff-team-card-title" data-i18n="rolesLibraryTitle">Bibliothèque des rôles</div>
+                  <div class="staff-team-card-sub" data-i18n="rolesLibrarySub">Rôles système verrouillés et rôles personnalisés pour votre tenant.</div>
+                </div>
+                <button class="btn-secondary" id="btn-new-role" type="button" data-i18n="createRoleBtn">Créer un rôle</button>
+              </div>
+              <div id="role-builder-list"><p class="empty-state">Chargement...</p></div>
+            </div>
+            <div class="role-builder-editor">
+              <div class="role-editor-header">
+                <div>
+                  <div class="staff-team-card-title" data-i18n="roleEditorTitle">Éditeur de rôle</div>
+                  <div class="role-editor-note" id="role-builder-readonly-note" data-i18n="roleEditorSub">Configurez le portail, la description et la matrice de permissions.</div>
+                </div>
+              </div>
+              <input type="hidden" id="role-builder-id">
+              <input type="hidden" id="role-builder-code">
+              <input type="hidden" id="role-builder-portal" value="admin">
+              <div class="form-group"><label class="form-label" data-i18n="roleNameLbl">Nom du rôle</label><input type="text" class="form-input" id="role-builder-name" placeholder="Front Desk"></div>
+              <div class="form-group">
+                <label class="form-label" data-i18n="portalLbl">Portail</label>
+                <div class="role-portal-toggle" id="role-builder-portal-toggle">
+                  <button class="role-portal-btn active" type="button" data-role-portal="admin">Admin</button>
+                  <button class="role-portal-btn" type="button" data-role-portal="coach">Coach</button>
+                  <button class="role-portal-btn" type="button" data-role-portal="client">Client</button>
+                </div>
+              </div>
+              <div class="form-group"><label class="form-label" data-i18n="descriptionLbl">Description</label><textarea class="form-input" id="role-builder-description" rows="3" placeholder="Permissions et usage du rôle"></textarea></div>
+              <div class="permission-builder-head">
+                <div class="staff-team-card-title" style="font-size:24px;" data-i18n="permissionsTitle">Permissions</div>
+                <div class="staff-team-card-sub" data-i18n="permissionsSub">Activez les capacités nécessaires pour ce rôle, groupées par domaine.</div>
+              </div>
+              <div id="role-permissions-grid"><p class="empty-state">Chargement...</p></div>
+              <div class="settings-actions" style="margin-top:16px;">
+                <button class="btn-primary" id="btn-save-role-builder" type="button" data-i18n="saveRoleBtn">Enregistrer le rôle</button>
+              </div>
+              <div class="save-status" id="role-builder-status"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card settings-section">
+        <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="support">Support</h2></div>
+        <div class="settings-actions"><a href="https://wa.me/21658000000?text=Support%20Trainw" target="_blank" class="btn-secondary" data-i18n="contactSupport">Contacter le Support</a></div>
+      </div>
+    </div>
+
+    <!-- CHECK-IN PAGE -->
+    <div id="checkin-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title" data-i18n="checkInTitle">Check-In Clients</h1>
+        <p class="page-subtitle" data-i18n="checkInSub">Marquer la présence des clients</p>
+      </div>
+      <div class="checkin-tabs" id="checkin-tabs">
+        <button class="checkin-tab active" type="button" data-checkin-tab="live">Live</button>
+        <button class="checkin-tab" type="button" data-checkin-tab="manual">Manuel</button>
+        <button class="checkin-tab" type="button" data-checkin-tab="credentials">Badges &amp; Biométrie</button>
+        <button class="checkin-tab" type="button" data-checkin-tab="journal">Journal d'accès</button>
+        <button class="checkin-tab" type="button" data-checkin-tab="terminal">Terminal</button>
+      </div>
+
+      <div class="checkin-tab-panel" id="checkin-tab-live">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title" data-i18n="checkInToday">Check-ins d'aujourd'hui</h2>
+            <div class="checkin-mini-meta">Flux live des passages enregistrés</div>
+          </div>
+          <div id="checkins-today-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
+        </div>
+      </div>
+
+      <div class="checkin-tab-panel hidden" id="checkin-tab-manual">
+        <div class="card settings-section checkin-manual-card">
+          <h2 class="card-title" style="margin-bottom:16px;" data-i18n="checkInNow">Check-In Manuel</h2>
+          <div class="form-group">
+            <label class="form-label" data-i18n="selectClient">Sélectionner un client</label>
+            <select class="form-input" id="checkin-client-select"><option value="">—</option></select>
+          </div>
+          <div class="alert aerr" id="checkin-err"></div>
+          <button class="btn-primary" id="btn-submit-checkin" data-i18n="confirmCheckIn">Confirmer le Check-In</button>
+        </div>
+      </div>
+
+      <div class="checkin-tab-panel hidden" id="checkin-tab-credentials">
+        <div class="credentials-layout">
+          <div class="card credentials-clients-card">
+            <div class="card-header">
+              <h2 class="card-title">Clients</h2>
+            </div>
+            <input class="search-input" id="credential-client-search" type="text" placeholder="Rechercher un client…">
+            <div class="credential-client-list" id="credential-client-list"></div>
+          </div>
+
+          <div class="card credentials-detail-card">
+            <div class="card-header credential-detail-header">
+              <div>
+                <h2 class="card-title">Badges &amp; Biométrie</h2>
+                <div class="checkin-mini-meta" id="credential-selected-client-name">Sélectionnez un client</div>
+              </div>
+              <button class="btn-primary" id="btn-open-credential-modal" type="button">Nouveau badge</button>
+            </div>
+            <div class="credential-list" id="credential-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="checkin-tab-panel hidden" id="checkin-tab-journal">
+        <div class="card">
+          <div class="card-header access-log-header">
+            <div>
+              <h2 class="card-title">Journal d'accès</h2>
+              <div class="checkin-mini-meta">50 derniers passages du terminal</div>
+            </div>
+            <select class="form-input access-log-filter" id="access-log-filter">
+              <option value="all">Tous</option>
+              <option value="granted">Granted</option>
+              <option value="denied">Denied</option>
+            </select>
+          </div>
+          <div class="access-log-list" id="access-log-list"></div>
+        </div>
+      </div>
+
+      <div class="checkin-tab-panel hidden" id="checkin-tab-terminal">
+        <div class="card terminal-config-card">
+          <div class="card-header">
+            <h2 class="card-title">Terminal</h2>
+          </div>
+          <div class="form-row terminal-config-row">
+            <div class="form-group" style="flex:1;">
+              <label class="form-label">PIN administrateur</label>
+              <input class="form-input" id="terminal-admin-pin" type="text" placeholder="1234">
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label class="form-label">Device ID</label>
+              <input class="form-input" id="terminal-device-id" type="text" placeholder="gate-1">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">URL du terminal</label>
+            <div class="terminal-url-preview" id="terminal-url-preview"></div>
+          </div>
+          <div class="terminal-config-actions">
+            <button class="btn-secondary" id="btn-copy-terminal-url" type="button">Copier l'URL</button>
+            <button class="btn-primary" id="btn-open-terminal" type="button">Ouvrir le terminal</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MESSAGES PAGE -->
+    <div id="messages-page" class="page hidden">
+      <div class="msg-page-topbar">
+        <div>
+          <h1 class="page-title" data-i18n="messagesTitle">Messages</h1>
+          <p class="page-subtitle" data-i18n="messagesSub">Conversations avec vos clients</p>
+        </div>
+        <button class="msg-auto-toggle" id="btn-show-auto-panel">? Messages Auto</button>
+      </div>
+      <div class="msg-auto-panel hidden" id="msg-auto-panel">
+        <div class="msg-auto-panel-inner">
+          <div class="msg-auto-field">
+            <label class="form-label">Jours d'absence</label>
+            <input type="number" class="form-input" id="inactivity-days" value="14" min="1" max="90" style="width:90px;">
+          </div>
+          <div class="msg-auto-field" style="flex:1;min-width:200px;">
+            <label class="form-label">Message — utiliser {nom} pour le prénom</label>
+            <input type="text" class="form-input" id="auto-msg-template" placeholder="Bonjour {nom}, ça fait un moment qu'on ne t'a pas vu…">
+          </div>
+          <button class="btn-primary" id="btn-trigger-auto-msg" style="align-self:flex-end;white-space:nowrap;">Envoyer aux inactifs</button>
+        </div>
+      </div>
+      <div class="msg-layout">
+        <div class="msg-sidebar">
+          <div class="msg-sidebar-header">
+            <input class="msg-search-input" id="msg-contact-search" type="text" placeholder="Rechercher un client…">
+          </div>
+          <div class="msg-contact-list" id="messages-client-list">
+            <p class="empty-state" style="padding:20px 16px;" data-i18n="loading">Chargement…</p>
+          </div>
+        </div>
+        <div class="msg-conversation">
+          <div class="msg-empty-state" id="msg-empty-state">
+            <div class="msg-empty-icon">??</div>
+            <div class="msg-empty-title">Sélectionnez une conversation</div>
+            <div class="msg-empty-sub">Choisissez un client à gauche pour commencer à échanger</div>
+          </div>
+          <div class="msg-conv-wrap hidden" id="msg-conv-wrap">
+            <div class="msg-conv-header" id="conv-header"></div>
+            <div class="msg-conv-body" id="conv-messages"></div>
+            <div class="msg-conv-footer" id="conv-input-area">
+              <textarea class="msg-textarea" id="msg-input" placeholder="Écrivez un message…" rows="1"></textarea>
+              <button class="msg-send-btn" id="btn-send-message" aria-label="Envoyer">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /app-container -->
+
+<!-- --------------- MODALS --------------- -->
+
+<!-- SESSION DETAIL MODAL -->
+<div class="modal" id="session-detail-modal">
+  <div class="modal-content" style="max-width:560px;">
+    <button class="modal-close" id="close-session-detail-modal" aria-label="Fermer">×</button>
+    <div id="session-detail-body"></div>
+  </div>
+</div>
+
+<!-- EDIT SESSION MODAL -->
+<div class="modal" id="edit-session-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-edit-session-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title" data-i18n="editSessionTitle">Modifier la Séance</h2>
+    <input type="hidden" id="edit-sess-id">
+    <div class="form-group">
+      <label class="form-label" data-i18n="sessName">Nom de la Séance</label>
+      <input type="text" class="form-input" id="edit-sess-name">
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" data-i18n="sessDate">Date</label>
+        <input type="date" class="form-input" id="edit-sess-date">
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" data-i18n="sessTime">Heure</label>
+        <input type="time" class="form-input" id="edit-sess-time">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" data-i18n="sessDuration">Durée (min)</label>
+        <input type="number" class="form-input" id="edit-sess-duration" min="15" step="15">
+      </div>
+      <div class="form-group" style="flex:1;">
+        <label class="form-label" data-i18n="sessCapacity">Capacité Max</label>
+        <input type="number" class="form-input" id="edit-sess-capacity" min="1">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="sessCoach">Coach Assigné</label>
+      <select class="form-input" id="edit-sess-coach">
+        <option value="">— Aucun coach —</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Statut</label>
+      <select class="form-input" id="edit-sess-status">
+        <option value="confirmed">Confirmé</option>
+        <option value="pending">En attente</option>
+        <option value="completed">Terminé</option>
+      </select>
+    </div>
+    <div class="alert aerr" id="edit-sess-err"></div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn-primary" id="btn-save-edit-session" style="flex:1;" data-i18n="saveChanges">Enregistrer</button>
+      <button class="btn-danger" id="btn-delete-session">? <span data-i18n="deleteSession">Supprimer</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- COACH DETAIL MODAL -->
+<div class="modal" id="coach-modal">
+  <div class="modal-content">
+    <button class="modal-close" id="close-coach-modal" aria-label="Fermer">×</button>
+    <div id="coach-modal-body"></div>
+  </div>
+</div>
+
+<!-- ADD COACH MODAL -->
+<div class="modal" id="add-coach-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-add-coach-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title" data-i18n="addCoachTitle">Ajouter un Coach</h2>
+    <div class="form-group"><label class="form-label" data-i18n="coachName">Nom Complet</label><input type="text" class="form-input" id="new-coach-name" placeholder="Ahmed Ben Ali"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachEmail">Email</label><input type="email" class="form-input" id="new-coach-email" placeholder="ahmed@salle.tn"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachPhone">Téléphone</label><input type="text" class="form-input" id="new-coach-phone" placeholder="+216 92 123 456"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachSpecialty">Spécialité</label><input type="text" class="form-input" id="new-coach-specialty" placeholder="CrossFit, Yoga, Natation…"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif / Séance (DT)</label><input type="number" class="form-input" id="new-coach-rate" placeholder="45" min="0" step="5"></div>
+    <div class="alert aerr" id="add-coach-err"></div>
+    <button class="btn-primary" id="btn-submit-coach" data-i18n="submitCoach">Ajouter le Coach</button>
+  </div>
+</div>
+
+<!-- EDIT COACH MODAL -->
+<div class="modal" id="edit-coach-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-edit-coach-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title">Modifier le Coach</h2>
+    <input type="hidden" id="edit-coach-profile-id">
+    <div class="form-group"><label class="form-label">Nom</label><input type="text" class="form-input" id="edit-coach-name2" disabled style="opacity:.5;"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachSpecialty">Spécialité</label><input type="text" class="form-input" id="edit-coach-specialty2" placeholder="CrossFit, Yoga, Natation…"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif par Séance (DT)</label><input type="number" class="form-input" id="edit-coach-rate2" min="0" step="5"></div>
+    <div class="form-group"><label class="form-label">Bio</label><textarea class="form-input" id="edit-coach-bio2" rows="3" placeholder="Expérience, certifications…"></textarea></div>
+    <button class="btn-primary" id="btn-save-edit-coach" data-i18n="saveChanges">Enregistrer</button>
+  </div>
+</div>
+
+<!-- ADD CLIENT MODAL -->
+<div class="modal" id="add-client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-add-client-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title" data-i18n="addClientTitle">Ajouter un Client</h2>
+    <div class="form-group"><label class="form-label" data-i18n="clientName">Nom Complet</label><input type="text" class="form-input" id="new-client-name" placeholder="Sana Ben Ali"></div>
+    <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" id="new-client-email" placeholder="sana@salle.tn"></div>
+    <div class="form-group"><label class="form-label" data-i18n="clientAge">Âge</label><input type="number" class="form-input" id="new-client-age" placeholder="28" min="10" max="100"></div>
+    <div class="form-group"><label class="form-label" data-i18n="clientPhone">Téléphone</label><input type="text" class="form-input" id="new-client-phone" placeholder="+216 92 123 456"></div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="clientMembership">Type d'Abonnement</label>
+      <select class="form-input" id="new-client-membership">
+        <option value="monthly" data-i18n="monthly">Mensuel</option>
+        <option value="quarterly" data-i18n="quarterly">Trimestriel</option>
+        <option value="annual" data-i18n="annual">Annuel</option>
+        <option value="session" data-i18n="perSession">À la séance</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="clientTraining">Type d'Entraînement</label>
+      <select class="form-input" id="new-client-training">
+        <option value="individual">Individual Training</option>
+        <option value="group_class">Group Class</option>
+        <option value="group_activity">Group Activity</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="paymentStatus">Statut Paiement</label>
+      <select class="form-input" id="new-client-payment-status">
+        <option value="paid" data-i18n="paid">Payé ?</option>
+        <option value="pending" data-i18n="filterPending">En attente ?</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="membershipStart">Début Abonnement</label><input type="date" class="form-input" id="new-client-start-date"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="pricePaid">Montant Payé (DT)</label><input type="number" class="form-input" id="new-client-price" placeholder="150" min="0" step="5"></div>
+    </div>
+    <div class="alert aerr" id="add-client-err"></div>
+    <button class="btn-primary" id="btn-submit-client" data-i18n="submitClient">Ajouter le Client</button>
+  </div>
+</div>
+
+<!-- EDIT CLIENT MODAL -->
+<div class="modal" id="edit-client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-edit-client-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title">Modifier le Client</h2>
+    <input type="hidden" id="edit-client-id">
+    <div class="form-group"><label class="form-label">Nom Complet</label><input type="text" class="form-input" id="edit-client-name"></div>
+    <div class="form-group"><label class="form-label">Téléphone</label><input type="text" class="form-input" id="edit-client-phone" placeholder="+216 92 123 456"></div>
+    <div class="form-group"><label class="form-label">Âge</label><input type="number" class="form-input" id="edit-client-age" min="10" max="99"></div>
+    <div class="form-group">
+      <label class="form-label">Type d'Abonnement</label>
+      <select class="form-input" id="edit-client-membership">
+        <option value="basic">Basic</option>
+        <option value="mensuel">Mensuel</option>
+        <option value="trimestriel">Trimestriel</option>
+        <option value="annuel">Annuel</option>
+        <option value="seance">À la séance</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">Type d'Entraînement</label><input type="text" class="form-input" id="edit-client-training" placeholder="CrossFit, Musculation, Yoga…"></div>
+    <div class="form-group">
+      <label class="form-label">Statut Paiement</label>
+      <select class="form-input" id="edit-client-payment">
+        <option value="paid">Payé ?</option>
+        <option value="pending">En attente ?</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="membershipStart">Début Abonnement</label><input type="date" class="form-input" id="edit-client-start-date"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="pricePaid">Montant Payé (DT)</label><input type="number" class="form-input" id="edit-client-price" placeholder="150" min="0" step="5"></div>
+    </div>
+    <div class="alert aerr" id="edit-client-err"></div>
+    <button class="btn-primary" id="btn-save-edit-client">Enregistrer les modifications</button>
+  </div>
+</div>
+
+<!-- CLIENT DETAIL MODAL -->
+<div class="modal" id="client-modal">
+  <div class="modal-content" style="max-width:480px;">
+    <button class="modal-close" id="close-client-modal" aria-label="Fermer">×</button>
+    <div id="client-modal-body"></div>
+  </div>
+</div>
+
+<!-- CREATE SESSION MODAL -->
+<div class="modal" id="create-session-modal">
+  <div class="modal-content" style="max-width:520px;">
+    <button class="modal-close" id="close-session-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title" data-i18n="createSessionTitle">Créer une Séance</h2>
+    <div class="form-group"><label class="form-label" data-i18n="sessName">Nom de la Séance</label><input type="text" class="form-input" id="sess-name" placeholder="Ex: HIIT Matin, Yoga Débutant…"></div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="sessType">Type de Séance</label>
+      <select class="form-input" id="sess-type" onchange="updateSessionCategory()">
+        <option value="group_class" data-i18n="groupClass">Cours Collectif</option>
+        <option value="group_activity" data-i18n="groupActivity">Activité de Groupe</option>
+        <option value="individual" data-i18n="individualTraining">Entraînement Individuel</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label" data-i18n="sessCategory">Catégorie</label><select class="form-input" id="sess-category"></select></div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessDate">Date</label><input type="date" class="form-input" id="sess-date"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessTime">Heure</label><input type="time" class="form-input" id="sess-time"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessDuration">Durée (min)</label><input type="number" class="form-input" id="sess-duration" value="60" min="15" step="15"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessCapacity">Capacité Max</label><input type="number" class="form-input" id="sess-capacity" value="10" min="1"></div>
+    </div>
+    <div class="form-group" id="sess-client-group">
+      <label class="form-label">Client <span style="color:var(--mt);font-size:10px;" data-i18n="optional">(optionnel)</span></label>
+      <select class="form-input" id="sess-client"><option value="">— Aucun client spécifique —</option></select>
+    </div>
+    <div class="form-group" id="sess-coach-group">
+      <label class="form-label" data-i18n="sessCoach">Coach Assigné <span style="color:var(--mt);font-size:10px;" data-i18n="optional">(optionnel)</span></label>
+      <select class="form-input" id="sess-coach"><option value="" data-i18n="noCoachOpt">— Aucun coach —</option></select>
+    </div>
+    <div class="alert aerr" id="create-session-err"></div>
+    <button class="btn-primary" id="btn-submit-session" data-i18n="createSession">+ Créer une Séance</button>
+  </div>
+</div>
+<div class="trainw-panel-backdrop" id="client-panel-backdrop" data-panel-target="client-profile-panel"></div>
+<aside class="trainw-slide-panel" id="client-profile-panel">
+  <div class="tw-panel-header">
+    <div>
+      <div class="tw-panel-title" id="client-panel-title">Client</div>
+      <div class="page-subtitle" id="client-panel-subtitle">Chargement...</div>
+    </div>
+    <button class="tw-panel-close" type="button" data-panel-close="client-profile-panel" data-panel-backdrop="client-panel-backdrop">×</button>
+  </div>
+  <div class="client-panel-tabs" id="client-panel-tabs">
+    <button class="client-panel-tab active" data-client-tab="overview">Apercu</button>
+    <button class="client-panel-tab" data-client-tab="weight">Poids</button>
+    <button class="client-panel-tab" data-client-tab="program">Programme</button>
+    <button class="client-panel-tab" data-client-tab="history">Historique</button>
+  </div>
+  <div class="tw-panel-body" id="client-profile-panel-content"></div>
+</aside>
+
+<div class="trainw-panel-backdrop" id="coach-panel-backdrop" data-panel-target="coach-profile-panel"></div>
+<aside class="trainw-slide-panel" id="coach-profile-panel">
+  <div class="tw-panel-header">
+    <div>
+      <div class="tw-panel-title" id="coach-panel-title">Coach</div>
+      <div class="page-subtitle" id="coach-panel-subtitle">Chargement...</div>
+    </div>
+    <button class="tw-panel-close" type="button" data-panel-close="coach-profile-panel" data-panel-backdrop="coach-panel-backdrop">×</button>
+  </div>
+  <div class="client-panel-tabs" id="coach-panel-tabs">
+    <button class="client-panel-tab active" data-coach-tab="profile">Profil</button>
+    <button class="client-panel-tab" data-coach-tab="followup">Suivi clients</button>
+    <button class="client-panel-tab" data-coach-tab="activity">Activite</button>
+  </div>
+  <div class="tw-panel-body" id="coach-profile-panel-content"></div>
+</aside>
+
+<div class="trainw-panel-backdrop" id="staff-panel-backdrop" data-panel-target="staff-profile-panel"></div>
+<aside class="trainw-slide-panel" id="staff-profile-panel">
+  <div class="tw-panel-header">
+    <div>
+      <div class="tw-panel-title" id="staff-panel-title">Profil staff</div>
+      <div class="page-subtitle" id="staff-panel-subtitle">Chargement...</div>
+    </div>
+    <button class="tw-panel-close" type="button" data-panel-close="staff-profile-panel" data-panel-backdrop="staff-panel-backdrop">×</button>
+  </div>
+  <div class="tw-panel-body">
+    <div class="staff-panel-layout">
+      <input type="hidden" id="staff-panel-user-id">
+      <div class="staff-panel-avatar-block">
+        <div class="staff-panel-avatar-shell">
+          <div class="staff-panel-avatar-fallback" id="staff-panel-avatar-fallback">ST</div>
+          <img class="staff-panel-avatar-image hidden" id="staff-panel-avatar-image" alt="Staff avatar">
+        </div>
+        <div class="staff-panel-avatar-meta">
+          <div>
+            <div class="staff-team-card-title" style="font-size:24px;" data-i18n="staffAvatarTitle">Avatar</div>
+            <div class="staff-team-card-sub" data-i18n="staffAvatarSub">Ajoutez une photo pour personnaliser le profil du membre.</div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <input type="file" class="form-input" id="staff-avatar-file" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+          </div>
+          <div class="settings-actions" style="margin:0;">
+            <button class="btn-secondary" id="btn-upload-staff-avatar" type="button" data-i18n="uploadAvatarBtn">Préparer l’avatar</button>
+          </div>
+          <div class="save-status" id="staff-avatar-status"></div>
+        </div>
+      </div>
+
+      <div class="staff-panel-grid">
+        <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="staff-panel-name"></div>
+        <div class="form-group"><label class="form-label" data-i18n="emailLbl">Email</label><input type="email" class="form-input" id="staff-panel-email" readonly></div>
+        <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="staff-panel-phone"></div>
+        <div class="form-group"><label class="form-label" data-i18n="jobTitleLbl">Titre du poste</label><input type="text" class="form-input" id="staff-panel-job-title"></div>
+        <div class="form-group"><label class="form-label" data-i18n="departmentLbl">Département</label><input type="text" class="form-input" id="staff-panel-department"></div>
+        <div class="form-group"><label class="form-label" data-i18n="employmentTypeLbl">Type de contrat</label><select class="form-input" id="staff-panel-employment-type"><option value="full_time" data-i18n="employmentFullTime">Temps plein</option><option value="part_time" data-i18n="employmentPartTime">Temps partiel</option><option value="freelance" data-i18n="employmentFreelance">Freelance</option><option value="intern" data-i18n="employmentIntern">Stagiaire</option></select></div>
+        <div class="form-group"><label class="form-label" data-i18n="hireDateLbl">Date d'embauche</label><input type="date" class="form-input" id="staff-panel-hire-date"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" data-i18n="scheduleTitle">Planning hebdomadaire</label>
+        <div class="staff-schedule-grid" id="staff-schedule-grid"></div>
+      </div>
+
+      <div class="staff-panel-grid">
+        <div class="form-group"><label class="form-label" data-i18n="emergencyContactNameLbl">Contact d’urgence — nom</label><input type="text" class="form-input" id="staff-panel-emergency-name"></div>
+        <div class="form-group"><label class="form-label" data-i18n="emergencyContactPhoneLbl">Contact d’urgence — téléphone</label><input type="text" class="form-input" id="staff-panel-emergency-phone"></div>
+      </div>
+
+      <div class="form-group" id="staff-panel-notes-wrap">
+        <label class="form-label" data-i18n="internalNotesLbl">Notes internes</label>
+        <textarea class="form-input" id="staff-panel-notes" rows="5" placeholder="Observations internes, accès, remarques..."></textarea>
+      </div>
+
+      <div class="settings-actions">
+        <button class="btn-primary" id="btn-save-staff-profile" type="button" data-i18n="saveStaffProfileBtn">Enregistrer le profil</button>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<div class="modal" id="class-template-modal">
+  <div class="modal-content" style="max-width:520px;">
+    <button class="modal-close" id="close-class-template-modal" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title" data-i18n="addClassTitle">Nouvelle classe</h2>
+    <input type="hidden" id="class-template-id">
+    <div class="form-group"><label class="form-label" data-i18n="className">Nom de la classe</label><input class="form-input" id="class-name" type="text"></div>
+    <div class="form-group"><label class="form-label" data-i18n="classDesc">Description</label><textarea class="form-input" id="class-desc" rows="3"></textarea></div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classDay">Jour</label><input class="form-input" id="class-day" type="text" placeholder="Lundi"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classTime">Heure</label><input class="form-input" id="class-time" type="time"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classDuration">Duree (min)</label><input class="form-input" id="class-duration" type="number" min="15" step="15" value="60"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classCapacity">Capacite</label><input class="form-input" id="class-capacity" type="number" min="1" value="20"></div>
+    </div>
+    <div class="form-group"><label class="form-label" data-i18n="classCoach">Coach</label><select class="form-input" id="class-coach"><option value="">—</option></select></div>
+    <div class="alert aerr" id="class-template-err"></div>
+    <button class="btn-primary" id="btn-save-class-template" data-i18n="submitClass">Enregistrer la classe</button>
+  </div>
+</div>
+
+<div class="modal" id="credential-modal">
+  <div class="modal-content" style="max-width:460px;">
+    <button class="modal-close" aria-label="Fermer">×</button>
+    <h2 class="form-modal-title">Nouveau badge</h2>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="form-input" id="credential-type">
+        <option value="rfid_card">RFID Card</option>
+        <option value="fingerprint">Fingerprint</option>
+        <option value="face">Face</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Identifiant matériel</label>
+      <input class="form-input" id="credential-data" type="text" placeholder="UID / Template ID">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Label</label>
+      <input class="form-input" id="credential-label" type="text" placeholder="Badge principal">
+    </div>
+    <div class="alert aerr" id="credential-modal-error"></div>
+    <button class="btn-primary" id="btn-save-credential" type="button">Enregistrer</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"><div class="toast-message" id="toast-msg"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
+  window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
+</script>
+<script src="trainw-tenant-utils.js?v=20260412-1"></script>
+<script src="trainw-core.js?v=20260403-1"></script>
+<script src="tw-gym-acc.js?v=20260403-1"></script>
+<script src="tw-gym-acc-v14.js?v=20260403-1"></script>
+<script src="tw-gym-pilot.js?v=20260405-1"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
