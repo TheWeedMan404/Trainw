@@ -234,6 +234,84 @@ body {
 
 .footer-txt a:hover { opacity: .8; }
 
+.workspace-card {
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  background: linear-gradient(135deg, rgba(19, 19, 19, 0.98), rgba(10, 10, 10, 0.98));
+}
+
+.workspace-card:disabled {
+  cursor: default;
+  opacity: .72;
+}
+
+.workspace-card:disabled:hover {
+  transform: none;
+  border-color: var(--bd);
+  box-shadow: none;
+}
+
+.workspace-meta-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 6px;
+}
+
+.workspace-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(200, 241, 53, 0.16);
+  background: rgba(200, 241, 53, 0.08);
+  color: var(--ac);
+  font-size: 11px;
+  font-family: 'DM Mono', 'Courier New', monospace;
+}
+
+.workspace-pill-status {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--txt);
+}
+
+.workspace-action {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.role-invite-banner {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(200, 241, 53, 0.18);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(200, 241, 53, 0.08), rgba(61, 142, 255, 0.07));
+}
+
+.role-invite-copy {
+  font-size: 13px;
+  color: var(--txt);
+}
+
+.role-invite-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.invite-action-btn {
+  min-width: 132px;
+}
+
+.workspace-empty {
+  border-style: dashed;
+}
+
 @media (max-width: 640px) {
   .topbar { padding: 12px 16px; }
   .card { padding: 28px 22px; }

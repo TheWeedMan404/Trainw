@@ -1,5 +1,5 @@
 -- ============================================================================
--- TRAINW V14 DEMO SEED
+-- TRAINW V17 DEMO SEED
 -- Purpose:
 --   - Seed a realistic multi-role demo gym for local testing
 --   - Stay idempotent and safe to re-run
@@ -43,7 +43,7 @@ VALUES (
   'Nadia Ben Salem',
   '+216 70 000 001',
   'Lac 1, Tunis',
-  'Seeded SaaS demo gym for TRAINW V14.',
+  'Seeded SaaS demo gym for TRAINW V17.',
   'pro',
   true,
   '11111111-1111-1111-1111-111111111001'

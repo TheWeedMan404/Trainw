@@ -138,7 +138,7 @@ export function createGateCheckinHandler(options) {
       const admin = adminState.client;
 
       if (type !== 'qr') {
-        const credentialData = safeString(payload?.credential_data);
+        const credentialData = safeString(payload?.credential_data || payload?.credential_value);
         if (!requestedGymId) {
           return json({ access: false, reason: 'missing_gym_id' }, 400, corsHeaders);
         }

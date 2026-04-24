@@ -1,10 +1,10 @@
 -- ============================================================================
--- TRAINW V16 PRODUCTION - BOOKING, PAYMENTS, REVIEWS
+-- TRAINW V17 PRODUCTION - BOOKING, PAYMENTS, REVIEWS
 -- Purpose:
 --   - Create the production-safe booking and payment layer
 --   - Add audit history for session lifecycle changes
 --   - Enforce overlap, capacity, and review integrity
---   - Provide RPCs used by the V14 app
+--   - Provide RPCs used by the V17 app
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -463,7 +463,7 @@ WHERE s.payment_id IS NOT NULL
 
 UPDATE public.payments p
 SET session_id = NULL,
-    notes = CONCAT_WS(' | ', p.notes, 'Detached orphan session reference during V14 migration'),
+    notes = CONCAT_WS(' | ', p.notes, 'Detached orphan session reference during V17 migration'),
     updated_at = now()
 WHERE p.session_id IS NOT NULL
   AND NOT EXISTS (
@@ -474,7 +474,7 @@ WHERE p.session_id IS NOT NULL
 
 UPDATE public.check_ins ci
 SET source_session_id = NULL,
-    notes = CONCAT_WS(' | ', ci.notes, 'Detached orphan session reference during V14 migration')
+    notes = CONCAT_WS(' | ', ci.notes, 'Detached orphan session reference during V17 migration')
 WHERE ci.source_session_id IS NOT NULL
   AND NOT EXISTS (
     SELECT 1
@@ -2551,7 +2551,7 @@ WITH ranked_session_payments AS (
 )
 UPDATE public.payments p
 SET session_id = NULL,
-    notes = CONCAT_WS(' | ', p.notes, 'Detached duplicate session payment during V14 migration'),
+    notes = CONCAT_WS(' | ', p.notes, 'Detached duplicate session payment during V17 migration'),
     updated_at = now()
 FROM ranked_session_payments rsp
 WHERE p.id = rsp.id

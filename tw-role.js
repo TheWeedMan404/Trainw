@@ -185,19 +185,19 @@ function renderAnonymousState() {
 
   grid.innerHTML = [
     {
-      href: '/tw-login.html?role=gym_owner',
+      href: '/login?role=gym_owner',
       short: 'GY',
       title: t('gymTitle'),
       desc: t('gymDesc'),
     },
     {
-      href: '/tw-login.html?role=coach',
+      href: '/login?role=coach',
       short: 'CO',
       title: t('coachTitle'),
       desc: t('coachDesc'),
     },
     {
-      href: '/tw-login.html?role=client',
+      href: '/login?role=client',
       short: 'CL',
       title: t('clientTitle'),
       desc: t('clientDesc'),

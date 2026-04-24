@@ -2,6 +2,7 @@ const Trainw = window.TrainwCore;
 Trainw.installGlobalErrorHandlers();
 
 let cachedSupabaseClient = null;
+let lang = localStorage.getItem('trainw_lang') || 'fr';
 
 function getSupabaseClient() {
   if (cachedSupabaseClient) return cachedSupabaseClient;
@@ -9,20 +10,14 @@ function getSupabaseClient() {
   return cachedSupabaseClient;
 }
 
-const sb = new Proxy(
-  {},
-  {
-    get: function (_target, property) {
-      return Reflect.get(getSupabaseClient(), property);
-    },
-  }
-);
+const sb = new Proxy({}, {
+  get: function (_target, property) {
+    return Reflect.get(getSupabaseClient(), property);
+  },
+});
 
 const ROUTES = {
   role: '/role',
-  dashboard: '/dashboard/gym',
-  coach: '/dashboard/coach',
-  client: '/dashboard/client',
 };
 
 const T = {
@@ -175,18 +170,30 @@ const ROLE_LABELS = {
   client: { fr: 'Client', en: 'Client', ar: 'عميل' },
 };
 
-let lang = localStorage.getItem('trainw_lang') || 'fr';
+const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 function t(key) {
-  return T[lang]?.[key] || T.fr[key] || T.en[key] || '...';
+  return T[lang]?.[key] || T.fr[key] || T.en[key] || key;
+}
+
+function field(id) {
+  return document.getElementById(id);
 }
 
 function currentRole() {
-  return new URLSearchParams(window.location.search).get('role') || document.getElementById('s-role')?.value || 'client';
+  return new URLSearchParams(window.location.search).get('role') || field('s-role')?.value || 'client';
 }
 
-function route(role) {
-  window.location.href = Trainw.roleToPath(role) || ROUTES.role;
+function inviteToken() {
+  return new URLSearchParams(window.location.search).get('invite') || '';
+}
+
+function portalForRole(role) {
+  const safeRole = String(role || '').trim().toLowerCase();
+  if (safeRole === 'coach') return 'coach';
+  if (safeRole === 'client') return 'client';
+  if (['gym_owner', 'gym', 'gym_admin', 'admin', 'staff'].includes(safeRole)) return 'admin';
+  return '';
 }
 
 function syncLangButtons() {
@@ -196,7 +203,7 @@ function syncLangButtons() {
 }
 
 function populateRoleOptions() {
-  const select = document.getElementById('s-role');
+  const select = field('s-role');
   if (!select) return;
   const selected = select.value || currentRole();
   select.innerHTML = '' +
@@ -207,7 +214,7 @@ function populateRoleOptions() {
 }
 
 function updateRoleBadge() {
-  const badge = document.getElementById('rbadge');
+  const badge = field('rbadge');
   if (!badge) return;
   const role = currentRole();
   const label = ROLE_LABELS[role]?.[lang] || ROLE_LABELS[role]?.fr || role;
@@ -241,28 +248,14 @@ function setTab(tab) {
 }
 
 function onRoleChange() {
-  const wrap = document.getElementById('gym-name-wrap');
-  const gymField = document.getElementById('s-gym-name');
+  const wrap = field('gym-name-wrap');
+  const gymField = field('s-gym-name');
   const showGym = currentRole() === 'gym_owner';
+  if (wrap) wrap.hidden = !showGym;
   wrap?.classList.toggle('visible', showGym);
+  if (gymField) gymField.required = showGym;
   if (!showGym && gymField) gymField.value = '';
   updateRoleBadge();
-}
-
-const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-function field(id) {
-  return document.getElementById(id);
-}
-
-function showFerr(id, message) {
-  const error = field(id + '-e');
-  const input = field(id);
-  if (error) {
-    error.textContent = message;
-    error.classList.add('show');
-  }
-  input?.classList.add('err');
 }
 
 function clearField(id) {
@@ -283,6 +276,16 @@ function clearAll() {
     node.textContent = '';
     node.classList.remove('show');
   });
+}
+
+function showFerr(id, message) {
+  const error = field(id + '-e');
+  const input = field(id);
+  if (error) {
+    error.textContent = message;
+    error.classList.add('show');
+  }
+  input?.classList.add('err');
 }
 
 function showErr(id, message) {
@@ -309,7 +312,6 @@ function busy(id, on) {
 function mapAuthError(error) {
   const message = String(error?.message || '').toLowerCase();
   const code = String(error?.code || '').toLowerCase();
-
   if (message.includes('invalid login credentials') || message.includes('invalid credentials') || code.includes('invalid_credentials')) return t('eBadCreds');
   if (message.includes('email not confirmed') || code.includes('email_not_confirmed')) return t('eEmailNotConfirmed');
   if (message.includes('user not found') || message.includes('email not found')) return t('eUserNotFound');
@@ -335,84 +337,62 @@ function signupPendingMessage() {
   return 'Account created. Please confirm your email, then sign in.';
 }
 
-function metadataFallback(user, fallback) {
-  const meta = user?.user_metadata || {};
+async function resolveDestinationAfterAuth(fallbackRole) {
+  const requestedRole = fallbackRole || currentRole();
+  const requestedPortal = portalForRole(requestedRole);
+  if (requestedPortal === 'coach' || requestedPortal === 'client') {
+    localStorage.removeItem('trainw_active_gym');
+  }
+  const context = await Trainw.auth.getContext(sb, {
+    expectedRoles: requestedRole ? [requestedRole] : null,
+    loginHref: null,
+    redirectOnMissing: false,
+    redirectOnMismatch: false,
+    redirectOnPendingMembership: false,
+    recoveryRole: requestedRole,
+    workspaceHref: null,
+  });
+
+  if (!context.session || !context.profile) {
+    return { href: null, error: new Error('profile_missing') };
+  }
+
+  const token = inviteToken();
+  if (token && token.length >= 10) {
+    const invitationResult = await Trainw.auth.acceptInvitation(sb, token);
+    if (invitationResult.error) {
+      return { href: null, error: invitationResult.error };
+    }
+    return {
+      href: Trainw.roleToPath(invitationResult.data || context.activeMembership || context.profile),
+      error: null,
+    };
+  }
+
+  const allMemberships = Array.isArray(context.memberships) ? context.memberships : [];
+  const scopedMemberships = requestedPortal
+    ? allMemberships.filter(function (membership) {
+        return String(membership?.portal || '').trim().toLowerCase() === requestedPortal;
+      })
+    : allMemberships;
+
+  if (scopedMemberships.length > 1) {
+    return { href: ROUTES.role, error: null };
+  }
+
+  if (!context.activeMembership && scopedMemberships.length) {
+    return { href: ROUTES.role, error: null };
+  }
+
+  const targetMembership =
+    context.activeMembership ||
+    (scopedMemberships.length === 1 ? scopedMemberships[0] : null) ||
+    context.profile;
+
   return {
-    role: fallback?.role || meta.role || null,
-    name: fallback?.name || meta.name || user?.email?.split('@')[0] || 'Member',
-    email: fallback?.email || user?.email || '',
-    gymName: fallback?.gymName || meta.gym_name || '',
+    href: Trainw.roleToPath(targetMembership),
+    error: context.error || null,
   };
-}
-
-function roleNeedsGym(role) {
-  return ['gym_owner', 'gym', 'admin', 'coach', 'client'].includes(role);
-}
-
-async function ensureProfileRecords(user, role, name, email, gymName) {
-  const existing = await Trainw.auth.getProfile(sb, user.id, true);
-  if (existing.profile && (!roleNeedsGym(existing.profile.role) || existing.profile.gym_id)) {
-    return existing.profile;
-  }
-
-  let gymId = existing.profile?.gym_id || null;
-  if (role === 'gym_owner' && gymName) {
-    const gymResult = await Trainw.api.run(
-      sb.from('gyms').insert({ name: gymName }).select('id').single(),
-      { context: 'create signup gym', fallback: null, toastOnError: false, silent: true }
-    );
-    gymId = gymResult.data?.id || null;
-  }
-
-  await Trainw.api.run(
-    sb.from('users').upsert({
-      id: user.id,
-      name,
-      email,
-      role,
-      gym_id: gymId,
-      language_preference: lang,
-    }),
-    { context: 'create signup profile', toastOnError: false }
-  );
-
-  if (role === 'coach') {
-    await Trainw.api.run(
-      sb.from('coach_profiles').upsert({ user_id: user.id, is_active: true }),
-      { context: 'create coach profile', toastOnError: false, silent: true }
-    );
-  }
-
-  if (role === 'client') {
-    await Trainw.api.run(
-      sb.from('client_profiles').upsert({ user_id: user.id, payment_status: 'pending' }),
-      { context: 'create client profile', toastOnError: false, silent: true }
-    );
-  }
-
-  const refreshed = await Trainw.auth.getProfile(sb, user.id, true);
-  return refreshed.profile || { id: user.id, role, gym_id: gymId };
-}
-
-async function resolveProfileOrRecover(user, fallback) {
-  if (!user?.id) return null;
-  const initial = await Trainw.auth.getProfile(sb, user.id, true);
-  const payload = metadataFallback(user, fallback);
-  if (initial.profile?.role && (!roleNeedsGym(initial.profile.role) || initial.profile.gym_id)) {
-    return initial.profile;
-  }
-
-  payload.role = payload.role || initial.profile?.role || null;
-  payload.name = payload.name || initial.profile?.name || null;
-  payload.email = payload.email || initial.profile?.email || null;
-  if (!payload.role) return initial.profile || null;
-
-  const repaired = await Trainw.auth.ensureProfile(sb, payload);
-  if (repaired.profile?.role && (!roleNeedsGym(repaired.profile.role) || repaired.profile.gym_id)) {
-    return repaired.profile;
-  }
-
-  return ensureProfileRecords(user, payload.role, payload.name, payload.email, payload.gymName);
 }
 
 async function doLogin() {
@@ -445,11 +425,15 @@ async function doLogin() {
       return;
     }
 
-    const profile = await resolveProfileOrRecover(data.user, {
-      email,
+    await Trainw.auth.ensureProfile(sb, {
       role: currentRole(),
+      email,
+      name: data.user?.user_metadata?.name || null,
+      gymName: data.user?.user_metadata?.gym_name || null,
     });
-    if (!profile?.role) {
+
+    const destination = await resolveDestinationAfterAuth(currentRole());
+    if (destination.error || !destination.href) {
       await sb.auth.signOut();
       showErr('l-err', t('eNoProfile'));
       return;
@@ -457,7 +441,7 @@ async function doLogin() {
 
     showOk('l-ok', t('okLogin'));
     window.setTimeout(function () {
-      route(profile.role);
+      window.location.href = destination.href;
     }, 500);
   } catch (error) {
     console.error(error);
@@ -553,15 +537,22 @@ async function doSignup() {
       authUser = signIn.data.user;
     }
 
-    if (!authUser) {
-      showErr('s-err', t('eGeneric'));
+    const profileResult = await Trainw.auth.ensureProfile(sb, {
+      role,
+      name,
+      email,
+      gymName,
+    });
+    if (profileResult?.missing) {
+      await sb.auth.signOut();
+      showErr('s-err', 'Compte cree mais configuration incomplete. Contactez le support.');
       return;
     }
 
-    const profile = await ensureProfileRecords(authUser, role, name, email, gymName);
+    const destination = await resolveDestinationAfterAuth(role);
     showOk('s-ok', t('okSignup'));
     window.setTimeout(function () {
-      route(profile?.role || role);
+      window.location.href = destination.href || ROUTES.role;
     }, 600);
   } catch (error) {
     console.error(error);
@@ -648,19 +639,12 @@ function hydrateRole() {
 async function restoreSession() {
   try {
     getSupabaseClient();
-    const context = await Trainw.auth.getContext(sb, {
-      loginHref: null,
-      redirectOnMissing: false,
-      redirectOnMismatch: false,
-      recoveryRole: currentRole(),
-    });
-    if (!context.session) return;
-
-    const profile = context.profile?.role
-      ? context.profile
-      : await resolveProfileOrRecover(context.session.user, { role: currentRole() });
-    if (profile?.role) {
-      route(profile.role);
+    const sessionResult = await sb.auth.getSession();
+    if (sessionResult.error) throw sessionResult.error;
+    if (!sessionResult.data?.session) return;
+    const destination = await resolveDestinationAfterAuth(currentRole());
+    if (destination.href) {
+      window.location.href = destination.href;
     }
   } catch (error) {
     console.error('[Trainw] restoreSession skipped', error);

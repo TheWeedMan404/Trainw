@@ -188,6 +188,14 @@ function inviteToken() {
   return new URLSearchParams(window.location.search).get('invite') || '';
 }
 
+function portalForRole(role) {
+  const safeRole = String(role || '').trim().toLowerCase();
+  if (safeRole === 'coach') return 'coach';
+  if (safeRole === 'client') return 'client';
+  if (['gym_owner', 'gym', 'gym_admin', 'admin', 'staff'].includes(safeRole)) return 'admin';
+  return '';
+}
+
 function syncLangButtons() {
   document.querySelectorAll('.lang-btn').forEach(function (button) {
     button.classList.toggle('active', button.dataset.lang === lang);
@@ -243,7 +251,9 @@ function onRoleChange() {
   const wrap = field('gym-name-wrap');
   const gymField = field('s-gym-name');
   const showGym = currentRole() === 'gym_owner';
+  if (wrap) wrap.hidden = !showGym;
   wrap?.classList.toggle('visible', showGym);
+  if (gymField) gymField.required = showGym;
   if (!showGym && gymField) gymField.value = '';
   updateRoleBadge();
 }
@@ -328,12 +338,18 @@ function signupPendingMessage() {
 }
 
 async function resolveDestinationAfterAuth(fallbackRole) {
+  const requestedRole = fallbackRole || currentRole();
+  const requestedPortal = portalForRole(requestedRole);
+  if (requestedPortal === 'coach' || requestedPortal === 'client') {
+    localStorage.removeItem('trainw_active_gym');
+  }
   const context = await Trainw.auth.getContext(sb, {
+    expectedRoles: requestedRole ? [requestedRole] : null,
     loginHref: null,
     redirectOnMissing: false,
     redirectOnMismatch: false,
     redirectOnPendingMembership: false,
-    recoveryRole: fallbackRole || currentRole(),
+    recoveryRole: requestedRole,
     workspaceHref: null,
   });
 
@@ -353,16 +369,28 @@ async function resolveDestinationAfterAuth(fallbackRole) {
     };
   }
 
-  if (Array.isArray(context.memberships) && context.memberships.length > 1) {
+  const allMemberships = Array.isArray(context.memberships) ? context.memberships : [];
+  const scopedMemberships = requestedPortal
+    ? allMemberships.filter(function (membership) {
+        return String(membership?.portal || '').trim().toLowerCase() === requestedPortal;
+      })
+    : allMemberships;
+
+  if (scopedMemberships.length > 1) {
     return { href: ROUTES.role, error: null };
   }
 
-  if (!context.activeMembership && Array.isArray(context.memberships) && context.memberships.length) {
+  if (!context.activeMembership && scopedMemberships.length) {
     return { href: ROUTES.role, error: null };
   }
+
+  const targetMembership =
+    context.activeMembership ||
+    (scopedMemberships.length === 1 ? scopedMemberships[0] : null) ||
+    context.profile;
 
   return {
-    href: Trainw.roleToPath(context.activeMembership || context.profile),
+    href: Trainw.roleToPath(targetMembership),
     error: context.error || null,
   };
 }

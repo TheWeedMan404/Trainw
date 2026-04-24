@@ -1,9 +1,12 @@
 {
-  "name": "trainw-v13",
+  "name": "trainw-v17",
   "private": true,
-  "version": "1.0.0",
+  "version": "17.0.0",
+  "description": "Trainw V17 static frontend bundle and deployment tooling",
   "scripts": {
+    "dev": "node dev-server.js",
     "build": "node env-config.js",
-    "dev": "node dev-server.js"
+    "preview": "node dev-server.js",
+    "verify": "node scripts/verify-trainw.js"
   }
 }

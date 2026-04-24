@@ -1,10 +1,10 @@
 -- ============================================================================
--- TRAINW V16 PRODUCTION - PROFILES AND OPERATIONS
+-- TRAINW V17 PRODUCTION - PROFILES AND OPERATIONS
 -- Purpose:
 --   - Create and normalize coach/client/profile-side tables
 --   - Add communication, workout, check-in, and gate-access structures
 --   - Create helper functions used by RLS and app flows
---   - Keep compatibility with the existing V14 frontend and RPC callers
+--   - Keep compatibility with the existing V17 frontend and RPC callers
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

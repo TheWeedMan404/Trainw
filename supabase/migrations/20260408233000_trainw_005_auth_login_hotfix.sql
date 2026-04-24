@@ -1,8 +1,8 @@
 -- ============================================================================
--- TRAINW V16 HOTFIX - AUTH RECOVERY, REVIEW COMPATIBILITY, AND RLS SAFETY
+-- TRAINW V17 HOTFIX - AUTH RECOVERY, REVIEW COMPATIBILITY, AND RLS SAFETY
 -- Purpose:
 --   - Repair legacy profile rows so existing auth accounts can log in again
---   - Add missing review compatibility columns used by the V14 frontend
+--   - Add missing review compatibility columns used by the V17 frontend
 --   - Replace recursive/fragile helper functions and policies
 --   - Keep migrations idempotent and safe on partially-upgraded databases
 -- ============================================================================

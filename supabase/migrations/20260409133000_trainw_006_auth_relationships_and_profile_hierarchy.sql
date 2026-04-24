@@ -1,5 +1,5 @@
 -- ============================================================================
--- TRAINW V16 PRODUCTION - AUTH RELATIONSHIP CANONICALIZATION AND PROFILE HIERARCHY
+-- TRAINW V17 PRODUCTION - AUTH RELATIONSHIP CANONICALIZATION AND PROFILE HIERARCHY
 -- Purpose:
 --   - Remove ambiguous PostgREST relationships between profile tables and users
 --   - Add the missing gym/client hierarchy columns required by the SaaS data model

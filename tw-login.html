@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="stylesheet" href="tw-login.css?v=20260403-1">
   <link rel="stylesheet" href="trainw-enhancements.css">
-  <link rel="stylesheet" href="trainw-v14.css">
+  <link rel="stylesheet" href="trainw-v17.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -22,7 +22,7 @@
   <div class="orb orb-2"></div>
 
   <div class="topbar">
-    <a href="/tw-role.html" class="back-btn">&larr; <span data-i18n="navBack">Retour</span></a>
+    <a href="/role" class="back-btn">&larr; <span data-i18n="navBack">Retour</span></a>
     <div class="lang-toggle">
       <button class="lang-btn" data-lang="en">EN</button>
       <button class="lang-btn active" data-lang="fr">FR</button>
@@ -35,14 +35,14 @@
 
     <div class="tabs">
       <button class="tab active" id="tab-login" data-tab="login" data-i18n="tabLogin">Connexion</button>
-      <button class="tab" id="tab-signup" data-tab="signup" data-i18n="tabSignup">Creer un compte</button>
+      <button class="tab" id="tab-signup" data-tab="signup" data-i18n="tabSignup">Créer un compte</button>
     </div>
 
     <div class="rbadge" id="rbadge"></div>
 
     <div class="panel active" id="panel-login">
       <p class="ptitle" data-i18n="loginTitle">Bon retour</p>
-      <p class="psub" data-i18n="loginSub">Connectez-vous a votre espace Trainw</p>
+      <p class="psub" data-i18n="loginSub">Connectez-vous à votre espace Trainw</p>
 
       <div class="field">
         <label data-i18n="lEmail">Email</label>
@@ -59,7 +59,7 @@
         <div class="ferr" id="l-pw-e"></div>
       </div>
 
-      <div class="forgot"><a id="forgot-link" data-i18n="forgotPw">Mot de passe oublie ?</a></div>
+      <div class="forgot"><a id="forgot-link" data-i18n="forgotPw">Mot de passe oublié ?</a></div>
 
       <button class="btn" id="btn-login">
         <span data-i18n="btnLogin">Connexion</span><span class="spin"></span>
@@ -70,7 +70,7 @@
 
     <div class="panel" id="panel-signup">
       <p class="ptitle" data-i18n="signupTitle">Rejoindre Trainw</p>
-      <p class="psub" data-i18n="signupSub">Creez votre compte en quelques secondes</p>
+      <p class="psub" data-i18n="signupSub">Créez votre compte en quelques secondes</p>
 
       <div class="field">
         <label data-i18n="lName">Nom complet</label>
@@ -111,7 +111,7 @@
         </select>
       </div>
 
-      <div class="gym-name-wrap" id="gym-name-wrap">
+      <div class="gym-name-wrap" id="gym-name-wrap" hidden>
         <div class="field" style="margin-bottom:0;">
           <label data-i18n="lGymName">Nom de la salle</label>
           <input id="s-gym-name" class="input" type="text" data-i18n-ph="phGymName" placeholder="Ex: Trainw Ariana">
@@ -120,7 +120,7 @@
       </div>
 
       <button class="btn" id="btn-signup">
-        <span data-i18n="btnSignup">Creer un compte</span><span class="spin"></span>
+        <span data-i18n="btnSignup">Créer un compte</span><span class="spin"></span>
       </button>
       <div class="alert aerr" id="s-err"></div>
       <div class="alert aok" id="s-ok"></div>

@@ -1,5 +1,5 @@
 -- ============================================================================
--- TRAINW V14 TEST ACCOUNTS
+-- TRAINW V17 TEST ACCOUNTS
 -- Purpose:
 --   - Create/repair the requested coach and client auth accounts
 --   - Attach them to the existing gym owner hierarchy for gymtest1@gmail.com
@@ -39,7 +39,7 @@ BEGIN
   SELECT au.id
   INTO v_coach_auth_id
   FROM auth.users au
-  WHERE lower(BTRIM(au.email)) = 'coachtestv14@gmail.com'
+  WHERE lower(BTRIM(au.email)) = 'coachtestv17@gmail.com'
   LIMIT 1;
 
   IF v_coach_auth_id IS NULL THEN
@@ -64,16 +64,16 @@ BEGIN
       v_coach_auth_id,
       'authenticated',
       'authenticated',
-      'coachtestv14@gmail.com',
+      'coachtestv17@gmail.com',
       v_password_hash,
       v_now,
       v_now,
       jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
       jsonb_build_object(
-        'name', 'Coach Test V14',
+        'name', 'Coach Test V17',
         'role', 'coach',
         'gym_id', v_gym_id::text,
-        'email', 'coachtestv14@gmail.com',
+        'email', 'coachtestv17@gmail.com',
         'email_verified', true,
         'phone_verified', false,
         'sub', v_coach_auth_id::text
@@ -85,16 +85,16 @@ BEGIN
     );
   ELSE
     UPDATE auth.users
-    SET email = 'coachtestv14@gmail.com',
+    SET email = 'coachtestv17@gmail.com',
         encrypted_password = v_password_hash,
         email_confirmed_at = COALESCE(email_confirmed_at, v_now),
         confirmed_at = COALESCE(confirmed_at, v_now),
         raw_app_meta_data = jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
         raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object(
-          'name', 'Coach Test V14',
+          'name', 'Coach Test V17',
           'role', 'coach',
           'gym_id', v_gym_id::text,
-          'email', 'coachtestv14@gmail.com',
+          'email', 'coachtestv17@gmail.com',
           'email_verified', true,
           'phone_verified', false,
           'sub', v_coach_auth_id::text
@@ -108,18 +108,18 @@ BEGIN
   END IF;
 
   UPDATE auth.identities
-  SET provider_id = 'coachtestv14@gmail.com',
+  SET provider_id = 'coachtestv17@gmail.com',
       identity_data = jsonb_build_object(
-        'name', 'Coach Test V14',
+        'name', 'Coach Test V17',
         'role', 'coach',
         'gym_id', v_gym_id::text,
-        'email', 'coachtestv14@gmail.com',
+        'email', 'coachtestv17@gmail.com',
         'email_verified', true,
         'phone_verified', false,
         'sub', v_coach_auth_id::text
       ),
       provider = 'email',
-      email = 'coachtestv14@gmail.com',
+      email = 'coachtestv17@gmail.com',
       updated_at = v_now
   WHERE user_id = v_coach_auth_id
     AND provider = 'email';
@@ -144,12 +144,12 @@ BEGIN
     VALUES (
       gen_random_uuid(),
       v_coach_auth_id,
-      'coachtestv14@gmail.com',
+      'coachtestv17@gmail.com',
       jsonb_build_object(
-        'name', 'Coach Test V14',
+        'name', 'Coach Test V17',
         'role', 'coach',
         'gym_id', v_gym_id::text,
-        'email', 'coachtestv14@gmail.com',
+        'email', 'coachtestv17@gmail.com',
         'email_verified', true,
         'phone_verified', false,
         'sub', v_coach_auth_id::text
@@ -158,7 +158,7 @@ BEGIN
       v_now,
       v_now,
       v_now,
-      'coachtestv14@gmail.com'
+      'coachtestv17@gmail.com'
     );
   END IF;
 
@@ -169,7 +169,7 @@ BEGIN
   SELECT au.id
   INTO v_client_auth_id
   FROM auth.users au
-  WHERE lower(BTRIM(au.email)) = 'clienttestv14@gmail.com'
+  WHERE lower(BTRIM(au.email)) = 'clienttestv17@gmail.com'
   LIMIT 1;
 
   IF v_client_auth_id IS NULL THEN
@@ -194,16 +194,16 @@ BEGIN
       v_client_auth_id,
       'authenticated',
       'authenticated',
-      'clienttestv14@gmail.com',
+      'clienttestv17@gmail.com',
       v_password_hash,
       v_now,
       v_now,
       jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
       jsonb_build_object(
-        'name', 'Client Test V14',
+        'name', 'Client Test V17',
         'role', 'client',
         'gym_id', v_gym_id::text,
-        'email', 'clienttestv14@gmail.com',
+        'email', 'clienttestv17@gmail.com',
         'email_verified', true,
         'phone_verified', false,
         'sub', v_client_auth_id::text
@@ -215,16 +215,16 @@ BEGIN
     );
   ELSE
     UPDATE auth.users
-    SET email = 'clienttestv14@gmail.com',
+    SET email = 'clienttestv17@gmail.com',
         encrypted_password = v_password_hash,
         email_confirmed_at = COALESCE(email_confirmed_at, v_now),
         confirmed_at = COALESCE(confirmed_at, v_now),
         raw_app_meta_data = jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
         raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object(
-          'name', 'Client Test V14',
+          'name', 'Client Test V17',
           'role', 'client',
           'gym_id', v_gym_id::text,
-          'email', 'clienttestv14@gmail.com',
+          'email', 'clienttestv17@gmail.com',
           'email_verified', true,
           'phone_verified', false,
           'sub', v_client_auth_id::text
@@ -238,18 +238,18 @@ BEGIN
   END IF;
 
   UPDATE auth.identities
-  SET provider_id = 'clienttestv14@gmail.com',
+  SET provider_id = 'clienttestv17@gmail.com',
       identity_data = jsonb_build_object(
-        'name', 'Client Test V14',
+        'name', 'Client Test V17',
         'role', 'client',
         'gym_id', v_gym_id::text,
-        'email', 'clienttestv14@gmail.com',
+        'email', 'clienttestv17@gmail.com',
         'email_verified', true,
         'phone_verified', false,
         'sub', v_client_auth_id::text
       ),
       provider = 'email',
-      email = 'clienttestv14@gmail.com',
+      email = 'clienttestv17@gmail.com',
       updated_at = v_now
   WHERE user_id = v_client_auth_id
     AND provider = 'email';
@@ -274,12 +274,12 @@ BEGIN
     VALUES (
       gen_random_uuid(),
       v_client_auth_id,
-      'clienttestv14@gmail.com',
+      'clienttestv17@gmail.com',
       jsonb_build_object(
-        'name', 'Client Test V14',
+        'name', 'Client Test V17',
         'role', 'client',
         'gym_id', v_gym_id::text,
-        'email', 'clienttestv14@gmail.com',
+        'email', 'clienttestv17@gmail.com',
         'email_verified', true,
         'phone_verified', false,
         'sub', v_client_auth_id::text
@@ -288,7 +288,7 @@ BEGIN
       v_now,
       v_now,
       v_now,
-      'clienttestv14@gmail.com'
+      'clienttestv17@gmail.com'
     );
   END IF;
 
@@ -308,8 +308,8 @@ BEGIN
   )
   VALUES (
     v_coach_auth_id,
-    'Coach Test V14',
-    'coachtestv14@gmail.com',
+    'Coach Test V17',
+    'coachtestv17@gmail.com',
     'coach',
     v_gym_id,
     'en',
@@ -338,8 +338,8 @@ BEGIN
   )
   VALUES (
     v_client_auth_id,
-    'Client Test V14',
-    'clienttestv14@gmail.com',
+    'Client Test V17',
+    'clienttestv17@gmail.com',
     'client',
     v_gym_id,
     'en',
@@ -458,7 +458,7 @@ BEGIN
     CURRENT_DATE + 23,
     150,
     'beginner',
-    'Assigned to Coach Test V14 for QA coverage.'
+    'Assigned to Coach Test V17 for QA coverage.'
   )
   ON CONFLICT (user_id) DO UPDATE
   SET gym_id = EXCLUDED.gym_id,
@@ -503,7 +503,7 @@ BEGIN
     v_client_auth_id,
     v_gym_id,
     v_owner_id,
-    'Seeded TRAINW V14 QA assignment.',
+    'Seeded TRAINW V17 QA assignment.',
     v_now,
     true
   )
@@ -561,7 +561,7 @@ BEGIN
     'fat loss',
     72,
     CURRENT_DATE + 60,
-    'QA test goal owned by Coach Test V14.',
+    'QA test goal owned by Coach Test V17.',
     v_now
   )
   ON CONFLICT (id) DO UPDATE

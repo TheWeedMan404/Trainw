@@ -7,8 +7,8 @@ Run these steps **in order** before the demo. All SQL runs in the Supabase SQL E
 ## Step 1 — Run missing migrations (if not already done)
 
 ```sql
--- Paste contents of: supabase/migrations/20260408_002_turnstile_schema.sql
--- Paste contents of: supabase/migrations/20260415000000_trainw_008_staff_profiles.sql
+-- Paste contents of: supabase/migrations/20260414090000_trainw_011_turnstiles.sql
+-- Paste contents of: supabase/migrations/20260415000000_trainw_012_staff_profiles.sql
 ```
 
 Run each file separately. Both are idempotent (safe to re-run).

@@ -2,16 +2,35 @@
   const SUPABASE_URL = window.__TRAINW_URL__;
   const SUPABASE_ANON = window.__TRAINW_KEY__;
 
-  if (!SUPABASE_URL || !SUPABASE_ANON) {
-    throw new Error('Trainw: missing Supabase config');
+  function isPlaceholderSupabaseConfig(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return true;
+    return (
+      normalized.includes('%%supabase_') ||
+      normalized.includes('example.supabase.co') ||
+      normalized.includes('xyzcompany.supabase.co') ||
+      normalized.includes('project-id.supabase.co') ||
+      normalized === 'example-anon-key' ||
+      normalized === 'publishable-or-anon-key' ||
+      normalized === 'public-anon-key' ||
+      normalized.startsWith('your_')
+    );
   }
 
+  const HAS_SUPABASE_CONFIG =
+    !isPlaceholderSupabaseConfig(SUPABASE_URL) && !isPlaceholderSupabaseConfig(SUPABASE_ANON);
+
+  const TenantUtils = window.TrainwTenantUtils || {};
+  const ACTIVE_GYM_STORAGE_KEY = 'trainw_active_gym';
+
   const ROLE_ROUTES = {
-    gym_owner: '/dashboard/gym',
-    gym: '/dashboard/gym',
-    admin: '/dashboard/gym',
-    coach: '/dashboard/coach',
-    client: '/dashboard/client',
+    admin: '/admin',
+    gym_owner: '/admin',
+    gym: '/admin',
+    gym_admin: '/admin',
+    staff: '/admin',
+    coach: '/coach',
+    client: '/client',
   };
 
   const FONT_STACKS = {
@@ -19,8 +38,12 @@
     body: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
     mono: "'DM Mono', 'Courier New', monospace",
   };
+  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
   function createClient() {
+    if (!HAS_SUPABASE_CONFIG) {
+      throw new Error('Trainw: missing Supabase config');
+    }
     if (!window.supabase || typeof window.supabase.createClient !== 'function') {
       throw new Error('Supabase client is not available on this page.');
     }
@@ -65,6 +88,26 @@
       return fallback === undefined ? '—' : fallback;
     }
     return value;
+  }
+
+  function normalizeEmailAddress(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function isValidEmailAddress(value) {
+    return EMAIL_PATTERN.test(normalizeEmailAddress(value));
+  }
+
+  function isInvitationAuthLookupError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return (
+      /signups?\s+not\s+allowed/.test(message) ||
+      /user.*not\s+found/.test(message) ||
+      /no\s+user/.test(message) ||
+      /does\s+not\s+exist/.test(message) ||
+      /social\s+login/.test(message) ||
+      /external\s+provider/.test(message)
+    );
   }
 
   async function run(operation, options) {
@@ -208,7 +251,7 @@
     const key = String(type || 'info') + '::' + normalizedMessage;
     const now = Date.now();
     const recent = window.__trainwRecentToast;
-    if (recent && recent.key === key && now - recent.at < 2400) {
+    if (recent && recent.key === key && now - recent.at < 4000) {
       return true;
     }
     window.__trainwRecentToast = { key, at: now };
@@ -333,8 +376,85 @@
     );
   }
 
+  function getStoredActiveGymId() {
+    try {
+      return window.localStorage.getItem(ACTIVE_GYM_STORAGE_KEY) || null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function storeActiveGymId(gymId) {
+    try {
+      if (!gymId) {
+        window.localStorage.removeItem(ACTIVE_GYM_STORAGE_KEY);
+        return;
+      }
+      window.localStorage.setItem(ACTIVE_GYM_STORAGE_KEY, gymId);
+    } catch (_error) {
+      // Storage access is best-effort only.
+    }
+  }
+
+  function normalizeMembershipRecord(membership) {
+    if (TenantUtils && typeof TenantUtils.normalizeMembership === 'function') {
+      return TenantUtils.normalizeMembership(membership);
+    }
+    return membership || null;
+  }
+
+  function normalizePortalCode(value) {
+    if (TenantUtils && typeof TenantUtils.normalizeCode === 'function') {
+      return TenantUtils.normalizeCode(value);
+    }
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function pickScopedActiveMembership(memberships, preferredGymId, preferredPortals) {
+    const list = Array.isArray(memberships) ? memberships.filter(Boolean) : [];
+    if (!list.length) return null;
+
+    const pickMembership = TenantUtils && typeof TenantUtils.pickActiveMembership === 'function'
+      ? TenantUtils.pickActiveMembership
+      : function fallbackPickMembership(items, gymId) {
+          if (!Array.isArray(items) || !items.length) return null;
+          if (gymId) {
+            const gymMatch = items.find(function (membership) {
+              return membership?.gym_id === gymId;
+            });
+            if (gymMatch) return gymMatch;
+          }
+          return items[0] || null;
+        };
+
+    const scopedPortals = Array.isArray(preferredPortals)
+      ? preferredPortals.map(normalizePortalCode).filter(Boolean)
+      : [];
+
+    if (scopedPortals.length) {
+      const portalMatches = list.filter(function (membership) {
+        return scopedPortals.includes(normalizePortalCode(membership?.portal));
+      });
+      if (portalMatches.length) {
+        return pickMembership(portalMatches, preferredGymId) || null;
+      }
+    }
+
+    return pickMembership(list, preferredGymId) || null;
+  }
+
+  function workspacePathFor(target) {
+    if (TenantUtils && typeof TenantUtils.resolveWorkspacePath === 'function') {
+      return TenantUtils.resolveWorkspacePath(target);
+    }
+    return ROLE_ROUTES[target] || '/role';
+  }
+
   function roleToPath(role) {
-    return ROLE_ROUTES[role] || '/role';
+    if (role && typeof role === 'object') {
+      return workspacePathFor(role);
+    }
+    return ROLE_ROUTES[role] || workspacePathFor({ role_code: role }) || '/role';
   }
 
   function redirectToRole(role) {
@@ -546,7 +666,7 @@
     const result = await run(
       client
         .from('users')
-        .select('id, name, email, phone, role, gym_id, language_preference')
+        .select('id, name, email, phone, role, gym_id, default_gym_id, default_membership_id, language_preference, avatar_storage_bucket, avatar_storage_path, avatar_url')
         .eq('id', userId)
         .maybeSingle(),
       {
@@ -561,6 +681,131 @@
       profile: result.data,
       error: result.error,
       missing: result.missing,
+    };
+  }
+
+  function deriveExpectedPortals(expectedRoles, expectedPortals) {
+    if (Array.isArray(expectedPortals) && expectedPortals.length) {
+      return expectedPortals;
+    }
+    if (!Array.isArray(expectedRoles) || !expectedRoles.length) {
+      return null;
+    }
+
+    const lowered = expectedRoles.map(function (role) {
+      return String(role || '').toLowerCase();
+    });
+
+    if (lowered.some(function (role) { return ['gym_owner', 'gym', 'gym_admin', 'admin', 'staff'].includes(role); })) {
+      return ['admin'];
+    }
+    if (lowered.includes('coach')) {
+      return ['coach'];
+    }
+    if (lowered.includes('client')) {
+      return ['client'];
+    }
+    return null;
+  }
+
+  function buildLegacyAuthContext(profile) {
+    if (!profile) {
+      return {
+        raw: null,
+        memberships: [],
+        activeMembership: null,
+        permissions: [],
+        portal: null,
+      };
+    }
+
+    const gymId = profile.default_gym_id || profile.gym_id || null;
+    const membership = gymId
+      ? normalizeMembershipRecord({
+          membership_id: profile.default_membership_id || null,
+          gym_id: gymId,
+          role_code: profile.role || 'client',
+          role_name: profile.role || 'client',
+          portal: (workspacePathFor({ role_code: profile.role || 'client' }).replace('/', '') || 'client'),
+          status: 'active',
+          is_default: true,
+          permissions: [],
+        })
+      : null;
+
+    if (membership?.gym_id) {
+      storeActiveGymId(membership.gym_id);
+    }
+
+    return {
+      raw: null,
+      memberships: membership ? [membership] : [],
+      activeMembership: membership,
+      permissions: membership?.permissions || [],
+      portal: membership?.portal || null,
+    };
+  }
+
+  function augmentProfileWithMembership(profile, authContext) {
+    if (!profile) return null;
+    const activeMembership = authContext?.activeMembership || null;
+    return {
+      ...profile,
+      role: activeMembership?.role_code || profile.role || null,
+      portal: activeMembership?.portal || null,
+      gym_id: activeMembership?.gym_id || profile.default_gym_id || profile.gym_id || null,
+      active_membership_id: activeMembership?.membership_id || profile.default_membership_id || null,
+      permissions: Array.isArray(authContext?.permissions) ? authContext.permissions : [],
+      memberships: Array.isArray(authContext?.memberships) ? authContext.memberships : [],
+    };
+  }
+
+  async function loadAuthContext(client, requestedGymId) {
+    const preferredGymId = requestedGymId || getStoredActiveGymId();
+    const result = await run(
+      client.rpc('get_auth_context', {
+        p_requested_gym_id: preferredGymId || null,
+      }),
+      {
+        context: 'load auth context',
+        fallback: null,
+        toastOnError: false,
+        silent: true,
+      }
+    );
+
+    if (result.error || !result.data) {
+      return {
+        authContext: null,
+        error: result.error || new Error('Auth context unavailable'),
+      };
+    }
+
+    const memberships = Array.isArray(result.data.memberships)
+      ? result.data.memberships.map(normalizeMembershipRecord).filter(Boolean)
+      : [];
+
+    let activeMembership = result.data.active_membership
+      ? normalizeMembershipRecord(result.data.active_membership)
+      : null;
+
+    if (!activeMembership && TenantUtils && typeof TenantUtils.pickActiveMembership === 'function') {
+      activeMembership = TenantUtils.pickActiveMembership(memberships, preferredGymId);
+    }
+
+    if (activeMembership?.gym_id) {
+      storeActiveGymId(activeMembership.gym_id);
+    }
+
+    return {
+      authContext: {
+        raw: result.data,
+        memberships,
+        activeMembership,
+        permissions: Array.isArray(activeMembership?.permissions) ? activeMembership.permissions : [],
+        portal: activeMembership?.portal || null,
+      },
+      error: null,
     };
   }
 
@@ -585,11 +830,7 @@
     }
 
     const currentProfile = await getProfile(client, sessionUser.id, true);
-    const effectiveRole = currentProfile.profile?.role || config.role || null;
-    const needsGym =
-      effectiveRole && ['gym_owner', 'gym', 'admin', 'coach', 'client'].includes(effectiveRole);
-
-    if (currentProfile.profile && (!needsGym || currentProfile.profile.gym_id)) {
+    if (currentProfile.profile) {
       return {
         profile: currentProfile.profile,
         error: null,
@@ -634,10 +875,14 @@
   async function getContext(client, options) {
     const config = {
       expectedRoles: null,
+      expectedPortals: null,
       loginHref: null,
+      workspaceHref: '/role',
       redirectOnMissing: true,
+      redirectOnPendingMembership: true,
       redirectOnMismatch: true,
       recoveryRole: null,
+      requestedGymId: null,
       ...(options || {}),
     };
 
@@ -686,25 +931,218 @@
       };
     }
 
-    if (
-      Array.isArray(config.expectedRoles) &&
-      config.expectedRoles.length &&
-      !config.expectedRoles.includes(profileResult.profile.role)
-    ) {
-      if (config.redirectOnMismatch) {
-        redirectToRole(profileResult.profile.role);
+    const expectedPortals = deriveExpectedPortals(config.expectedRoles, config.expectedPortals);
+    const authContextResult = await loadAuthContext(client, config.requestedGymId || null);
+    let authContext = authContextResult.authContext || buildLegacyAuthContext(profileResult.profile);
+
+    if (Array.isArray(authContext.memberships) && authContext.memberships.length) {
+      const preferredMembership = pickScopedActiveMembership(
+        authContext.memberships,
+        config.requestedGymId || getStoredActiveGymId() || authContext.activeMembership?.gym_id || null,
+        expectedPortals
+      );
+
+      if (preferredMembership) {
+        authContext = {
+          ...authContext,
+          activeMembership: preferredMembership,
+          permissions: Array.isArray(preferredMembership.permissions) ? preferredMembership.permissions : [],
+          portal: preferredMembership.portal || authContext.portal || null,
+        };
+
+        if (preferredMembership.gym_id) {
+          storeActiveGymId(preferredMembership.gym_id);
+        }
+      }
+    }
+
+    const profile = augmentProfileWithMembership(profileResult.profile, authContext);
+
+    if (!authContext.activeMembership && authContext.memberships.length) {
+      if (config.redirectOnPendingMembership && config.workspaceHref) {
+        window.location.href = config.workspaceHref;
       }
       return {
         session: sessionResult.session,
-        profile: profileResult.profile,
+        profile,
+        authContext,
+        memberships: authContext.memberships,
+        activeMembership: null,
+        permissions: authContext.permissions,
+        portal: authContext.portal,
+        error: new Error('No active membership selected'),
+      };
+    }
+
+    if (
+      Array.isArray(expectedPortals) &&
+      expectedPortals.length &&
+      !expectedPortals.includes(authContext.activeMembership?.portal || authContext.portal || '')
+    ) {
+      if (config.redirectOnMismatch) {
+        redirectToRole(authContext.activeMembership || profile);
+      }
+      return {
+        session: sessionResult.session,
+        profile,
+        authContext,
+        memberships: authContext.memberships,
+        activeMembership: authContext.activeMembership || null,
+        permissions: authContext.permissions,
+        portal: authContext.portal,
         error: new Error('Role mismatch'),
       };
     }
 
     return {
       session: sessionResult.session,
-      profile: profileResult.profile,
-      error: null,
+      profile,
+      authContext,
+      memberships: authContext.memberships,
+      activeMembership: authContext.activeMembership || null,
+      permissions: authContext.permissions,
+      portal: authContext.portal,
+      error: authContextResult.error || null,
+    };
+  }
+
+  async function setActiveGym(client, gymId) {
+    const result = await run(
+      client.rpc('set_active_gym', {
+        p_gym_id: gymId || null,
+      }),
+      {
+        context: 'set active gym',
+        fallback: null,
+        toastOnError: false,
+      }
+    );
+
+    if (result.data?.gym_id) {
+      storeActiveGymId(result.data.gym_id);
+    }
+
+    return {
+      data: result.data,
+      error: result.error,
+    };
+  }
+
+  async function acceptInvitation(client, inviteToken) {
+    const result = await run(
+      client.rpc('accept_gym_invitation', {
+        p_invite_token: inviteToken || null,
+      }),
+      {
+        context: 'accept invitation',
+        fallback: null,
+        toastOnError: false,
+      }
+    );
+
+    if (result.data?.gym_id) {
+      storeActiveGymId(result.data.gym_id);
+    }
+
+    return {
+      data: result.data,
+      error: result.error,
+    };
+  }
+
+  async function declineInvitation(client, inviteToken) {
+    const result = await run(
+      client.rpc('decline_gym_invitation', {
+        p_invite_token: inviteToken || null,
+      }),
+      {
+        context: 'decline invitation',
+        fallback: null,
+        toastOnError: false,
+      }
+    );
+
+    return {
+      data: result.data,
+      error: result.error,
+    };
+  }
+
+  async function sendInvitationEmail(client, options) {
+    const config = {
+      email: null,
+      inviteToken: null,
+      invitePath: '/role',
+      gymName: null,
+      roleName: null,
+      name: null,
+      ...(options || {}),
+    };
+    const email = normalizeEmailAddress(config.email);
+    if (!isValidEmailAddress(email)) {
+      return {
+        data: null,
+        error: new Error('Invitation email format is invalid.'),
+      };
+    }
+
+    const inviteUrl = new URL(config.invitePath || '/role', window.location.origin);
+    if (config.inviteToken) {
+      inviteUrl.searchParams.set('invite', config.inviteToken);
+    }
+
+    const result = await run(
+      client.auth.signInWithOtp({
+        email: email,
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: inviteUrl.toString(),
+          data: {
+            name: config.name || null,
+            gym_name: config.gymName || null,
+            invited_role_name: config.roleName || null,
+            invite_token: config.inviteToken || null,
+          },
+        },
+      }),
+      {
+        context: 'send invitation email',
+        fallback: null,
+        toastOnError: false,
+      }
+    );
+
+    if (result.error && isInvitationAuthLookupError(result.error)) {
+      return {
+        data: result.data,
+        error: new Error('Invitation email could not be sent. Verify the address or ask the member to create a Trainw account first.'),
+      };
+    }
+
+    return {
+      data: result.data,
+      error: result.error,
+    };
+  }
+
+  async function createSignedMediaUrl(client, bucket, path, expiresInSeconds) {
+    if (!bucket || !path) {
+      return { url: null, error: null };
+    }
+
+    const result = await run(
+      client.storage.from(bucket).createSignedUrl(path, Number(expiresInSeconds || 3600)),
+      {
+        context: 'create signed media url',
+        fallback: null,
+        toastOnError: false,
+        silent: true,
+      }
+    );
+
+    return {
+      url: result.data?.signedUrl || null,
+      error: result.error,
     };
   }
 
@@ -809,9 +1247,17 @@
     auth: {
       getSession,
       getProfile,
+      getAuthContext: loadAuthContext,
       ensureProfile,
       getContext,
+      setActiveGym,
+      acceptInvitation,
+      declineInvitation,
+      sendInvitationEmail,
       watchAuth,
+    },
+    media: {
+      createSignedMediaUrl,
     },
     ui: {
       showToast,

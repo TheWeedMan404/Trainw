@@ -1,5 +1,5 @@
 -- ============================================================================
--- TRAINW V16 - MULTI-TENANT RBAC SAAS HARDENING
+-- TRAINW V17 - MULTI-TENANT RBAC SAAS HARDENING
 -- Purpose:
 --   - Replace single-gym role assumptions with explicit gym memberships
 --   - Store roles and permissions in the database
@@ -1933,34 +1933,53 @@ ALTER TABLE public.user_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.media_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS permissions_select_v16 ON public.permissions;
-DROP POLICY IF EXISTS roles_select_v16 ON public.roles;
-DROP POLICY IF EXISTS roles_manage_v16 ON public.roles;
-DROP POLICY IF EXISTS role_permissions_select_v16 ON public.role_permissions;
-DROP POLICY IF EXISTS role_permissions_manage_v16 ON public.role_permissions;
-DROP POLICY IF EXISTS gym_memberships_select_v16 ON public.gym_memberships;
-DROP POLICY IF EXISTS gym_memberships_manage_v16 ON public.gym_memberships;
-DROP POLICY IF EXISTS user_permissions_select_v16 ON public.user_permissions;
-DROP POLICY IF EXISTS user_permissions_manage_v16 ON public.user_permissions;
-DROP POLICY IF EXISTS media_assets_select_v16 ON public.media_assets;
-DROP POLICY IF EXISTS media_assets_manage_v16 ON public.media_assets;
-DROP POLICY IF EXISTS bookings_select_v16 ON public.bookings;
-DROP POLICY IF EXISTS bookings_manage_v16 ON public.bookings;
+DO $$
+DECLARE
+  v_policy record;
+BEGIN
+  FOR v_policy IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND (
+        (tablename = 'permissions' AND policyname LIKE 'permissions_select_v%')
+        OR (tablename = 'roles' AND policyname LIKE 'roles_select_v%')
+        OR (tablename = 'roles' AND policyname LIKE 'roles_manage_v%')
+        OR (tablename = 'role_permissions' AND policyname LIKE 'role_permissions_select_v%')
+        OR (tablename = 'role_permissions' AND policyname LIKE 'role_permissions_manage_v%')
+        OR (tablename = 'gym_memberships' AND policyname LIKE 'gym_memberships_select_v%')
+        OR (tablename = 'gym_memberships' AND policyname LIKE 'gym_memberships_manage_v%')
+        OR (tablename = 'user_permissions' AND policyname LIKE 'user_permissions_select_v%')
+        OR (tablename = 'user_permissions' AND policyname LIKE 'user_permissions_manage_v%')
+        OR (tablename = 'media_assets' AND policyname LIKE 'media_assets_select_v%')
+        OR (tablename = 'media_assets' AND policyname LIKE 'media_assets_manage_v%')
+        OR (tablename = 'bookings' AND policyname LIKE 'bookings_select_v%')
+        OR (tablename = 'bookings' AND policyname LIKE 'bookings_manage_v%')
+      )
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      v_policy.policyname,
+      v_policy.schemaname,
+      v_policy.tablename
+    );
+  END LOOP;
+END $$;
 
-CREATE POLICY permissions_select_v16 ON public.permissions
+CREATE POLICY permissions_select_v17 ON public.permissions
   FOR SELECT
   USING (auth.uid() IS NOT NULL);
 
-CREATE POLICY roles_select_v16 ON public.roles
+CREATE POLICY roles_select_v17 ON public.roles
   FOR SELECT
   USING (public.user_has_membership(gym_id));
 
-CREATE POLICY roles_manage_v16 ON public.roles
+CREATE POLICY roles_manage_v17 ON public.roles
   FOR ALL
   USING (public.has_permission('manage_roles', gym_id))
   WITH CHECK (public.has_permission('manage_roles', gym_id));
 
-CREATE POLICY role_permissions_select_v16 ON public.role_permissions
+CREATE POLICY role_permissions_select_v17 ON public.role_permissions
   FOR SELECT
   USING (
     EXISTS (
@@ -1971,7 +1990,7 @@ CREATE POLICY role_permissions_select_v16 ON public.role_permissions
     )
   );
 
-CREATE POLICY role_permissions_manage_v16 ON public.role_permissions
+CREATE POLICY role_permissions_manage_v17 ON public.role_permissions
   FOR ALL
   USING (
     EXISTS (
@@ -1990,7 +2009,7 @@ CREATE POLICY role_permissions_manage_v16 ON public.role_permissions
     )
   );
 
-CREATE POLICY gym_memberships_select_v16 ON public.gym_memberships
+CREATE POLICY gym_memberships_select_v17 ON public.gym_memberships
   FOR SELECT
   USING (
     user_id = auth.uid()
@@ -2001,7 +2020,7 @@ CREATE POLICY gym_memberships_select_v16 ON public.gym_memberships
     OR public.has_permission('manage_staff', gym_id)
   );
 
-CREATE POLICY gym_memberships_manage_v16 ON public.gym_memberships
+CREATE POLICY gym_memberships_manage_v17 ON public.gym_memberships
   FOR ALL
   USING (
     public.has_permission('manage_staff', gym_id)
@@ -2010,7 +2029,7 @@ CREATE POLICY gym_memberships_manage_v16 ON public.gym_memberships
     public.has_permission('manage_staff', gym_id)
   );
 
-CREATE POLICY user_permissions_select_v16 ON public.user_permissions
+CREATE POLICY user_permissions_select_v17 ON public.user_permissions
   FOR SELECT
   USING (
     user_id = auth.uid()
@@ -2018,7 +2037,7 @@ CREATE POLICY user_permissions_select_v16 ON public.user_permissions
     OR public.has_permission('manage_staff', gym_id)
   );
 
-CREATE POLICY user_permissions_manage_v16 ON public.user_permissions
+CREATE POLICY user_permissions_manage_v17 ON public.user_permissions
   FOR ALL
   USING (
     public.has_permission('manage_roles', gym_id)
@@ -2029,14 +2048,14 @@ CREATE POLICY user_permissions_manage_v16 ON public.user_permissions
     OR public.has_permission('manage_staff', gym_id)
   );
 
-CREATE POLICY media_assets_select_v16 ON public.media_assets
+CREATE POLICY media_assets_select_v17 ON public.media_assets
   FOR SELECT
   USING (
     owner_user_id = auth.uid()
     OR (gym_id IS NOT NULL AND public.user_has_membership(gym_id))
   );
 
-CREATE POLICY media_assets_manage_v16 ON public.media_assets
+CREATE POLICY media_assets_manage_v17 ON public.media_assets
   FOR ALL
   USING (
     owner_user_id = auth.uid()
@@ -2059,7 +2078,7 @@ CREATE POLICY media_assets_manage_v16 ON public.media_assets
     )
   );
 
-CREATE POLICY bookings_select_v16 ON public.bookings
+CREATE POLICY bookings_select_v17 ON public.bookings
   FOR SELECT
   USING (
     client_id = auth.uid()
@@ -2067,7 +2086,7 @@ CREATE POLICY bookings_select_v16 ON public.bookings
     OR public.manages_gym(gym_id)
   );
 
-CREATE POLICY bookings_manage_v16 ON public.bookings
+CREATE POLICY bookings_manage_v17 ON public.bookings
   FOR ALL
   USING (
     client_id = auth.uid()
@@ -2095,12 +2114,32 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
-DROP POLICY IF EXISTS trainw_media_select_v16 ON storage.objects;
-DROP POLICY IF EXISTS trainw_media_insert_v16 ON storage.objects;
-DROP POLICY IF EXISTS trainw_media_update_v16 ON storage.objects;
-DROP POLICY IF EXISTS trainw_media_delete_v16 ON storage.objects;
+DO $$
+DECLARE
+  v_storage_policy record;
+BEGIN
+  FOR v_storage_policy IN
+    SELECT schemaname, tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'storage'
+      AND tablename = 'objects'
+      AND (
+        policyname LIKE 'trainw_media_select_v%'
+        OR policyname LIKE 'trainw_media_insert_v%'
+        OR policyname LIKE 'trainw_media_update_v%'
+        OR policyname LIKE 'trainw_media_delete_v%'
+      )
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS %I ON %I.%I',
+      v_storage_policy.policyname,
+      v_storage_policy.schemaname,
+      v_storage_policy.tablename
+    );
+  END LOOP;
+END $$;
 
-CREATE POLICY trainw_media_select_v16 ON storage.objects
+CREATE POLICY trainw_media_select_v17 ON storage.objects
   FOR SELECT TO authenticated
   USING (
     bucket_id = 'trainw-media'
@@ -2116,7 +2155,7 @@ CREATE POLICY trainw_media_select_v16 ON storage.objects
     )
   );
 
-CREATE POLICY trainw_media_insert_v16 ON storage.objects
+CREATE POLICY trainw_media_insert_v17 ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (
     bucket_id = 'trainw-media'
@@ -2136,7 +2175,7 @@ CREATE POLICY trainw_media_insert_v16 ON storage.objects
     )
   );
 
-CREATE POLICY trainw_media_update_v16 ON storage.objects
+CREATE POLICY trainw_media_update_v17 ON storage.objects
   FOR UPDATE TO authenticated
   USING (
     bucket_id = 'trainw-media'
@@ -2173,7 +2212,7 @@ CREATE POLICY trainw_media_update_v16 ON storage.objects
     )
   );
 
-CREATE POLICY trainw_media_delete_v16 ON storage.objects
+CREATE POLICY trainw_media_delete_v17 ON storage.objects
   FOR DELETE TO authenticated
   USING (
     bucket_id = 'trainw-media'

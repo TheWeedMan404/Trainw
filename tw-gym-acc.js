@@ -3,7 +3,7 @@ const Trainw = window.TrainwCore;
 const sb = Trainw.createClient();
 Trainw.installGlobalErrorHandlers();
 
-const GYM_LOGIN_HREF = '/tw-login.html?role=gym_owner';
+const GYM_LOGIN_HREF = '/login?role=gym_owner';
 
 let currentUser    = null;
 let currentGymId   = null;
@@ -12,17 +12,23 @@ let currentMembership = null;
 let currentPermissions = [];
 let currentLang    = localStorage.getItem('trainw_lang') || 'fr';
 let scheduleFilter = 'all';
+let scheduleTab = 'sessions';
 let clientFilter   = 'all';
 let checkInTab     = 'live';
 let allSessions    = [];
 let allClients     = [];
 let gymCoaches     = [];
+let gymClasses     = [];
 let accessDirectory = [];
 let roleMatrix = [];
 let permissionCatalog = [];
 let checkInsList   = [];
 let memberCredentialsList = [];
 let gateAccessLogList = [];
+let gateSettingsCredentialsList = [];
+let gateSettingsAccessLogList = [];
+let gateSettingsAccessLogTimer = null;
+let gateSettingsCredentialDrafts = new Map();
 let selectedCredentialClientId = null;
 let conversationMap = {};
 let activeConvId    = null;
@@ -40,6 +46,12 @@ let activeStaffPanelUserId = null;
 let activeSettingsStaffTab = 'team';
 let pendingStaffAvatarFile = null;
 let pendingStaffAvatarObjectUrl = null;
+let coachModalTab = 'invite';
+let coachSearchDebounceTimer = null;
+let coachSearchRequestId = 0;
+let coachSearchResults = [];
+let coachSearchTerm = '';
+let coachSearchLoading = false;
 
 const GYM_RUNTIME_LOCALE = {
   fr: {
@@ -709,6 +721,15 @@ const SESSION_CATEGORIES = {
   group_activity:     ['Piscine','Terrain de Football','Court de Tennis','Basketball','Volleyball','Sauna','Salle Libre','Piste de Course'],
   individual_training:['Entraînement Personnel','Boxe Privée','Coaching Musculation','Coaching Perte de Poids','Conditionnement Athlétique','Rééducation']
 };
+const GYM_CLASS_DAY_LABELS = {
+  Mon: 'Mon',
+  Tue: 'Tue',
+  Wed: 'Wed',
+  Thu: 'Thu',
+  Fri: 'Fri',
+  Sat: 'Sat',
+  Sun: 'Sun',
+};
 function updateSessionCategory() {
   const typeVal = document.getElementById('sess-type').value;
   const key     = typeVal === 'individual' ? 'individual_training' : typeVal;
@@ -793,8 +814,12 @@ function syncPermissionVisibility() {
   document.getElementById('gym-logo-file')?.closest('.settings-section')?.classList.toggle('hidden', !brandingAllowed);
   document.getElementById('btn-save-pricing')?.closest('.settings-section')?.classList.toggle('hidden', !paymentsAllowed);
   document.getElementById('staff-management-section')?.classList.toggle('hidden', !(teamAllowed || manageRolesAllowed));
-  document.getElementById('btn-settings-team-tab')?.classList.toggle('hidden', !teamAllowed);
-  document.getElementById('btn-settings-roles-tab')?.classList.toggle('hidden', !manageRolesAllowed);
+  document.querySelectorAll('[data-settings-team-tab="team"]').forEach(element => {
+    element.classList.toggle('hidden', !teamAllowed);
+  });
+  document.querySelectorAll('[data-settings-team-tab="roles"]').forEach(element => {
+    element.classList.toggle('hidden', !manageRolesAllowed);
+  });
   document.getElementById('team-invite-card')?.classList.toggle('hidden', !manageStaffAllowed);
   document.getElementById('btn-new-role')?.classList.toggle('hidden', !manageRolesAllowed);
   document.getElementById('btn-save-edit-coach')?.classList.toggle('hidden', !hasPermission('edit_coaches'));
@@ -1788,8 +1813,35 @@ async function uploadGymLogo() {
   await refreshGymLogoPreview({ logo_storage_bucket: 'trainw-media', logo_storage_path: path });
 }
 
+function ensureExpiringDashboardStatCard() {
+  let card = document.getElementById('stat-expiring');
+  if (card && !card.classList.contains('stat-card')) {
+    card = document.getElementById('stat-expiring-card');
+  }
+  if (card) {
+    card.id = 'stat-expiring';
+    const valueEl = card.querySelector('.stat-value');
+    if (valueEl) valueEl.id = 'stat-expiring-value';
+    return card;
+  }
+  const grid = document.querySelector('#dashboard-page .stats-grid');
+  if (!grid) return null;
+  card = document.createElement('div');
+  card.className = 'stat-card hidden';
+  card.id = 'stat-expiring';
+  card.innerHTML = '<div class="stat-label" id="stat-expiring-label">Expirent bient&ocirc;t</div><div class="stat-value" id="stat-expiring-value">&mdash;</div><div class="stat-change" id="stat-expiring-delta">14 prochains jours</div><div class="stat-glow"></div>';
+  const checkinsCard = document.getElementById('stat-checkins')?.closest('.stat-card');
+  if (checkinsCard?.parentElement === grid) grid.insertBefore(card, checkinsCard);
+  else grid.appendChild(card);
+  return card;
+}
+
 async function loadDashboardStats() {
-  if (!currentGymId) return;
+  if (!currentGymId) {
+    document.getElementById('stat-expiring')?.classList.add('hidden');
+    document.getElementById('stat-expiring-card')?.classList.add('hidden');
+    return;
+  }
   const directoryResult = await Trainw.api.run(
     sb.rpc('list_gym_member_directory', { p_gym_id: currentGymId }),
     { context: 'load dashboard member directory', fallback: accessDirectory }
@@ -1812,10 +1864,39 @@ async function loadDashboardStats() {
     .eq('gym_id', currentGymId).gte('session_date', wS.toISOString().split('T')[0]).lte('session_date', wE.toISOString().split('T')[0]);
   set('stat-sessions', sessCount); set('an-sessions', sessCount);
 
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = Trainw.dateOnly(now);
   const { count: ciCount } = await sb.from('check_ins').select('id',{count:'exact',head:true})
     .eq('gym_id', currentGymId).gte('checked_in_at', todayStr+'T00:00:00').lte('checked_in_at', todayStr+'T23:59:59');
   set('stat-checkins', ciCount);
+  const monthStart = Trainw.dateOnly(new Date(now.getFullYear(), now.getMonth(), 1));
+  const { data: revenueRows } = await sb.from('client_profiles')
+    .select('price_paid')
+    .eq('gym_id', currentGymId)
+    .eq('payment_status', 'paid')
+    .gte('membership_start_date', monthStart);
+  const totalRevenue = (revenueRows || []).reduce((sum, row) => sum + (Number(row?.price_paid) || 0), 0);
+  set('stat-revenue', totalRevenue > 0 ? totalRevenue + ' DT' : '—');
+  set('stat-revenue-delta', 'ce mois');
+  const expiringEnd = Trainw.dateOnly(Trainw.addDays(now, 14));
+  const expiringResult = await Trainw.api.run(
+    sb.from('client_profiles')
+      .select('user_id, membership_end_date')
+      .eq('gym_id', currentGymId)
+      .gte('membership_end_date', todayStr)
+      .lte('membership_end_date', expiringEnd),
+    { context: 'load expiring memberships', fallback: [] }
+  );
+  const expiringCount = Array.isArray(expiringResult.data) ? expiringResult.data.length : 0;
+  const expiringCard = ensureExpiringDashboardStatCard();
+  if (expiringCard) {
+    expiringCard.classList.toggle('hidden', expiringCount <= 0);
+    const valueEl = document.getElementById('stat-expiring-value');
+    if (valueEl) valueEl.textContent = String(expiringCount);
+    const labelEl = document.getElementById('stat-expiring-label');
+    if (labelEl) labelEl.textContent = 'Expirent bient\u00f4t';
+    const deltaEl = document.getElementById('stat-expiring-delta');
+    if (deltaEl) deltaEl.textContent = '14 prochains jours';
+  }
 
   const { data: coaches } = await sb.from('coach_profiles').select('id, user_id, gym_id, specialty, hourly_rate, rating, total_reviews, users:users!coach_profiles_user_id_fkey(name, gym_id)').eq('gym_id', currentGymId).eq('approval_status','approved').eq('is_active', true).order('rating',{ascending:false}).limit(3);
   const topEl = document.getElementById('top-coaches-list');
@@ -1837,11 +1918,26 @@ async function loadSchedule() {
   if (schedEl) schedEl.innerHTML = `<div class="session-cards-grid">${[1,2,3,4].map(()=>`<div class="session-card skeleton-card"><div class="skeleton skeleton-line medium" style="margin-bottom:12px;"></div><div class="skeleton skeleton-line short"></div></div>`).join('')}</div>`;
   // Fetch sessions WITH attendance count (count of sessions_attendees or just count client_id bookings)
   const { data } = await sb.from('sessions')
-    .select('id, session_date, start_time, duration_minutes, type, status, session_name, capacity, coach_id, users!sessions_coach_id_fkey(name)')
+    .select('id, session_date, start_time, duration_minutes, type, status, session_name, capacity, coach_id, client_id, users!sessions_coach_id_fkey(name)')
     .eq('gym_id', currentGymId)
     .order('session_date', { ascending: false })
     .limit(200);
-  allSessions = data || [];
+  const sessions = data || [];
+  const sessionIds = sessions.map(session => session.id).filter(Boolean);
+  const enrollCountMap = new Map();
+  if (sessionIds.length) {
+    const enrollmentsResult = await Trainw.api.run(
+      sb.from('session_enrollments').select('session_id').eq('gym_id', currentGymId).in('session_id', sessionIds),
+      { context: 'load schedule enrollment counts', fallback: [] }
+    );
+    (enrollmentsResult.data || []).forEach(item => {
+      enrollCountMap.set(item.session_id, (enrollCountMap.get(item.session_id) || 0) + 1);
+    });
+  }
+  allSessions = sessions.map(session => ({
+    ...session,
+    _enrollCount: enrollCountMap.get(session.id) ?? 0,
+  }));
   // Auto-complete sessions that passed
   const todayStr = new Date().toISOString().split('T')[0];
   allSessions.forEach(s => {
@@ -1878,7 +1974,7 @@ function renderSchedule() {
         body: 'Planifiez votre premiere seance.',
         actionLabel: '+ Creer une seance',
         actionId: 'open-create-session-modal',
-        onAction: () => document.getElementById('create-session-modal')?.classList.add('show'),
+        onAction: () => openCreateSessionModal(),
       });
     } else {
       el.innerHTML = `<p class="empty-state">${t('noSessions')}</p>`;
@@ -1893,7 +1989,7 @@ function renderSchedule() {
     const label   = s.session_name || (s.type||'Séance').replace(/_/g,' ');
     const coach   = s.users?.name || '—';
     const cap     = s.capacity || 0;
-    const attended = s.status === 'completed' ? cap : (s.status === 'confirmed' ? cap : Math.floor(cap * 0.4));
+    const attended = s._enrollCount ?? 0;
     const fillPct  = cap > 0 ? Math.round((attended / cap) * 100) : 0;
     const sl       = getStatusLabel(s.status || 'pending');
     const isPast   = s.session_date < new Date().toISOString().split('T')[0];
@@ -1926,12 +2022,320 @@ function renderSchedule() {
 }
 
 // ── Session Detail Modal ──────────────────────────────────
-function openSessionDetail(sessionId) {
+function formatGymClassTime(value) {
+  return value ? String(value).slice(0, 5) : '--';
+}
+
+function getGymClassCoachName(gymClass) {
+  const gymCoach = gymCoaches.find(coach => String(coach.user_id || coach.id) === String(gymClass?.coach_id || ''));
+  return gymClass?.users?.name || gymCoach?.users?.name || (gymClass?.coach_id ? 'Coach' : 'Aucun coach');
+}
+
+function populateSessionClassSelector() {
+  const select = document.getElementById('sess-based-class');
+  if (!select) return;
+
+  const previous = select.value;
+  select.innerHTML = [`<option value="">-- Aucun modele --</option>`].concat(
+    gymClasses.map(gymClass => {
+      const parts = [gymClass.name || 'Cours'];
+      if (gymClass.schedule_day) parts.push(GYM_CLASS_DAY_LABELS[gymClass.schedule_day] || gymClass.schedule_day);
+      if (gymClass.start_time) parts.push(formatGymClassTime(gymClass.start_time));
+      return `<option value="${Trainw.escapeHtml(gymClass.id || '')}">${Trainw.escapeHtml(parts.join(' - '))}</option>`;
+    })
+  ).join('');
+
+  if (previous && gymClasses.some(gymClass => gymClass.id === previous)) {
+    select.value = previous;
+  }
+}
+
+function populateGymClassCoachSelector() {
+  const select = document.getElementById('gym-class-coach');
+  if (!select) return;
+
+  const previous = select.value;
+  select.innerHTML = [`<option value="">-- Aucun coach --</option>`].concat(
+    gymCoaches.map(coach => {
+      const userId = coach.user_id || coach.id;
+      return `<option value="${Trainw.escapeHtml(userId || '')}">${Trainw.escapeHtml(coach.users?.name || 'Coach')}</option>`;
+    })
+  ).join('');
+
+  if (previous && gymCoaches.some(coach => String(coach.user_id || coach.id) === String(previous))) {
+    select.value = previous;
+  }
+}
+
+function renderScheduleTabs() {
+  const sessionsButton = document.querySelector('[data-schedule-tab="sessions"]');
+  const classesButton = document.querySelector('[data-schedule-tab="classes"]');
+  if (sessionsButton) sessionsButton.textContent = 'Seances';
+  if (classesButton) classesButton.textContent = 'Modeles de Cours';
+
+  document.querySelectorAll('[data-schedule-tab]').forEach(button => {
+    button.classList.toggle('active', button.dataset.scheduleTab === scheduleTab);
+  });
+  document.querySelectorAll('.schedule-tab-panel').forEach(panel => {
+    panel.classList.toggle('hidden', panel.id !== `schedule-tab-${scheduleTab}`);
+  });
+
+  document.getElementById('btn-create-session')?.classList.toggle('hidden', scheduleTab !== 'sessions');
+  document.getElementById('btn-open-gym-class-modal')?.classList.toggle('hidden', scheduleTab !== 'classes');
+}
+
+function setScheduleTab(tab) {
+  scheduleTab = tab === 'classes' ? 'classes' : 'sessions';
+  renderScheduleTabs();
+  if (scheduleTab === 'classes') {
+    renderGymClasses();
+  }
+}
+
+function resetCreateSessionForm() {
+  Trainw.ui.setValue('sess-name', '', '');
+  Trainw.ui.setValue('sess-date', '', '');
+  Trainw.ui.setValue('sess-time', '', '');
+  Trainw.ui.setValue('sess-duration', '60', '60');
+  Trainw.ui.setValue('sess-capacity', '10', '10');
+  Trainw.ui.setValue('sess-client', '', '');
+  Trainw.ui.setValue('sess-coach', '', '');
+  Trainw.ui.setValue('sess-based-class', '', '');
+  Trainw.ui.setValue('sess-type', 'group_class', 'group_class');
+  clearInlineError(document.getElementById('create-session-err'));
+  populateSessionClassSelector();
+  updateSessionCategory();
+}
+
+function openCreateSessionModal(options={}) {
+  resetCreateSessionForm();
+
+  if (options.classId) {
+    const select = document.getElementById('sess-based-class');
+    if (select) {
+      select.value = options.classId;
+      applySessionClassTemplate(options.classId);
+    }
+  }
+
+  if (options.coachId) {
+    const coachSelect = document.getElementById('sess-coach');
+    if (coachSelect) coachSelect.value = options.coachId;
+  }
+
+  document.getElementById('create-session-modal')?.classList.add('show');
+}
+
+async function loadGymClasses() {
+  const targets = ['schedule-classes-list', 'classes-page-list']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+
+  if (!currentGymId) {
+    gymClasses = [];
+    populateSessionClassSelector();
+    renderGymClasses();
+    return;
+  }
+
+  targets.forEach(target => {
+    target.innerHTML = skeletonCards(3);
+  });
+
+  const result = await Trainw.api.run(
+    sb.from('gym_classes')
+      .select('id, gym_id, coach_id, name, description, schedule_day, start_time, duration_minutes, capacity, is_active, created_at, users:users!gym_classes_coach_id_fkey(name)')
+      .eq('gym_id', currentGymId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false }),
+    {
+      context: 'load gym classes',
+      fallback: [],
+    }
+  );
+
+  gymClasses = Array.isArray(result.data) ? result.data : [];
+  populateSessionClassSelector();
+  renderGymClasses();
+}
+
+function renderGymClasses() {
+  ['schedule-classes-list', 'classes-page-list'].forEach(targetId => {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    if (!gymClasses.length) {
+      renderCoreEmptyState(target, {
+        icon: 'TW',
+        title: 'Aucun cours',
+        body: 'Creez votre premier modele pour planifier plus vite vos seances.',
+        actionLabel: '+ Nouveau cours',
+        actionId: 'open-gym-class-modal',
+        onAction: () => openGymClassModal(),
+      });
+      return;
+    }
+
+    target.innerHTML = gymClasses.map(gymClass => {
+      const day = GYM_CLASS_DAY_LABELS[gymClass.schedule_day] || gymClass.schedule_day || '--';
+      const time = formatGymClassTime(gymClass.start_time);
+      const coachName = getGymClassCoachName(gymClass);
+      const duration = Number(gymClass.duration_minutes) || 60;
+      const capacity = Number(gymClass.capacity) || 0;
+      const description = gymClass.description
+        ? Trainw.escapeHtml(gymClass.description)
+        : '<span class="gym-class-card-muted">Aucune description.</span>';
+
+      return `<article class="gym-class-card" data-gym-class-card="${Trainw.escapeHtml(gymClass.id || '')}">
+        <div class="gym-class-card-head">
+          <div>
+            <div class="gym-class-card-title">${Trainw.escapeHtml(gymClass.name || 'Cours')}</div>
+            <div class="gym-class-card-coach">${Trainw.escapeHtml(coachName)}</div>
+          </div>
+          <div class="gym-class-card-chips">
+            <span class="gym-class-chip">${Trainw.escapeHtml(day)}</span>
+            <span class="gym-class-chip">${Trainw.escapeHtml(time)}</span>
+          </div>
+        </div>
+        <div class="gym-class-card-desc">${description}</div>
+        <div class="gym-class-card-meta">
+          <span>${Trainw.escapeHtml(String(duration))} min</span>
+          <span>${Trainw.escapeHtml(String(capacity))} places</span>
+        </div>
+        <div class="gym-class-card-actions">
+          <button class="btn-secondary" type="button" data-gym-class-edit="${Trainw.escapeHtml(gymClass.id || '')}">Modifier</button>
+          <button class="btn-danger" type="button" data-gym-class-delete="${Trainw.escapeHtml(gymClass.id || '')}">Supprimer</button>
+        </div>
+      </article>`;
+    }).join('');
+  });
+}
+
+function openGymClassModal(classId=null) {
+  const errEl = document.getElementById('gym-class-err');
+  clearInlineError(errEl);
+  populateGymClassCoachSelector();
+
+  const gymClass = classId ? gymClasses.find(item => item.id === classId) : null;
+  Trainw.ui.setText('gym-class-modal-title', gymClass ? 'Modifier le cours' : 'Nouveau cours', '');
+  Trainw.ui.setValue('gym-class-id', gymClass?.id || '', '');
+  Trainw.ui.setValue('gym-class-name', gymClass?.name || '', '');
+  Trainw.ui.setValue('gym-class-coach', gymClass?.coach_id || '', '');
+  Trainw.ui.setValue('gym-class-day', gymClass?.schedule_day || 'Mon', 'Mon');
+  Trainw.ui.setValue('gym-class-time', formatGymClassTime(gymClass?.start_time), '');
+  Trainw.ui.setValue('gym-class-duration', gymClass?.duration_minutes || 60, '60');
+  Trainw.ui.setValue('gym-class-capacity', gymClass?.capacity || 20, '20');
+  Trainw.ui.setValue('gym-class-description', gymClass?.description || '', '');
+  document.getElementById('gym-class-modal')?.classList.add('show');
+}
+
+async function saveGymClass() {
+  const classId = document.getElementById('gym-class-id')?.value || '';
+  const name = document.getElementById('gym-class-name')?.value.trim() || '';
+  const coachId = document.getElementById('gym-class-coach')?.value || null;
+  const scheduleDay = document.getElementById('gym-class-day')?.value || null;
+  const startTime = document.getElementById('gym-class-time')?.value || '';
+  const duration = parseInt(document.getElementById('gym-class-duration')?.value, 10) || 60;
+  const capacity = parseInt(document.getElementById('gym-class-capacity')?.value, 10) || 20;
+  const description = document.getElementById('gym-class-description')?.value.trim() || null;
+  const errEl = document.getElementById('gym-class-err');
+  const btn = document.getElementById('btn-save-gym-class');
+
+  clearInlineError(errEl);
+  if (!currentGymId) {
+    showInlineError(errEl, t('errorMsg'));
+    return;
+  }
+  if (!name) {
+    showInlineError(errEl, 'Le nom du cours est requis.');
+    return;
+  }
+
+  Trainw.ui.setBusy(btn, true);
+  try {
+    const payload = {
+      gym_id: currentGymId,
+      coach_id: coachId || null,
+      name,
+      description,
+      schedule_day: scheduleDay || null,
+      start_time: startTime ? `${startTime}:00` : null,
+      duration_minutes: duration,
+      capacity,
+      is_active: true,
+    };
+
+    const result = classId
+      ? await Trainw.api.run(sb.from('gym_classes').update(payload).eq('id', classId), { context: 'update gym class', fallback: null })
+      : await Trainw.api.run(sb.from('gym_classes').insert({ ...payload, created_by: currentUser?.id || null }), { context: 'create gym class', fallback: null });
+    if (result.error) throw result.error;
+
+    document.getElementById('gym-class-modal')?.classList.remove('show');
+    await loadGymClasses();
+    toast(classId ? 'Cours mis a jour.' : 'Cours cree.');
+  } catch (error) {
+    showInlineError(errEl, error.message || t('errorMsg'));
+  } finally {
+    Trainw.ui.setBusy(btn, false);
+  }
+}
+
+async function deleteGymClass(classId) {
+  if (!classId || !window.confirm('Supprimer ce cours ?')) return;
+
+  try {
+    const result = await Trainw.api.run(
+      sb.from('gym_classes').update({ is_active: false }).eq('id', classId),
+      { context: 'delete gym class', fallback: null }
+    );
+    if (result.error) throw result.error;
+
+    if ((document.getElementById('sess-based-class')?.value || '') === classId) {
+      Trainw.ui.setValue('sess-based-class', '', '');
+    }
+
+    await loadGymClasses();
+    toast('Cours supprime.');
+  } catch (error) {
+    toast(error.message || t('errorMsg'), 'err');
+  }
+}
+
+function handleGymClassListClick(event) {
+  const editButton = event.target.closest('[data-gym-class-edit]');
+  if (editButton) {
+    openGymClassModal(editButton.dataset.gymClassEdit || '');
+    return;
+  }
+
+  const deleteButton = event.target.closest('[data-gym-class-delete]');
+  if (deleteButton) {
+    void deleteGymClass(deleteButton.dataset.gymClassDelete || '');
+  }
+}
+
+function applySessionClassTemplate(classId) {
+  if (!classId) return;
+  const gymClass = gymClasses.find(item => item.id === classId);
+  if (!gymClass) return;
+
+  const typeSelect = document.getElementById('sess-type');
+  if (typeSelect) {
+    typeSelect.value = 'group_class';
+    updateSessionCategory();
+  }
+
+  Trainw.ui.setValue('sess-name', gymClass.name || '', '');
+  Trainw.ui.setValue('sess-coach', gymClass.coach_id || '', '');
+  Trainw.ui.setValue('sess-capacity', gymClass.capacity || 10, '10');
+}
+
+async function openSessionDetail(sessionId) {
   const s = allSessions.find(x => x.id === sessionId);
   if (!s) return;
   const sl     = getStatusLabel(s.status || 'pending');
   const cap    = s.capacity || 0;
-  const attended = s.status === 'completed' ? cap : (s.status === 'confirmed' ? cap : Math.floor(cap * 0.4));
+  const attended = s._enrollCount ?? 0;
   const fillPct  = cap > 0 ? Math.round((attended / cap) * 100) : 0;
   const label  = s.session_name || (s.type||'Séance').replace(/_/g,' ');
   const coach  = s.users?.name || '—';
@@ -1942,6 +2346,7 @@ function openSessionDetail(sessionId) {
 
   const body = document.getElementById('session-detail-body');
   if (!body) return;
+  body.dataset.sessionDetailId = s.id;
   body.innerHTML = `
     <div class="sess-detail-top">
       <div>
@@ -1960,15 +2365,102 @@ function openSessionDetail(sessionId) {
       <div class="sess-detail-cap-label"><span>Capacité</span><span class="sess-detail-cap-val">${attended} / ${cap} participants</span></div>
       <div class="sess-detail-bar"><div class="sess-detail-bar-fill" style="width:${fillPct}%;background:${fillPct>=80?'var(--ac)':fillPct>=50?'#fac775':'#888'};"></div></div>
     </div>
+    <div id="session-detail-enrollments" style="margin-top:16px;"></div>
     <div class="sess-detail-actions">
       <button class="btn-primary" style="flex:1;" onclick="document.getElementById('session-detail-modal').classList.remove('show');openEditSessionModal('${s.id}')">✏ ${editLbl}</button>
       <button class="btn-danger" onclick="document.getElementById('session-detail-modal').classList.remove('show');deleteSession('${s.id}')">✕ ${delLbl}</button>
     </div>`;
   document.getElementById('session-detail-modal')?.classList.add('show');
+
+  const enrollmentsTarget = document.getElementById('session-detail-enrollments');
+  if (!enrollmentsTarget) return;
+
+  let enrollmentRows = [];
+  try {
+    const { data, error } = await sb.from('session_enrollments')
+      .select('client_id, users!session_enrollments_client_id_fkey(name)')
+      .eq('session_id', s.id)
+      .order('enrolled_at', { ascending: true });
+    if (error) throw error;
+    enrollmentRows = data || [];
+  } catch (_error) {
+    const fallbackResult = await Trainw.api.run(
+      sb.from('session_enrollments').select('client_id').eq('session_id', s.id).order('enrolled_at', { ascending: true }),
+      { context: 'load session detail enrollments', fallback: [] }
+    );
+    enrollmentRows = Array.isArray(fallbackResult.data) ? fallbackResult.data : [];
+  }
+
+  if (body.dataset.sessionDetailId !== s.id) return;
+
+  const enrolledNames = enrollmentRows
+    .map(item => item.users?.name || allClients.find(client => client.id === item.client_id)?.name || 'Client')
+    .filter(Boolean);
+
+  enrollmentsTarget.innerHTML = `
+    <div class="sess-detail-cap-label"><span>Clients enrolled</span><span class="sess-detail-cap-val">${enrolledNames.length}</span></div>
+    ${enrolledNames.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">${enrolledNames.map(name => `<span style="display:inline-flex;align-items:center;padding:7px 12px;border:1px solid var(--bd);border-radius:999px;background:var(--s2);font-size:13px;">${Trainw.escapeHtml(name)}</span>`).join('')}</div>`
+      : `<p class="empty-state" style="margin-top:10px;">No clients enrolled yet.</p>`}
+  `;
 }
 
 // ── Edit session modal ────────────────────────────────────
-function openEditSessionModal(sessionId) {
+function ensureSessionClientChecklistContainer(containerId) {
+  let container = document.getElementById(containerId);
+  if (container) return container;
+
+  if (containerId === 'edit-sess-clients-list') {
+    const statusField = document.getElementById('edit-sess-status');
+    const hostGroup = statusField?.closest('.form-group');
+    if (!hostGroup) return null;
+
+    const group = document.createElement('div');
+    group.className = 'form-group';
+    group.id = 'edit-sess-clients-group';
+    group.innerHTML = '<label class="form-label">Clients enrolled</label><div id="edit-sess-clients-list" style="display:grid;gap:8px;"></div>';
+    hostGroup.insertAdjacentElement('afterend', group);
+    container = group.querySelector('#edit-sess-clients-list');
+  }
+
+  return container || null;
+}
+
+function renderClientChecklist(containerId, selectedIds=[]) {
+  const container = ensureSessionClientChecklistContainer(containerId);
+  if (!container) return;
+
+  const selected = new Set((Array.isArray(selectedIds) ? selectedIds : []).filter(Boolean));
+  if (!allClients.length) {
+    container.innerHTML = '<p class="empty-state">No clients available.</p>';
+    return;
+  }
+
+  container.innerHTML = allClients.map(client => `
+    <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--bd);border-radius:12px;background:var(--s2);cursor:pointer;">
+      <input type="checkbox" data-session-checklist-client value="${Trainw.escapeHtml(client.id || '')}"${selected.has(client.id) ? ' checked' : ''}>
+      <span style="font-weight:600;">${Trainw.escapeHtml(client.name || 'Client')}</span>
+    </label>
+  `).join('');
+}
+
+function getChecklistSelectedIds(containerId) {
+  const container = document.getElementById(containerId);
+  if (container) {
+    return Array.from(container.querySelectorAll('input[data-session-checklist-client]:checked'))
+      .map(input => input.value)
+      .filter(Boolean);
+  }
+
+  if (containerId === 'sess-clients-list') {
+    const createSelectValue = document.getElementById('sess-client')?.value || '';
+    return createSelectValue ? [createSelectValue] : [];
+  }
+
+  return [];
+}
+
+async function openEditSessionModal(sessionId) {
   const s = allSessions.find(x => x.id === sessionId);
   if (!s) return;
   document.getElementById('edit-sess-id').value        = s.id;
@@ -1984,6 +2476,23 @@ function openEditSessionModal(sessionId) {
     coachSel.innerHTML = `<option value="">— Aucun coach —</option>` +
       gymCoaches.map(c => `<option value="${c.user_id}"${c.user_id===s.coach_id?' selected':''}>${c.users?.name||'Coach'}</option>`).join('');
   }
+
+  if (!allClients.length && currentGymId) {
+    await loadClients();
+  }
+
+  let selectedClientIds = [];
+  const enrollmentResult = await Trainw.api.run(
+    sb.from('session_enrollments').select('client_id').eq('session_id', s.id).order('enrolled_at', { ascending: true }),
+    { context: 'load edit session enrollments', fallback: [] }
+  );
+  if (!enrollmentResult.error) {
+    selectedClientIds = (enrollmentResult.data || []).map(item => item.client_id).filter(Boolean);
+  }
+  if (!selectedClientIds.length && s.client_id) {
+    selectedClientIds = [s.client_id];
+  }
+  renderClientChecklist('edit-sess-clients-list', selectedClientIds);
   document.getElementById('edit-session-modal')?.classList.add('show');
 }
 
@@ -2009,6 +2518,33 @@ async function saveEditSession() {
       coach_id: coachId || null,
     }).eq('id', id);
     if (error) throw error;
+
+    const nextSelectedIds = Array.from(new Set(getChecklistSelectedIds('edit-sess-clients-list')));
+    const { data: currentEnrollments, error: currentEnrollmentsError } = await sb.from('session_enrollments')
+      .select('client_id')
+      .eq('session_id', id);
+    if (currentEnrollmentsError) throw currentEnrollmentsError;
+
+    const currentSelectedIds = (currentEnrollments || []).map(item => item.client_id).filter(Boolean);
+    const removedIds = currentSelectedIds.filter(clientId => !nextSelectedIds.includes(clientId));
+    const addedIds = nextSelectedIds.filter(clientId => !currentSelectedIds.includes(clientId));
+
+    if (removedIds.length) {
+      const { error: deleteEnrollmentsError } = await sb.from('session_enrollments')
+        .delete()
+        .eq('session_id', id)
+        .in('client_id', removedIds);
+      if (deleteEnrollmentsError) throw deleteEnrollmentsError;
+    }
+
+    if (addedIds.length) {
+      const { error: insertEnrollmentsError } = await sb.from('session_enrollments').upsert(
+        addedIds.map(clientId => ({ session_id: id, client_id: clientId, gym_id: currentGymId })),
+        { onConflict: 'session_id,client_id', ignoreDuplicates: true }
+      );
+      if (insertEnrollmentsError) throw insertEnrollmentsError;
+    }
+
     toast(t('savedOk'));
     document.getElementById('edit-session-modal')?.classList.remove('show');
     await loadSchedule(); await loadDashboardStats();
@@ -2033,6 +2569,7 @@ async function submitNewSession() {
   const category=document.getElementById('sess-category').value, date=document.getElementById('sess-date').value;
   const time=document.getElementById('sess-time').value, duration=parseInt(document.getElementById('sess-duration').value)||60;
   const capacity=parseInt(document.getElementById('sess-capacity').value)||10, coachId=document.getElementById('sess-coach').value||null;
+  const basedClassId = dbType === 'group_class' ? (document.getElementById('sess-based-class')?.value || null) : null;
   const errEl=document.getElementById('create-session-err');
   errEl.classList.remove('show'); errEl.textContent='';
   if (!name){errEl.textContent=t('sessNameMissing');errEl.classList.add('show');return;}
@@ -2040,12 +2577,24 @@ async function submitNewSession() {
   if (!time){errEl.textContent=t('sessTimeMissing');errEl.classList.add('show');return;}
   const btn=document.getElementById('btn-submit-session'); btn.textContent='…'; btn.disabled=true;
   try {
-    const clientId=document.getElementById('sess-client')?.value||null;
-    const {error}=await sb.from('sessions').insert({gym_id:currentGymId,coach_id:coachId||null,client_id:clientId||null,session_date:date,start_time:time+':00',duration_minutes:duration,type:dbType,session_name:name,notes:category||name,status:'confirmed',capacity});
+    const selectedClientIds = Array.from(new Set(getChecklistSelectedIds('sess-clients-list')));
+    const primaryClientId = selectedClientIds[0] || document.getElementById('sess-client')?.value || null;
+    const {data:createdSession,error}=await sb.from('sessions').insert({gym_id:currentGymId,coach_id:coachId||null,client_id:primaryClientId||null,class_id:basedClassId||null,session_date:date,start_time:time+':00',duration_minutes:duration,type:dbType,session_name:name,notes:category||name,status:'confirmed',capacity}).select('id').single();
     if(error) throw new Error(error.message);
+    if (selectedClientIds.length) {
+      const { error: enrollmentError } = await sb.from('session_enrollments').upsert(
+        selectedClientIds.map(clientId => ({ session_id: createdSession.id, client_id: clientId, gym_id: currentGymId })),
+        { onConflict: 'session_id,client_id', ignoreDuplicates: true }
+      );
+      if (enrollmentError) throw enrollmentError;
+    }
     toast(t('sessionCreated')); document.getElementById('create-session-modal').classList.remove('show');
     ['sess-name','sess-date','sess-time'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     document.getElementById('sess-duration').value='60'; document.getElementById('sess-capacity').value='10';
+    const sessClientSelect = document.getElementById('sess-client');
+    if (sessClientSelect) sessClientSelect.value = '';
+    const sessClassSelect = document.getElementById('sess-based-class');
+    if (sessClassSelect) sessClassSelect.value = '';
     await loadSchedule(); await loadDashboardStats(); animateCounters();
   } catch(err){errEl.textContent=err.message;errEl.classList.add('show');}
   finally{btn.textContent=t('createSession');btn.disabled=false;}
@@ -2068,7 +2617,7 @@ async function loadCoaches() {
       body: 'Invitez votre equipe sur Trainw.',
       actionLabel: '+ Ajouter un coach',
       actionId: 'open-add-coach-modal',
-      onAction: () => document.getElementById('add-coach-modal')?.classList.add('show'),
+      onAction: () => openAddCoachModal(),
     });
     return;
   }
@@ -2087,7 +2636,7 @@ async function loadCoaches() {
       body: 'Invitez votre equipe sur Trainw.',
       actionLabel: '+ Ajouter un coach',
       actionId: 'open-add-coach-modal',
-      onAction: () => document.getElementById('add-coach-modal')?.classList.add('show'),
+      onAction: () => openAddCoachModal(),
     });
     if (dotsEl) dotsEl.innerHTML = '';
     stopCarouselAutoplay();
@@ -2197,13 +2746,8 @@ function resetCarouselAutoplay() {
 
 function openBookSessionForCoach(coachId, coachName) {
   // Pre-fill session modal with this coach selected and open it
-  document.getElementById('create-session-modal')?.classList.add('show');
-  const sel = document.getElementById('sess-coach');
-  if (sel) {
-    // find option matching coachId by user_id in gymCoaches
-    const match = gymCoaches.find(c => c.id === coachId || c.user_id === coachId);
-    if (match) sel.value = match.user_id || match.id;
-  }
+  const match = gymCoaches.find(c => c.id === coachId || c.user_id === coachId);
+  openCreateSessionModal({ coachId: match?.user_id || match?.id || coachId });
   resetCarouselAutoplay();
 }
 
@@ -2298,8 +2842,8 @@ async function saveEditCoach(){
 }
 async function deleteCoach(userId,profileId){
   if(!confirm('Supprimer ce coach ?')) return;
-  try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;await sb.from('coach_profiles').delete().eq('id',profileId).eq('gym_id', currentGymId);await sb.from('users').delete().eq('id',userId);document.getElementById('coach-modal').classList.remove('show');await loadCoaches();await loadDashboardStats();animateCounters();toast('Coach supprimé');}
-  catch(e){toast(t('errorMsg'),'err');}
+  try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('coach_profiles').delete().eq('id',profileId).eq('gym_id', currentGymId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;document.getElementById('coach-modal').classList.remove('show');await loadCoaches();await loadDashboardStats();animateCounters();toast('Coach supprimé');}
+  catch(e){toast(`${t('errorMsg')}: ${e?.message||'Erreur'}`,'err');}
 }
 
 // ── Clients ───────────────────────────────────────────────
@@ -2346,7 +2890,8 @@ async function loadClients() {
     profile:profileMap[c.user_id]||{},
   }));
   ensureSelectedCredentialClient();
-  renderClients(); populateCheckInSelector(); populateMessagesList(); populateSessionClientSelector(); renderCredentialClientList(); renderGateAccessLog(); updateGateTerminalPreview();
+  renderCheckIns();
+  renderClients(); populateCheckInSelector(); populateMessagesList(); populateSessionClientSelector(); renderCredentialClientList(); renderGateAccessLog(); renderGateSettingsCredentialsTable(); renderGateSettingsAccessLogTable(); updateGateTerminalPreview();
   if (selectedCredentialClientId) void loadClientCredentials();
   if (directoryResult.error) toast(t('errorMsg'), 'err');
 }
@@ -2422,12 +2967,253 @@ function renderCoreEmptyState(target, options) {
   }
 }
 
+async function ensureCoachRoleId() {
+  if (!roleMatrix.length) {
+    await loadAccessControlData({ includeStaffDirectory: false });
+  }
+
+  let coachRole = roleMatrix.find(role =>
+    String(role.code || '').toLowerCase() === 'coach' &&
+    String(role.gym_id || currentGymId) === String(currentGymId)
+  ) || null;
+
+  if (!coachRole) {
+    await loadAccessControlData({ includeStaffDirectory: false });
+    coachRole = roleMatrix.find(role =>
+      String(role.code || '').toLowerCase() === 'coach' &&
+      String(role.gym_id || currentGymId) === String(currentGymId)
+    ) || null;
+  }
+
+  if (!coachRole) {
+    const roleSaveResult = await Trainw.api.run(sb.rpc('save_role_definition', {
+      p_gym_id: currentGymId,
+      p_role_id: null,
+      p_name: 'Coach',
+      p_code: 'coach',
+      p_portal: 'coach',
+      p_description: null,
+      p_permission_codes: [],
+    }), { context: 'ensure coach role', fallback: null });
+    if (roleSaveResult.error) throw roleSaveResult.error;
+    await loadAccessControlData({ includeStaffDirectory: false });
+    coachRole = roleMatrix.find(role =>
+      String(role.code || '').toLowerCase() === 'coach' &&
+      String(role.gym_id || currentGymId) === String(currentGymId)
+    ) || null;
+  }
+
+  const coachRoleId = coachRole?.role_id || null;
+  if (!coachRoleId) {
+    throw new Error('Coach role is not configured for this gym.');
+  }
+  return coachRoleId;
+}
+
+function renderCoachModalTabs() {
+  document.querySelectorAll('[data-coach-modal-tab]').forEach(button => {
+    button.classList.toggle('active', button.dataset.coachModalTab === coachModalTab);
+  });
+  document.getElementById('coach-modal-panel-invite')?.classList.toggle('hidden', coachModalTab !== 'invite');
+  document.getElementById('coach-modal-panel-search')?.classList.toggle('hidden', coachModalTab !== 'search');
+}
+
+function renderCoachSearchResults() {
+  const statusEl = document.getElementById('coach-search-status');
+  const resultsEl = document.getElementById('coach-search-results');
+  if (!statusEl || !resultsEl) return;
+
+  if (!coachSearchTerm.trim()) {
+    statusEl.textContent = 'Cherchez un nom ou une specialite pour trouver un coach existant.';
+    resultsEl.innerHTML = '';
+    return;
+  }
+
+  if (coachSearchLoading) {
+    statusEl.textContent = 'Recherche en cours...';
+    resultsEl.innerHTML = skeletonCards(2);
+    return;
+  }
+
+  if (!coachSearchResults.length) {
+    statusEl.textContent = `Aucun coach trouve pour "${coachSearchTerm}".`;
+    resultsEl.innerHTML = '';
+    return;
+  }
+
+  statusEl.textContent = `${coachSearchResults.length} coach(s) trouves.`;
+  resultsEl.innerHTML = coachSearchResults.map(coach => `
+    <article class="coach-search-card" data-coach-search-card="${Trainw.escapeHtml(coach.user_id || '')}">
+      <div class="coach-search-card-head">
+        <div>
+          <div class="coach-search-card-name">${Trainw.escapeHtml(coach.name || 'Coach')}</div>
+          <div class="coach-search-card-specialty">${Trainw.escapeHtml(coach.specialty || 'Specialite non renseignee')}</div>
+        </div>
+        <div class="coach-search-card-rating">Note ${Trainw.escapeHtml(String(coach.rating ?? '-'))}</div>
+      </div>
+      <div class="coach-search-card-meta">${Trainw.escapeHtml(coach.email || '')}</div>
+      <button class="btn-primary" type="button" data-add-existing-coach="${Trainw.escapeHtml(coach.user_id || '')}" data-coach-email="${Trainw.escapeHtml(coach.email || '')}" data-coach-name="${Trainw.escapeHtml(coach.name || 'Coach')}">Ajouter a la salle</button>
+    </article>
+  `).join('');
+}
+
+function setCoachModalTab(tab) {
+  coachModalTab = tab === 'search' ? 'search' : 'invite';
+  renderCoachModalTabs();
+  if (coachModalTab === 'search') {
+    renderCoachSearchResults();
+    document.getElementById('coach-search-input')?.focus();
+  }
+}
+
+function openAddCoachModal(tab='invite') {
+  setCoachModalTab(tab);
+  document.getElementById('add-coach-modal')?.classList.add('show');
+}
+
+function scheduleExistingCoachSearch(term) {
+  coachSearchTerm = String(term || '').trim();
+  if (coachSearchDebounceTimer) {
+    window.clearTimeout(coachSearchDebounceTimer);
+    coachSearchDebounceTimer = null;
+  }
+
+  if (!coachSearchTerm) {
+    coachSearchLoading = false;
+    coachSearchResults = [];
+    renderCoachSearchResults();
+    return;
+  }
+
+  coachSearchDebounceTimer = window.setTimeout(() => {
+    void searchExistingCoaches(coachSearchTerm);
+  }, 300);
+}
+
+async function searchExistingCoaches(term) {
+  const normalizedTerm = String(term || '').trim();
+  coachSearchTerm = normalizedTerm;
+
+  if (!currentGymId || !normalizedTerm) {
+    coachSearchLoading = false;
+    coachSearchResults = [];
+    renderCoachSearchResults();
+    return;
+  }
+
+  const requestId = ++coachSearchRequestId;
+  coachSearchLoading = true;
+  renderCoachSearchResults();
+
+  try {
+    const membershipResult = await Trainw.api.run(
+      sb.from('gym_memberships').select('user_id').eq('gym_id', currentGymId),
+      { context: 'load gym memberships for coach search', fallback: [] }
+    );
+    if (membershipResult.error) throw membershipResult.error;
+
+    const excludedUserIds = new Set((membershipResult.data || []).map(item => item.user_id).filter(Boolean));
+    const [nameResult, specialtyResult] = await Promise.all([
+      Trainw.api.run(
+        sb.from('users').select('id, name, email').ilike('name', `%${normalizedTerm}%`).limit(20),
+        { context: 'search users for coaches', fallback: [] }
+      ),
+      Trainw.api.run(
+        sb.from('coach_profiles')
+          .select('user_id, specialty, rating, users:users!coach_profiles_user_id_fkey(id, name, email)')
+          .eq('is_active', true)
+          .neq('approval_status', 'rejected')
+          .ilike('specialty', `%${normalizedTerm}%`)
+          .order('rating', { ascending: false })
+          .limit(20),
+        { context: 'search coach specialties', fallback: [] }
+      ),
+    ]);
+    if (nameResult.error) throw nameResult.error;
+    if (specialtyResult.error) throw specialtyResult.error;
+
+    const userIdsFromName = (nameResult.data || []).map(user => user.id).filter(Boolean);
+    const profilesByNameResult = userIdsFromName.length
+      ? await Trainw.api.run(
+          sb.from('coach_profiles')
+            .select('user_id, specialty, rating, users:users!coach_profiles_user_id_fkey(id, name, email)')
+            .eq('is_active', true)
+            .neq('approval_status', 'rejected')
+            .in('user_id', userIdsFromName)
+            .order('rating', { ascending: false })
+            .limit(20),
+          { context: 'load named coaches', fallback: [] }
+        )
+      : { data: [], error: null };
+    if (profilesByNameResult.error) throw profilesByNameResult.error;
+
+    const resultMap = new Map();
+    [...(specialtyResult.data || []), ...(profilesByNameResult.data || [])].forEach(row => {
+      const user = row.users || {};
+      const userId = row.user_id || user.id;
+      if (!userId || excludedUserIds.has(userId)) return;
+      if (!user.email) return;
+      if (!resultMap.has(userId)) {
+        resultMap.set(userId, {
+          user_id: userId,
+          name: user.name || 'Coach',
+          email: user.email || '',
+          specialty: row.specialty || '',
+          rating: row.rating ?? null,
+        });
+      }
+    });
+
+    if (requestId !== coachSearchRequestId) return;
+    coachSearchResults = Array.from(resultMap.values()).sort((a, b) => {
+      const ratingA = Number(a.rating) || 0;
+      const ratingB = Number(b.rating) || 0;
+      if (ratingA !== ratingB) return ratingB - ratingA;
+      return String(a.name || '').localeCompare(String(b.name || ''), 'fr');
+    });
+  } catch (error) {
+    if (requestId !== coachSearchRequestId) return;
+    coachSearchResults = [];
+    toast(error.message || t('errorMsg'), 'err');
+  } finally {
+    if (requestId === coachSearchRequestId) {
+      coachSearchLoading = false;
+      renderCoachSearchResults();
+    }
+  }
+}
+
+async function addExistingCoachToGym(email, name, button) {
+  if (!email || !currentGymId) return;
+
+  try {
+    Trainw.ui.setBusy(button, true);
+    const roleId = await ensureCoachRoleId();
+    const result = await inviteMember({
+      email,
+      name,
+      roleId,
+    });
+    if (result.error) throw result.error;
+
+    toast(`${name || email} ajoute a la salle.`);
+    await loadAccessControlData();
+    await Promise.allSettled([loadCoaches(), loadGymCoaches(), loadDashboardStats()]);
+    await searchExistingCoaches(coachSearchTerm);
+  } catch (error) {
+    toast(error.message || t('errorMsg'), 'err');
+  } finally {
+    Trainw.ui.setBusy(button, false);
+  }
+}
+
 async function loadGymCoaches() {
   if (!currentGymId) {
     gymCoaches = [];
     const emptyOption = `<option value="">${t('noCoachOpt') || 'No coach'}</option>`;
     Trainw.ui.setHtml('sess-coach', emptyOption);
     Trainw.ui.setHtml('edit-sess-coach', emptyOption);
+    populateGymClassCoachSelector();
     return;
   }
 
@@ -2454,6 +3240,8 @@ async function loadGymCoaches() {
 
   Trainw.ui.setHtml('sess-coach', options);
   Trainw.ui.setHtml('edit-sess-coach', options);
+  populateGymClassCoachSelector();
+  renderGymClasses();
 }
 
 async function resolveCoachProfileId(userId) {
@@ -2497,17 +3285,7 @@ async function submitNewCoach() {
   if (btn) btn.textContent = '...';
 
   try {
-    if (!roleMatrix.length) {
-      await loadAccessControlData();
-    }
-    const coachRole = roleMatrix.find(role =>
-      String(role.code || '').toLowerCase() === 'coach' &&
-      String(role.gym_id || currentGymId) === String(currentGymId)
-    ) || null;
-    const coachRoleId = coachRole?.role_id || null;
-    if (!coachRoleId) {
-      throw new Error('Coach role is not configured for this gym.');
-    }
+    const coachRoleId = await ensureCoachRoleId();
 
     const inviteResult = await Trainw.api.run(
       sb.rpc('invite_gym_member', {
@@ -2542,13 +3320,14 @@ async function submitNewCoach() {
     }
 
     toast(t('coachAdded'));
+    setCoachModalTab('invite');
     document.getElementById('add-coach-modal')?.classList.remove('show');
     ['new-coach-name', 'new-coach-email', 'new-coach-phone', 'new-coach-specialty', 'new-coach-rate'].forEach(id => {
       const field = document.getElementById(id);
       if (field) field.value = '';
     });
     await loadAccessControlData();
-    await Promise.allSettled([loadCoaches(), loadGymCoaches()]);
+    await Promise.allSettled([loadCoaches(), loadGymCoaches(), loadDashboardStats()]);
   } catch (error) {
     showInlineError(errEl, error.message || t('errorMsg'));
     toast(error.message || t('errorMsg'), 'err');
@@ -2647,10 +3426,34 @@ async function submitNewClient() {
     if (!roleMatrix.length) {
       await loadAccessControlData();
     }
-    const clientRole = roleMatrix.find(role =>
+    let clientRole = roleMatrix.find(role =>
       String(role.code || '').toLowerCase() === 'client' &&
       String(role.gym_id || currentGymId) === String(currentGymId)
     ) || null;
+    if (!clientRole) {
+      await loadAccessControlData();
+      clientRole = roleMatrix.find(role =>
+        String(role.code || '').toLowerCase() === 'client' &&
+        String(role.gym_id || currentGymId) === String(currentGymId)
+      ) || null;
+    }
+    if (!clientRole) {
+      const roleSaveResult = await Trainw.api.run(sb.rpc('save_role_definition', {
+        p_gym_id: currentGymId,
+        p_role_id: null,
+        p_name: 'Client',
+        p_code: 'client',
+        p_portal: 'client',
+        p_description: null,
+        p_permission_codes: [],
+      }), { context: 'ensure client role', fallback: null });
+      if (roleSaveResult.error) throw roleSaveResult.error;
+      await loadAccessControlData();
+      clientRole = roleMatrix.find(role =>
+        String(role.code || '').toLowerCase() === 'client' &&
+        String(role.gym_id || currentGymId) === String(currentGymId)
+      ) || null;
+    }
     const clientRoleId = clientRole?.role_id || null;
     if (!clientRoleId) {
       throw new Error('Client role is not configured for this gym.');
@@ -2840,6 +3643,7 @@ function clearGymRealtimeSubscriptions() {
     clearTimeout(gymRefreshTimer);
     gymRefreshTimer = null;
   }
+  stopGateSettingsAccessLogAutoRefresh();
 }
 
 function queueGymRefresh(kind, delay) {
@@ -2861,7 +3665,10 @@ function queueGymRefresh(kind, delay) {
       return;
     }
     if (kind === 'accesslog') {
-      await loadGateAccessLog();
+      await Promise.allSettled([
+        loadGateAccessLog(),
+        isGateSettingsTabActive() ? loadGateSettingsAccessLog() : Promise.resolve(),
+      ]);
       return;
     }
   }, delay || 240);
@@ -2995,6 +3802,348 @@ function getAccessReasonLabel(reason) {
     gym_mismatch: 'Terminal non autorisé',
   };
   return map[reason] || reason || 'Accès refusé';
+}
+
+function buildGateWebhookUrl() {
+  const baseUrl = String(window.__TRAINW_URL__ || window.location.origin || '').replace(/\/$/, '');
+  return `${baseUrl}/functions/v1/gate-checkin?gym_id=${encodeURIComponent(currentGymId || '')}`;
+}
+
+function renderGateSettingsWebhookUrl() {
+  const input = document.getElementById('gate-webhook-url');
+  if (!input) return;
+  input.value = buildGateWebhookUrl();
+}
+
+async function copyGateWebhookUrl() {
+  try {
+    await navigator.clipboard.writeText(buildGateWebhookUrl());
+    toast('Copied!');
+  } catch (error) {
+    toast('Unable to copy the webhook URL.', 'err');
+  }
+}
+
+function getGateSettingsRfidCredentialMap() {
+  return gateSettingsCredentialsList
+    .filter(item => item.type === 'rfid_card')
+    .reduce((map, credential) => {
+      const current = map.get(credential.client_id);
+      const currentTime = new Date(current?.created_at || 0).getTime();
+      const credentialTime = new Date(credential?.created_at || 0).getTime();
+      if (!current || (!current.is_active && credential.is_active) || (current.is_active === credential.is_active && credentialTime > currentTime)) {
+        map.set(credential.client_id, credential);
+      }
+      return map;
+    }, new Map());
+}
+
+function getGateSettingsStatusMeta(kind, credential) {
+  if (kind === 'qr') {
+    return { label: 'Auto', className: 'auto' };
+  }
+  if (!credential) {
+    return { label: 'Not issued', className: 'pending' };
+  }
+  return credential.is_active
+    ? { label: 'Active', className: 'active' }
+    : { label: 'Revoked', className: 'inactive' };
+}
+
+function getGateCredentialTypeLabel(type) {
+  if (type === 'qr') return 'QR';
+  if (type === 'rfid_card') return 'RFID';
+  if (type === 'fingerprint') return 'Fingerprint';
+  if (type === 'face') return 'Face';
+  if (type === 'manual') return 'Manual';
+  return String(type || 'Unknown').replace(/_/g, ' ');
+}
+
+function renderGateSettingsCredentialsTable() {
+  const body = document.getElementById('gate-credentials-table-body');
+  if (!body) return;
+
+  if (!allClients.length) {
+    body.innerHTML = `<tr><td class="gate-empty-cell" colspan="5">No clients available yet.</td></tr>`;
+    return;
+  }
+
+  const rfidMap = getGateSettingsRfidCredentialMap();
+  body.innerHTML = allClients.map(client => {
+    const credential = rfidMap.get(client.id) || null;
+    const status = getGateSettingsStatusMeta('rfid', credential);
+    const draftValue = gateSettingsCredentialDrafts.has(client.id)
+      ? gateSettingsCredentialDrafts.get(client.id)
+      : (credential?.credential_data || '');
+    const safeValue = Trainw.escapeHtml(draftValue || '');
+    const memberSince = client.created_at
+      ? new Date(client.created_at).toLocaleDateString(locale(), { month: 'short', year: 'numeric' })
+      : 'Member';
+    return `
+      <tr>
+        <td class="gate-member-cell" rowspan="2">
+          <div class="gate-member-name">${Trainw.escapeHtml(client.name || 'Client')}</div>
+          <div class="gate-member-sub">${Trainw.escapeHtml(client.phone || client.email || memberSince)}</div>
+        </td>
+        <td><span class="gate-credential-type">RFID</span></td>
+        <td>
+          <input
+            class="form-input gate-inline-input"
+            type="text"
+            data-gate-rfid-input="${Trainw.escapeHtml(client.id)}"
+            placeholder="Card number"
+            value="${safeValue}"
+          >
+        </td>
+        <td><span class="gate-status-pill ${Trainw.escapeHtml(status.className)}">${Trainw.escapeHtml(status.label)}</span></td>
+        <td>
+          <div class="gate-actions">
+            <button class="btn-primary" type="button" data-gate-issue-rfid="${Trainw.escapeHtml(client.id)}">Issue</button>
+            <button class="btn-secondary" type="button" data-gate-revoke-rfid="${Trainw.escapeHtml(credential?.id || '')}" ${credential?.is_active ? '' : 'disabled'}>Revoke</button>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td><span class="gate-credential-type">QR</span></td>
+        <td><div class="gate-inline-note">Auto (from client app)</div></td>
+        <td><span class="gate-status-pill auto">Auto</span></td>
+        <td><span class="gate-static-note">Client app</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function formatGateAccessTime(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString(locale(), {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function renderGateSettingsAccessLogTable() {
+  const body = document.getElementById('gate-access-log-table-body');
+  if (!body) return;
+
+  if (!gateSettingsAccessLogList.length) {
+    body.innerHTML = `<tr><td class="gate-empty-cell" colspan="5">No gate activity yet.</td></tr>`;
+    return;
+  }
+
+  const clientMap = new Map(allClients.map(client => [client.id, client]));
+  body.innerHTML = gateSettingsAccessLogList.map(entry => {
+    const client = clientMap.get(entry.client_id);
+    const resultClass = entry.access_granted ? 'success' : 'failure';
+    const resultSymbol = entry.access_granted ? '&#10003;' : '&#10007;';
+    const resultLabel = entry.access_granted ? 'Granted' : 'Denied';
+    return `
+      <tr>
+        <td>${Trainw.escapeHtml(formatGateAccessTime(entry.attempted_at))}</td>
+        <td>${Trainw.escapeHtml(client?.name || 'Unknown')}</td>
+        <td>${Trainw.escapeHtml(getGateCredentialTypeLabel(entry.credential_type))}</td>
+        <td><span class="gate-result-pill ${resultClass}" aria-label="${Trainw.escapeHtml(resultLabel)}">${resultSymbol}</span></td>
+        <td><span class="gate-device-id">${Trainw.escapeHtml(entry.device_id || '—')}</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function loadGateSettingsCredentials() {
+  const body = document.getElementById('gate-credentials-table-body');
+  if (!body) return;
+  if (!currentGymId) {
+    gateSettingsCredentialsList = [];
+    renderGateSettingsCredentialsTable();
+    return;
+  }
+
+  body.innerHTML = `<tr><td class="gate-empty-cell" colspan="5">Loading...</td></tr>`;
+  const result = await Trainw.api.run(
+    sb.from('member_credentials')
+      .select('id, client_id, type, credential_data, is_active, created_at, updated_at')
+      .eq('gym_id', currentGymId)
+      .eq('type', 'rfid_card')
+      .order('created_at', { ascending: false }),
+    { context: 'load gate settings credentials', fallback: [] }
+  );
+
+  gateSettingsCredentialsList = Array.isArray(result.data) ? result.data : [];
+  renderGateSettingsCredentialsTable();
+  if (result.error) toast(result.error.message || t('errorMsg'), 'err');
+}
+
+async function issueGateRfidCredential(clientId, button) {
+  const input = Array.from(document.querySelectorAll('[data-gate-rfid-input]'))
+    .find(field => field.dataset.gateRfidInput === clientId);
+  const credentialValue = input?.value.trim() || '';
+  if (!currentGymId || !clientId) return;
+  if (!credentialValue) {
+    toast('Enter a card number before issuing.', 'err');
+    input?.focus();
+    return;
+  }
+
+  gateSettingsCredentialDrafts.set(clientId, credentialValue);
+  const existingCredential = gateSettingsCredentialsList.find(item =>
+    item.client_id === clientId &&
+    item.type === 'rfid_card' &&
+    String(item.credential_data || '').trim() === credentialValue
+  ) || null;
+
+  if (button) {
+    button.disabled = true;
+    button.dataset.originalLabel = button.textContent || 'Issue';
+    button.textContent = '...';
+  }
+
+  try {
+    let result = null;
+    if (existingCredential) {
+      result = await Trainw.api.run(
+        sb.from('member_credentials')
+          .update({ is_active: true })
+          .eq('id', existingCredential.id)
+          .eq('gym_id', currentGymId),
+        { context: 'reactivate gate rfid credential', fallback: null, silent: true }
+      );
+    } else {
+      result = await Trainw.api.run(
+        sb.from('member_credentials').insert({
+          gym_id: currentGymId,
+          client_id: clientId,
+          type: 'rfid_card',
+          credential_data: credentialValue,
+          is_active: true,
+          enrolled_by: currentUser?.id || null,
+        }),
+        { context: 'issue gate rfid credential', fallback: null, silent: true }
+      );
+    }
+
+    if (result?.error) throw result.error;
+
+    const activeIdsToDisable = gateSettingsCredentialsList
+      .filter(item => item.client_id === clientId && item.type === 'rfid_card' && item.is_active && item.id !== existingCredential?.id)
+      .map(item => item.id);
+    if (activeIdsToDisable.length) {
+      const disableResult = await Trainw.api.run(
+        sb.from('member_credentials')
+          .update({ is_active: false })
+          .in('id', activeIdsToDisable)
+          .eq('gym_id', currentGymId),
+        { context: 'disable previous gate rfid credentials', fallback: null, silent: true }
+      );
+      if (disableResult.error) throw disableResult.error;
+    }
+
+    toast('RFID issued.');
+    await loadGateSettingsCredentials();
+  } catch (error) {
+    const message = error?.code === '23505'
+      ? 'This RFID card is already assigned.'
+      : (error.message || t('errorMsg'));
+    toast(message, 'err');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = button.dataset.originalLabel || 'Issue';
+      delete button.dataset.originalLabel;
+    }
+  }
+}
+
+async function revokeGateRfidCredential(credentialId, button) {
+  if (!currentGymId || !credentialId) return;
+  if (button) {
+    button.disabled = true;
+    button.dataset.originalLabel = button.textContent || 'Revoke';
+    button.textContent = '...';
+  }
+
+  try {
+    const result = await Trainw.api.run(
+      sb.from('member_credentials')
+        .update({ is_active: false })
+        .eq('id', credentialId)
+        .eq('gym_id', currentGymId),
+      { context: 'revoke gate rfid credential', fallback: null, silent: true }
+    );
+    if (result.error) throw result.error;
+    toast('RFID revoked.');
+    await loadGateSettingsCredentials();
+  } catch (error) {
+    toast(error.message || t('errorMsg'), 'err');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = button.dataset.originalLabel || 'Revoke';
+      delete button.dataset.originalLabel;
+    }
+  }
+}
+
+async function loadGateSettingsAccessLog() {
+  const body = document.getElementById('gate-access-log-table-body');
+  if (!body) return;
+  if (!currentGymId) {
+    gateSettingsAccessLogList = [];
+    renderGateSettingsAccessLogTable();
+    return;
+  }
+
+  body.innerHTML = `<tr><td class="gate-empty-cell" colspan="5">Loading...</td></tr>`;
+  const result = await Trainw.api.run(
+    sb.from('gate_access_log')
+      .select('id, client_id, credential_type, access_granted, device_id, attempted_at')
+      .eq('gym_id', currentGymId)
+      .order('attempted_at', { ascending: false })
+      .limit(20),
+    { context: 'load gate settings access log', fallback: [] }
+  );
+
+  gateSettingsAccessLogList = Array.isArray(result.data) ? result.data : [];
+  renderGateSettingsAccessLogTable();
+  if (result.error) toast(result.error.message || t('errorMsg'), 'err');
+}
+
+function stopGateSettingsAccessLogAutoRefresh() {
+  if (gateSettingsAccessLogTimer) {
+    clearInterval(gateSettingsAccessLogTimer);
+    gateSettingsAccessLogTimer = null;
+  }
+}
+
+function isGateSettingsTabActive() {
+  const settingsPage = document.getElementById('settings-page');
+  return Boolean(settingsPage && !settingsPage.classList.contains('hidden') && window.location.hash === '#settings-gate-panel');
+}
+
+async function syncGateSettingsPanelState() {
+  renderGateSettingsWebhookUrl();
+  renderGateSettingsCredentialsTable();
+  renderGateSettingsAccessLogTable();
+
+  if (!isGateSettingsTabActive()) {
+    stopGateSettingsAccessLogAutoRefresh();
+    return;
+  }
+
+  await Promise.allSettled([
+    loadGateSettingsCredentials(),
+    loadGateSettingsAccessLog(),
+  ]);
+
+  if (!gateSettingsAccessLogTimer) {
+    gateSettingsAccessLogTimer = window.setInterval(() => {
+      if (!isGateSettingsTabActive()) {
+        stopGateSettingsAccessLogAutoRefresh();
+        return;
+      }
+      void loadGateSettingsAccessLog();
+    }, 30000);
+  }
 }
 
 function getSelectedCredentialClient() {
@@ -3326,7 +4475,7 @@ function renderCheckIns() {
   }
 
   el.innerHTML = checkInsList.map(checkIn => {
-    const name = checkIn.users?.name || 'Client';
+    const name = allClients.find(c => c.id === checkIn.client_id)?.name || 'Client';
     const initials = Trainw.escapeHtml(name.split(' ').map(part => part[0] || '').join('').slice(0, 2).toUpperCase());
     const time = new Date(checkIn.checked_in_at).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
     return `<div class="checkin-item check-in-row"><div class="checkin-avatar">${initials}</div><div class="checkin-info"><div class="checkin-name">${Trainw.escapeHtml(name)}</div><div class="checkin-time">${Trainw.escapeHtml(t('checkedIn'))} ${Trainw.escapeHtml(time)} · ${Trainw.escapeHtml(checkIn.method || 'manual')}</div></div><div class="checkin-badge">OK</div></div>`;
@@ -3444,7 +4593,7 @@ async function loadCheckIns() {
   el.innerHTML = skeletonRows(3);
   const result = await Trainw.api.run(
     sb.from('check_ins')
-      .select('id, checked_in_at, method, client_id, users!check_ins_client_id_fkey(name)')
+      .select('id, checked_in_at, method, client_id')
       .eq('gym_id', currentGymId)
       .gte('checked_in_at', `${today}T00:00:00`)
       .lte('checked_in_at', `${today}T23:59:59`)
@@ -3784,6 +4933,13 @@ function showPage(page) {
 
   if (nextPage === 'analytics') loadAnalytics();
   if (nextPage === 'messages') updateMessageBadge();
+  if (nextPage === 'schedule') {
+    renderScheduleTabs();
+    if (scheduleTab === 'classes') renderGymClasses();
+  }
+  if (nextPage === 'classes') {
+    renderGymClasses();
+  }
   if (nextPage === 'checkin') {
     renderCheckInTabs();
     renderCredentialClientList();
@@ -3792,6 +4948,7 @@ function showPage(page) {
   }
   if (nextPage === 'coaches') startCarouselAutoplay();
   else stopCarouselAutoplay();
+  void syncGateSettingsPanelState();
 }
 
 function ensureMobileSettingsShortcuts() {
@@ -3890,17 +5047,62 @@ function bindUi() {
   });
 
   document.getElementById('schedule-search')?.addEventListener('input', renderSchedule);
+  document.querySelectorAll('[data-schedule-tab]').forEach(button => {
+    button.addEventListener('click', () => setScheduleTab(button.dataset.scheduleTab || 'sessions'));
+  });
   document.getElementById('clients-search')?.addEventListener('input', renderClients);
   document.getElementById('msg-contact-search')?.addEventListener('input', event => populateMessagesList(event.target.value));
+  document.querySelectorAll('[data-coach-modal-tab]').forEach(button => {
+    button.addEventListener('click', () => setCoachModalTab(button.dataset.coachModalTab || 'invite'));
+  });
+  document.getElementById('coach-search-input')?.addEventListener('input', event => {
+    scheduleExistingCoachSearch(event.target.value || '');
+  });
+  document.getElementById('coach-search-results')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-add-existing-coach]');
+    if (!button) return;
+    void addExistingCoachToGym(button.dataset.coachEmail || '', button.dataset.coachName || '', button);
+  });
   document.querySelectorAll('[data-checkin-tab]').forEach(button => {
     button.addEventListener('click', () => setCheckInTab(button.dataset.checkinTab || 'live'));
   });
   document.querySelectorAll('[data-settings-team-tab]').forEach(button => {
     button.addEventListener('click', () => switchSettingsStaffTab(button.dataset.settingsTeamTab || 'team'));
   });
+  document.querySelectorAll('#settings-page .settings-sidebar-tab[href^="#"]').forEach(link => {
+    link.addEventListener('click', event => {
+      event.preventDefault();
+      const hash = link.getAttribute('href') || '';
+      if (!hash) return;
+
+      showPage('settings');
+
+      if (link.dataset.settingsTeamTab) {
+        switchSettingsStaffTab(link.dataset.settingsTeamTab || 'team');
+      }
+
+      const target = document.querySelector(hash);
+      if (window.location.hash !== hash) {
+        window.location.hash = hash;
+      } else {
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        void syncGateSettingsPanelState();
+      }
+    });
+  });
+  if (!window.__trainwGymGateHashBound) {
+    window.__trainwGymGateHashBound = true;
+    window.addEventListener('hashchange', () => {
+      void syncGateSettingsPanelState();
+    });
+  }
   document.getElementById('credential-client-search')?.addEventListener('input', renderCredentialClientList);
   document.getElementById('credential-type')?.addEventListener('change', updateCredentialModalHint);
   document.getElementById('access-log-filter')?.addEventListener('change', renderGateAccessLog);
+  document.getElementById('btn-copy-gate-webhook')?.addEventListener('click', copyGateWebhookUrl);
+  document.getElementById('btn-refresh-gate-access-log')?.addEventListener('click', () => {
+    void loadGateSettingsAccessLog();
+  });
   document.getElementById('terminal-admin-pin')?.addEventListener('input', updateGateTerminalPreview);
   document.getElementById('terminal-device-id')?.addEventListener('input', updateGateTerminalPreview);
   document.getElementById('btn-copy-terminal-url')?.addEventListener('click', copyGateTerminalUrl);
@@ -3915,11 +5117,15 @@ function bindUi() {
   });
   document.getElementById('btn-save-credential')?.addEventListener('click', saveMemberCredential);
   document.getElementById('sess-type')?.addEventListener('change', updateSessionCategory);
-  document.getElementById('btn-create-session')?.addEventListener('click', () => document.getElementById('create-session-modal')?.classList.add('show'));
-  document.getElementById('btn-add-coach')?.addEventListener('click', () => document.getElementById('add-coach-modal')?.classList.add('show'));
+  document.getElementById('sess-based-class')?.addEventListener('change', event => applySessionClassTemplate(event.target.value || ''));
+  document.getElementById('btn-create-session')?.addEventListener('click', () => openCreateSessionModal());
+  document.getElementById('btn-open-gym-class-modal')?.addEventListener('click', () => openGymClassModal());
+  document.getElementById('btn-open-gym-class-modal-secondary')?.addEventListener('click', () => openGymClassModal());
+  document.getElementById('btn-add-coach')?.addEventListener('click', () => openAddCoachModal());
   document.getElementById('btn-add-client')?.addEventListener('click', () => document.getElementById('add-client-modal')?.classList.add('show'));
   document.getElementById('btn-submit-session')?.addEventListener('click', submitNewSession);
   document.getElementById('btn-submit-coach')?.addEventListener('click', submitNewCoach);
+  document.getElementById('btn-save-gym-class')?.addEventListener('click', saveGymClass);
   document.getElementById('btn-submit-client')?.addEventListener('click', submitNewClient);
   document.getElementById('btn-submit-checkin')?.addEventListener('click', submitManualCheckIn);
   document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
@@ -3970,6 +5176,24 @@ function bindUi() {
     const deleteButton = event.target.closest('[data-credential-delete]');
     if (deleteButton) {
       deleteMemberCredential(deleteButton.dataset.credentialDelete);
+    }
+  });
+  document.getElementById('schedule-classes-list')?.addEventListener('click', handleGymClassListClick);
+  document.getElementById('classes-page-list')?.addEventListener('click', handleGymClassListClick);
+  document.getElementById('gate-credentials-table-body')?.addEventListener('input', event => {
+    const input = event.target.closest('[data-gate-rfid-input]');
+    if (!input) return;
+    gateSettingsCredentialDrafts.set(input.dataset.gateRfidInput || '', input.value || '');
+  });
+  document.getElementById('gate-credentials-table-body')?.addEventListener('click', event => {
+    const issueButton = event.target.closest('[data-gate-issue-rfid]');
+    if (issueButton) {
+      void issueGateRfidCredential(issueButton.dataset.gateIssueRfid || '', issueButton);
+      return;
+    }
+    const revokeButton = event.target.closest('[data-gate-revoke-rfid]');
+    if (revokeButton) {
+      void revokeGateRfidCredential(revokeButton.dataset.gateRevokeRfid || '', revokeButton);
     }
   });
   document.getElementById('role-builder-list')?.addEventListener('click', event => {
@@ -4062,6 +5286,9 @@ function setLang(lang) {
   renderCredentialClientList();
   renderCredentialList();
   renderGateAccessLog();
+  renderGateSettingsWebhookUrl();
+  renderGateSettingsCredentialsTable();
+  renderGateSettingsAccessLogTable();
   renderStaffStats();
   renderStaffDirectory();
   renderPendingInvites();
@@ -4107,6 +5334,9 @@ async function initPage() {
   renderCheckInTabs();
   updateCredentialModalHint();
   updateSessionCategory();
+  renderScheduleTabs();
+  renderCoachModalTabs();
+  renderCoachSearchResults();
   setDefaultDates();
   Trainw.ui.setValue('terminal-device-id', document.getElementById('terminal-device-id')?.value || 'gate-1', 'gate-1');
 
@@ -4151,9 +5381,11 @@ async function initPage() {
     Trainw.ui.setText('sidebar-gym-name', context.profile.name || '-', '-');
   }
   updateGateTerminalPreview();
+  renderGateSettingsWebhookUrl();
 
   const startup = await Promise.allSettled([
     loadGymCoaches(),
+    loadGymClasses(),
     loadDashboardStats(),
     loadSchedule(),
     loadCoaches(),
@@ -4186,6 +5418,8 @@ async function initPage() {
       },
     });
   }
+
+  await syncGateSettingsPanelState();
 }
 
 initPage();

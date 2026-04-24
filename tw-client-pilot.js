@@ -1,5 +1,5 @@
 const Trainw=window.TrainwCore;const sb=Trainw.createClient();Trainw.installGlobalErrorHandlers();
-const LOGIN_HREF='/tw-login.html?role=client';
+const LOGIN_HREF='/login?role=client';
 let currentLang=localStorage.getItem('trainw_lang')||'fr',currentUserId=null,currentGymId=null,currentProfile=null,clientProfile=null,coachInfo=null,ownerInfo=null;
 let mySessions=[],availableCoaches=[],bookingSlots=[],activePlan=null,planExercises=[],workoutLogs=[],weightLogs=[],currentGoal=null,checkins=[],threads=[],activeThreadId='',activeWorkout=null,weightChart=null;
 let logSetsMap=new Map(),reviewsBySession=new Map(),reviewDrafts=new Map(),selectedBookingCoachId='',selectedBookingDate='',selectedBookingSlot='';

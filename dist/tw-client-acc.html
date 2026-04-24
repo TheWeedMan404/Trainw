@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
   <title>Trainw - Client Workspace</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,10 +14,10 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <link rel="stylesheet" href="tw-client-acc.css?v=20260403-1">
+  <link rel="stylesheet" href="tw-client-acc.css?v=20260420-2">
   <link rel="stylesheet" href="trainw-enhancements.css">
-  <link rel="stylesheet" href="trainw-v14.css">
-  <link rel="stylesheet" href="tw-client-acc-v14.css?v=20260407-1">
+    <link rel="stylesheet" href="trainw-v17.css">
+    <link rel="stylesheet" href="tw-client-acc-v17.css?v=20260407-1">
 </head>
 <body>
 <div class="app-container account-shell client-shell">
@@ -399,6 +400,67 @@
         </div>
         <div id="weight-table-wrap"><p class="empty-state" data-i18n="loading">Loading...</p></div>
       </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Records</h2>
+            <p class="card-subtitle">Enregistrez vos meilleures performances et gardez votre tableau de progression a jour.</p>
+          </div>
+        </div>
+        <div class="record-form-grid">
+          <div class="form-group">
+            <label class="form-label">Exercice</label>
+            <input class="form-input" id="record-exercise-input" type="text" placeholder="Squat, Tractions, 5 km...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Valeur</label>
+            <input class="form-input" id="record-value-input" type="number" min="0" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unite</label>
+            <select class="form-input" id="record-unit-input">
+              <option value="kg">kg</option>
+              <option value="reps">reps</option>
+              <option value="seconds">seconds</option>
+              <option value="km">km</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date</label>
+            <input class="form-input" id="record-date-input" type="date">
+          </div>
+          <div class="form-group record-submit-cell">
+            <button class="btn-primary full-width-btn" id="btn-save-record" type="button">Enregistrer le record</button>
+          </div>
+        </div>
+        <div id="records-table-wrap"><p class="empty-state">Loading...</p></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Photos</h2>
+            <p class="card-subtitle">Ajoutez des jalons visuels pour suivre votre progression.</p>
+          </div>
+        </div>
+        <div class="form-row" style="align-items:flex-end;">
+          <div class="form-group">
+            <label class="form-label">Photo</label>
+            <label class="btn-secondary" for="milestone-photo-file" style="display:inline-flex;cursor:pointer;">+ Ajouter une photo</label>
+            <input id="milestone-photo-file" type="file" accept="image/*" style="display:none;">
+            <div class="activity-meta" id="milestone-photo-file-name" style="margin-top:8px;">Aucun fichier selectionne.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Legende</label>
+            <input class="form-input" id="milestone-photo-caption" type="text" placeholder="Ajouter une legende (optionnel)">
+          </div>
+          <div class="form-group">
+            <button class="btn-primary" id="btn-save-milestone-photo" type="button">Confirmer</button>
+          </div>
+        </div>
+        <div id="milestone-photo-grid"><p class="empty-state">Chargement...</p></div>
+      </div>
     </section>
 
     <section id="goals-page" class="page hidden">
@@ -649,14 +711,69 @@
   </div>
 </section>
 
+<div class="trainw-panel-backdrop hidden" id="free-workout-backdrop"></div>
+<section class="free-workout-modal hidden" id="free-workout-modal">
+  <div class="free-workout-head">
+    <div>
+      <div class="card-title">Entraînement libre</div>
+      <div class="card-subtitle">Ajoutez vos exercices, puis enregistrez votre seance sans programme actif.</div>
+    </div>
+    <button class="tw-panel-close" type="button" id="btn-close-free-workout">&times;</button>
+  </div>
+  <div class="free-workout-body">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Duree (minutes)</label>
+        <input class="form-input" id="free-workout-duration" type="number" min="1" step="1" value="45">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Effort perçu</label>
+        <input class="form-input" id="free-workout-effort" type="range" min="1" max="10" value="6">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-input" id="free-workout-notes" rows="3" placeholder="Ressenti, rythme, focus..."></textarea>
+    </div>
+    <div id="free-workout-builder" class="free-workout-builder"></div>
+    <div class="free-workout-actions">
+      <button class="btn-secondary" id="btn-add-free-workout-row" type="button">+ Ajouter un exercice</button>
+      <button class="btn-primary" id="btn-save-free-workout" type="button">Enregistrer l'entrainement</button>
+    </div>
+  </div>
+</section>
+
+<div class="trainw-panel-backdrop hidden" id="join-gym-backdrop"></div>
+<section class="free-workout-modal hidden" id="join-gym-modal">
+  <div class="free-workout-head">
+    <div>
+      <div class="card-title">Rejoindre une salle</div>
+      <div class="card-subtitle">Entrez un code d'invitation ou le nom de votre salle pour demander l'association.</div>
+    </div>
+    <button class="tw-panel-close" type="button" id="btn-close-join-gym">&times;</button>
+  </div>
+  <div class="free-workout-body">
+    <div class="form-group">
+      <label class="form-label">Code d'invitation ou nom de salle</label>
+      <input class="form-input" id="join-gym-input" type="text" placeholder="Ex: ABC123 ou Trainw Downtown">
+    </div>
+    <div id="join-gym-error" class="hidden" style="margin-top:4px;padding:12px 14px;border-radius:12px;border:1px solid rgba(248,113,113,.35);background:rgba(185,28,28,.14);color:#fecaca;"></div>
+    <div class="free-workout-actions">
+      <button class="btn-secondary" id="btn-cancel-join-gym" type="button">Annuler</button>
+      <button class="btn-primary" id="btn-submit-join-gym" type="button">Rejoindre la salle</button>
+    </div>
+  </div>
+</section>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
   window.__TRAINW_URL__ = "https://bibqumevndfykmkssslb.supabase.co";
   window.__TRAINW_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM";
 </script>
+<script src="trainw-tenant-utils.js?v=20260412-1"></script>
 <script src="trainw-core.js?v=20260403-1"></script>
 <script src="trainw-translations.js"></script>
-<script src="tw-client-acc.js?v=20260407-1"></script>
+<script src="tw-client-acc.js?v=20260420-2"></script>
 </body>
 </html>

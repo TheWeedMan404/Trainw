@@ -2,7 +2,7 @@
   const Trainw=window.TrainwCore;
   if(!Trainw)return;
   const sb=Trainw.createClient();
-  const LOGIN_HREF='/tw-login.html?role=gym_owner';
+  const LOGIN_HREF='/login?role=gym_owner';
   let currentGymId=null;
   let currentLang=localStorage.getItem('trainw_lang')||'fr';
 

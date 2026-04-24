@@ -2,9 +2,23 @@
   const SUPABASE_URL = window.__TRAINW_URL__;
   const SUPABASE_ANON = window.__TRAINW_KEY__;
 
-  if (!SUPABASE_URL || !SUPABASE_ANON) {
-    throw new Error('Trainw: missing Supabase config');
+  function isPlaceholderSupabaseConfig(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return true;
+    return (
+      normalized.includes('%%supabase_') ||
+      normalized.includes('example.supabase.co') ||
+      normalized.includes('xyzcompany.supabase.co') ||
+      normalized.includes('project-id.supabase.co') ||
+      normalized === 'example-anon-key' ||
+      normalized === 'publishable-or-anon-key' ||
+      normalized === 'public-anon-key' ||
+      normalized.startsWith('your_')
+    );
   }
+
+  const HAS_SUPABASE_CONFIG =
+    !isPlaceholderSupabaseConfig(SUPABASE_URL) && !isPlaceholderSupabaseConfig(SUPABASE_ANON);
 
   const TenantUtils = window.TrainwTenantUtils || {};
   const ACTIVE_GYM_STORAGE_KEY = 'trainw_active_gym';
@@ -27,6 +41,9 @@
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
   function createClient() {
+    if (!HAS_SUPABASE_CONFIG) {
+      throw new Error('Trainw: missing Supabase config');
+    }
     if (!window.supabase || typeof window.supabase.createClient !== 'function') {
       throw new Error('Supabase client is not available on this page.');
     }
@@ -384,6 +401,46 @@
       return TenantUtils.normalizeMembership(membership);
     }
     return membership || null;
+  }
+
+  function normalizePortalCode(value) {
+    if (TenantUtils && typeof TenantUtils.normalizeCode === 'function') {
+      return TenantUtils.normalizeCode(value);
+    }
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function pickScopedActiveMembership(memberships, preferredGymId, preferredPortals) {
+    const list = Array.isArray(memberships) ? memberships.filter(Boolean) : [];
+    if (!list.length) return null;
+
+    const pickMembership = TenantUtils && typeof TenantUtils.pickActiveMembership === 'function'
+      ? TenantUtils.pickActiveMembership
+      : function fallbackPickMembership(items, gymId) {
+          if (!Array.isArray(items) || !items.length) return null;
+          if (gymId) {
+            const gymMatch = items.find(function (membership) {
+              return membership?.gym_id === gymId;
+            });
+            if (gymMatch) return gymMatch;
+          }
+          return items[0] || null;
+        };
+
+    const scopedPortals = Array.isArray(preferredPortals)
+      ? preferredPortals.map(normalizePortalCode).filter(Boolean)
+      : [];
+
+    if (scopedPortals.length) {
+      const portalMatches = list.filter(function (membership) {
+        return scopedPortals.includes(normalizePortalCode(membership?.portal));
+      });
+      if (portalMatches.length) {
+        return pickMembership(portalMatches, preferredGymId) || null;
+      }
+    }
+
+    return pickMembership(list, preferredGymId) || null;
   }
 
   function workspacePathFor(target) {
@@ -874,8 +931,31 @@
       };
     }
 
+    const expectedPortals = deriveExpectedPortals(config.expectedRoles, config.expectedPortals);
     const authContextResult = await loadAuthContext(client, config.requestedGymId || null);
-    const authContext = authContextResult.authContext || buildLegacyAuthContext(profileResult.profile);
+    let authContext = authContextResult.authContext || buildLegacyAuthContext(profileResult.profile);
+
+    if (Array.isArray(authContext.memberships) && authContext.memberships.length) {
+      const preferredMembership = pickScopedActiveMembership(
+        authContext.memberships,
+        config.requestedGymId || getStoredActiveGymId() || authContext.activeMembership?.gym_id || null,
+        expectedPortals
+      );
+
+      if (preferredMembership) {
+        authContext = {
+          ...authContext,
+          activeMembership: preferredMembership,
+          permissions: Array.isArray(preferredMembership.permissions) ? preferredMembership.permissions : [],
+          portal: preferredMembership.portal || authContext.portal || null,
+        };
+
+        if (preferredMembership.gym_id) {
+          storeActiveGymId(preferredMembership.gym_id);
+        }
+      }
+    }
+
     const profile = augmentProfileWithMembership(profileResult.profile, authContext);
 
     if (!authContext.activeMembership && authContext.memberships.length) {
@@ -893,8 +973,6 @@
         error: new Error('No active membership selected'),
       };
     }
-
-    const expectedPortals = deriveExpectedPortals(config.expectedRoles, config.expectedPortals);
 
     if (
       Array.isArray(expectedPortals) &&

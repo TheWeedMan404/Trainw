@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
   <title>Trainw - Coach Workspace</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,10 +14,10 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <link rel="stylesheet" href="tw-coach-acc.css?v=20260403-1">
+  <link rel="stylesheet" href="tw-coach-acc.css?v=20260420-2">
   <link rel="stylesheet" href="trainw-enhancements.css">
-  <link rel="stylesheet" href="trainw-v14.css">
-  <link rel="stylesheet" href="tw-coach-acc-v14.css?v=20260407-1">
+    <link rel="stylesheet" href="trainw-v17.css">
+    <link rel="stylesheet" href="tw-coach-acc-v17.css?v=20260420-2">
 </head>
 <body>
 <div class="app-container account-shell coach-shell">
@@ -30,6 +31,7 @@
       <div class="coach-name" id="sidebar-coach-name">-</div>
       <div class="coach-label" data-i18n="roleLabel">Coach</div>
       <div class="sidebar-meta-copy">Clients, schedule, progress data, and conversation flow in one console.</div>
+      <div class="coach-gym-switcher hidden" id="coach-gym-switcher"></div>
     </div>
 
     <nav>
@@ -591,8 +593,9 @@
   window.__TRAINW_URL__ = "https://bibqumevndfykmkssslb.supabase.co";
   window.__TRAINW_KEY__ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM";
 </script>
+<script src="trainw-tenant-utils.js?v=20260412-1"></script>
 <script src="trainw-core.js?v=20260403-1"></script>
 <script src="trainw-translations.js"></script>
-<script src="tw-coach-acc.js?v=20260407-1"></script>
+<script src="tw-coach-acc.js?v=20260420-2"></script>
 </body>
 </html>

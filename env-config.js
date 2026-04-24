@@ -3,6 +3,7 @@ const path = require('path');
 
 const rootDir = __dirname;
 const distDir = path.join(rootDir, 'dist');
+const envFileCache = loadEnvFileConfig();
 
 function readFileIfExists(filePath) {
   try {
@@ -12,11 +13,94 @@ function readFileIfExists(filePath) {
   }
 }
 
-function resolveSupabaseConfig() {
-  const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-  const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+function parseEnvFile(text) {
+  const values = {};
+  const lines = String(text || '').split(/\r?\n/);
 
-  if (envUrl && envKey) {
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const line = trimmed.startsWith('export ') ? trimmed.slice(7).trim() : trimmed;
+    const equalsIndex = line.indexOf('=');
+    if (equalsIndex <= 0) continue;
+
+    const key = line.slice(0, equalsIndex).trim();
+    let value = line.slice(equalsIndex + 1).trim();
+
+    if (!key) continue;
+
+    const hasMatchingQuotes =
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"));
+
+    if (hasMatchingQuotes) {
+      value = value.slice(1, -1);
+    } else {
+      const commentIndex = value.indexOf(' #');
+      if (commentIndex >= 0) {
+        value = value.slice(0, commentIndex).trim();
+      }
+    }
+
+    values[key] = value.replace(/\\n/g, '\n');
+  }
+
+  return values;
+}
+
+function loadEnvFileConfig() {
+  const files = [
+    '.env',
+    '.env.local',
+    '.env.development',
+    '.env.development.local',
+    '.env.production',
+    '.env.production.local',
+  ];
+
+  return files.reduce((acc, fileName) => {
+    const filePath = path.join(rootDir, fileName);
+    const contents = readFileIfExists(filePath);
+    if (!contents) return acc;
+    return Object.assign(acc, parseEnvFile(contents));
+  }, {});
+}
+
+function resolveConfigValue(keys) {
+  for (const key of keys) {
+    const envValue = String(process.env[key] || '').trim();
+    if (envValue) return envValue;
+    const fileValue = String(envFileCache[key] || '').trim();
+    if (fileValue) return fileValue;
+  }
+  return '';
+}
+
+function isPlaceholderConfigValue(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    normalized.includes('%%supabase_') ||
+    normalized.includes('example.supabase.co') ||
+    normalized.includes('xyzcompany.supabase.co') ||
+    normalized.includes('project-id.supabase.co') ||
+    normalized === 'example-anon-key' ||
+    normalized === 'publishable-or-anon-key' ||
+    normalized === 'public-anon-key' ||
+    normalized.startsWith('your_')
+  );
+}
+
+function hasUsableSupabaseConfig(url, key) {
+  return !isPlaceholderConfigValue(url) && !isPlaceholderConfigValue(key);
+}
+
+function resolveSupabaseConfig() {
+  const envUrl = resolveConfigValue(['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_URL']);
+  const envKey = resolveConfigValue(['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY']);
+
+  if (hasUsableSupabaseConfig(envUrl, envKey)) {
     return { supabaseUrl: envUrl, supabaseAnonKey: envKey, source: 'environment' };
   }
 
@@ -33,7 +117,7 @@ function resolveSupabaseConfig() {
     const keyMatch = text.match(/window\.__TRAINW_KEY__\s*=\s*['"]([^'"]+)['"]/);
 
     if (!urlMatch || !keyMatch) continue;
-    if (/%%SUPABASE_/i.test(urlMatch[1]) || /%%SUPABASE_/i.test(keyMatch[1])) continue;
+    if (!hasUsableSupabaseConfig(urlMatch[1], keyMatch[1])) continue;
 
     return {
       supabaseUrl: urlMatch[1],
@@ -57,10 +141,16 @@ const requiredHtmlFiles = new Set([
 ]);
 
 const ignoredDirectories = new Set([
+  '.next',
   '.git',
   '.vercel',
+  'database',
   'dist',
+  'docs',
   'node_modules',
+  'public',
+  'scripts',
+  'src',
   'supabase',
 ]);
 

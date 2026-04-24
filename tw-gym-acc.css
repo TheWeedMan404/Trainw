@@ -2503,3 +2503,694 @@ select.form-input option { background:var(--s2); }
     justify-content: flex-start;
   }
 }
+
+/* ── Settings rebuild ── */
+#settings-page .settings-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+#settings-page .settings-sidebar {
+  flex: 0 0 200px;
+  width: 200px;
+  position: sticky;
+  top: 24px;
+}
+
+#settings-page .settings-sidebar-card {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 20px;
+  padding: 16px 0;
+}
+
+#settings-page .settings-sidebar-eyebrow {
+  padding: 0 18px 12px;
+  color: var(--mt);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#settings-page .settings-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+}
+
+#settings-page .settings-sidebar-tab {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 18px;
+  border-left: 3px solid transparent;
+  color: var(--mt);
+  text-decoration: none;
+  background: transparent;
+  transition: background .18s ease, color .18s ease, border-color .18s ease;
+}
+
+#settings-page .settings-sidebar-tab i {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+#settings-page .settings-sidebar-tab:hover {
+  background: var(--s2);
+  color: var(--ac);
+}
+
+#settings-page .settings-sidebar-tab[href="#settings-general-panel"] {
+  border-left: 3px solid var(--ac);
+  color: var(--ac);
+  background: var(--s2);
+}
+
+#settings-page:has(#settings-billing-panel:target) .settings-sidebar-tab[href="#settings-general-panel"],
+#settings-page:has(#staff-management-section:target) .settings-sidebar-tab[href="#settings-general-panel"],
+#settings-page:has(#settings-staff-tab-roles:target) .settings-sidebar-tab[href="#settings-general-panel"],
+#settings-page:has(#settings-gate-panel:target) .settings-sidebar-tab[href="#settings-general-panel"],
+#settings-page:has([data-settings-tab="branding"]:target) .settings-sidebar-tab[href="#settings-general-panel"],
+#settings-page:has([data-settings-tab="account"]:target) .settings-sidebar-tab[href="#settings-general-panel"],
+#settings-page:has(#settings-branding-panel:target) .settings-sidebar-tab[href="#settings-general-panel"],
+#settings-page:has(#settings-account-panel:target) .settings-sidebar-tab[href="#settings-general-panel"] {
+  border-left-color: transparent;
+  color: var(--mt);
+  background: transparent;
+}
+
+#settings-page:has(#settings-billing-panel:target) .settings-sidebar-tab[href="#settings-billing-panel"],
+#settings-page:has(#staff-management-section:target) #btn-settings-team-tab,
+#settings-page:has(#settings-staff-tab-roles:target) #btn-settings-roles-tab,
+#settings-page:has(#settings-gate-panel:target) .settings-sidebar-tab[href="#settings-gate-panel"],
+#settings-page:has(#settings-branding-panel:target) .settings-sidebar-tab[href="#settings-branding-panel"],
+#settings-page:has(#settings-account-panel:target) .settings-sidebar-tab[href="#settings-account-panel"] {
+  border-left: 3px solid var(--ac);
+  color: var(--ac);
+  background: var(--s2);
+}
+
+#settings-page .settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
+#settings-page .settings-panel-head {
+  margin-bottom: 16px;
+}
+
+#settings-page .settings-panel-label {
+  color: var(--ac);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+#settings-page .settings-panel-copy,
+#settings-page .settings-section-copy {
+  color: var(--mt);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+#settings-page .settings-form-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#settings-page .settings-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+#settings-page .settings-hub-tabs {
+  display: none;
+}
+
+#settings-page .settings-tab-panel,
+#settings-page [data-settings-tab],
+#settings-page #staff-management-section,
+#settings-page #settings-gate-panel {
+  display: none;
+}
+
+#settings-page #settings-general-panel {
+  display: block;
+}
+
+#settings-page:has(#settings-billing-panel:target) #settings-general-panel,
+#settings-page:has(#staff-management-section:target) #settings-general-panel,
+#settings-page:has(#settings-staff-tab-roles:target) #settings-general-panel,
+#settings-page:has(#settings-gate-panel:target) #settings-general-panel,
+#settings-page:has(#settings-branding-panel:target) #settings-general-panel,
+#settings-page:has(#settings-account-panel:target) #settings-general-panel {
+  display: none;
+}
+
+#settings-page:has(#settings-billing-panel:target) #settings-billing-panel,
+#settings-page:has(#settings-billing-panel:target) [data-settings-tab="billing"],
+#settings-page:has(#staff-management-section:target) #staff-management-section,
+#settings-page:has(#settings-staff-tab-roles:target) #staff-management-section,
+#settings-page:has(#settings-gate-panel:target) #settings-gate-panel,
+#settings-page:has(#settings-branding-panel:target) [data-settings-tab="branding"],
+#settings-page:has(#settings-account-panel:target) [data-settings-tab="account"] {
+  display: block;
+}
+
+#settings-page #settings-general-panel,
+#settings-page #settings-billing-panel,
+#settings-page #staff-management-section,
+#settings-page #settings-gate-panel,
+#settings-page [data-settings-tab="branding"],
+#settings-page [data-settings-tab="account"] {
+  scroll-margin-top: 24px;
+}
+
+#settings-page .settings-section {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 18px;
+  padding: 24px;
+  margin-bottom: 18px;
+}
+
+#settings-page .settings-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+#settings-page .settings-section-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--bd);
+  background: var(--s2);
+  color: var(--ac);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#settings-page .settings-section-icon i {
+  width: 18px;
+  height: 18px;
+}
+
+#settings-page .settings-gate-copy {
+  color: var(--mt);
+  margin: 0;
+}
+
+#settings-page .settings-gate-card > .settings-gate-copy:not(.settings-gate-copy-live) {
+  display: none;
+}
+
+#settings-page .settings-gate-stack {
+  display: grid;
+  gap: 18px;
+}
+
+#settings-page .settings-gate-block {
+  border: 1px solid var(--bd);
+  border-radius: 18px;
+  background: var(--s2);
+  padding: 20px;
+}
+
+#settings-page .settings-gate-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+#settings-page .settings-gate-title {
+  margin: 0;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 30px;
+  letter-spacing: .04em;
+  color: var(--txt);
+}
+
+#settings-page .settings-gate-note {
+  margin: 6px 0 0;
+  color: var(--mt);
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 760px;
+}
+
+#settings-page .settings-gate-url-input {
+  margin-bottom: 14px;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#settings-page .settings-gate-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+#settings-page .settings-gate-steps li {
+  color: var(--mt);
+  line-height: 1.6;
+}
+
+#settings-page .settings-gate-steps code {
+  font-family: 'DM Mono', monospace;
+  color: var(--txt);
+}
+
+#settings-page .settings-gate-table-wrap {
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  overflow: auto;
+  background: rgba(0, 0, 0, .08);
+}
+
+#settings-page .settings-gate-table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+}
+
+#settings-page .settings-gate-table th {
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--mt);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--bd);
+}
+
+#settings-page .settings-gate-table td {
+  padding: 14px 16px;
+  border-top: 1px solid var(--bd);
+  vertical-align: middle;
+}
+
+#settings-page .settings-gate-table tbody tr:first-child td {
+  border-top: none;
+}
+
+#settings-page .gate-member-cell {
+  min-width: 220px;
+}
+
+#settings-page .gate-member-name {
+  font-weight: 700;
+  color: var(--txt);
+}
+
+#settings-page .gate-member-sub {
+  margin-top: 4px;
+  color: var(--mt);
+  font-size: 12px;
+}
+
+#settings-page .gate-credential-type {
+  font-weight: 700;
+  color: var(--txt);
+}
+
+#settings-page .gate-inline-input {
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+#settings-page .gate-inline-note {
+  color: var(--mt);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#settings-page .gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#settings-page .gate-actions .btn-primary,
+#settings-page .gate-actions .btn-secondary {
+  padding: 9px 14px;
+}
+
+#settings-page .gate-static-note {
+  color: var(--mt);
+  font-size: 13px;
+}
+
+#settings-page .gate-empty-cell {
+  padding: 26px 16px;
+  color: var(--mt);
+  text-align: center;
+}
+
+#settings-page .gate-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border: 1px solid var(--bd);
+  background: var(--bg);
+  color: var(--txt);
+}
+
+#settings-page .gate-status-pill.active {
+  border-color: rgba(200, 241, 53, .28);
+  background: rgba(200, 241, 53, .12);
+  color: var(--ac);
+}
+
+#settings-page .gate-status-pill.inactive {
+  border-color: rgba(255, 61, 61, .28);
+  background: rgba(255, 61, 61, .12);
+  color: #ff8b8b;
+}
+
+#settings-page .gate-status-pill.pending {
+  border-color: rgba(255, 190, 0, .24);
+  background: rgba(255, 190, 0, .12);
+  color: #f7ca63;
+}
+
+#settings-page .gate-status-pill.auto {
+  border-color: rgba(126, 208, 255, .24);
+  background: rgba(126, 208, 255, .12);
+  color: #7ed0ff;
+}
+
+#settings-page .gate-result-pill {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#settings-page .gate-result-pill.success {
+  color: var(--ac);
+  background: rgba(200, 241, 53, .12);
+  border: 1px solid rgba(200, 241, 53, .28);
+}
+
+#settings-page .gate-result-pill.failure {
+  color: #ff8b8b;
+  background: rgba(255, 61, 61, .12);
+  border: 1px solid rgba(255, 61, 61, .28);
+}
+
+#settings-page .gate-device-id {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--txt);
+}
+
+#settings-page .branding-color-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#settings-page .branding-color-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--bd);
+  background: var(--s2);
+}
+
+#settings-page .branding-color-chip {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--bd);
+  flex-shrink: 0;
+}
+
+#settings-page .branding-color-chip-accent {
+  background: var(--ac);
+  border-color: var(--ac);
+}
+
+#settings-page .branding-color-chip-surface {
+  background: var(--s1);
+}
+
+#settings-page .branding-color-chip-muted {
+  background: var(--mt);
+  border-color: var(--mt);
+}
+
+#settings-page .branding-color-name {
+  color: var(--txt);
+  font-weight: 700;
+}
+
+#settings-page .branding-color-token {
+  color: var(--mt);
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+@media (max-width: 980px) {
+  #settings-page .settings-shell {
+    flex-direction: column;
+  }
+
+  #settings-page .settings-sidebar {
+    position: static;
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  #settings-page .settings-sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #settings-page .settings-gate-block {
+    padding: 18px;
+  }
+
+  #settings-page .settings-gate-block-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #settings-page .settings-form-grid,
+  #settings-page .branding-color-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  #settings-page .settings-sidebar-nav {
+    grid-template-columns: 1fr;
+  }
+
+  #settings-page .settings-section {
+    padding: 20px;
+  }
+}
+
+.schedule-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.schedule-subtab {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  background: var(--s2);
+  color: var(--mt);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.schedule-subtab:hover,
+.schedule-subtab.active {
+  border-color: rgba(200,241,53,.45);
+  background: rgba(200,241,53,.12);
+  color: var(--txt);
+}
+
+.coach-discovery-modal {
+  display: grid;
+  gap: 16px;
+}
+
+.coach-modal-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.coach-modal-tab {
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--bd);
+  background: var(--s2);
+  color: var(--mt);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .2s;
+}
+
+.coach-modal-tab:hover,
+.coach-modal-tab.active {
+  border-color: rgba(200,241,53,.45);
+  background: rgba(200,241,53,.12);
+  color: var(--txt);
+}
+
+.coach-modal-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.coach-search-status {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed var(--bd);
+  background: var(--s2);
+  color: var(--mt);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.coach-search-results,
+.classes-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.classes-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.coach-search-card,
+.gym-class-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid var(--bd);
+  background: var(--s1);
+  box-shadow: 0 10px 30px rgba(0,0,0,.12);
+}
+
+.coach-search-card-head,
+.gym-class-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.coach-search-card-name,
+.gym-class-card-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--txt);
+}
+
+.coach-search-card-specialty,
+.coach-search-card-meta,
+.coach-search-card-rating,
+.gym-class-card-coach,
+.gym-class-card-meta {
+  color: var(--mt);
+  font-size: 13px;
+}
+
+.gym-class-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gym-class-chip {
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(200,241,53,.18);
+  background: rgba(200,241,53,.08);
+  color: var(--txt);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.gym-class-card-desc {
+  color: var(--txt);
+  line-height: 1.6;
+  min-height: 44px;
+}
+
+.gym-class-card-muted {
+  color: var(--mt);
+}
+
+.gym-class-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.gym-class-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gym-class-card-actions .btn-secondary,
+.gym-class-card-actions .btn-danger {
+  flex: 1;
+}
+
+@media (max-width: 720px) {
+  .coach-modal-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .gym-class-card-actions .btn-secondary,
+  .gym-class-card-actions .btn-danger {
+    flex-basis: 100%;
+  }
+}

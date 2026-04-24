@@ -1,10 +1,10 @@
 -- ============================================================================
--- TRAINW V16 PRODUCTION - INTEGRITY AND SECURITY
+-- TRAINW V17 PRODUCTION - INTEGRITY AND SECURITY
 -- Purpose:
 --   - Repair orphaned relationships before tightening constraints
 --   - Add missing uniqueness and foreign key protections
 --   - Replace legacy overlapping RLS policies with one coherent policy model
---   - Grant only the RPC surface needed by the V14 frontend
+--   - Grant only the RPC surface needed by the V17 frontend
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

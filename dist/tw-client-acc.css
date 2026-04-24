@@ -314,3 +314,149 @@ body::before { content:''; position:fixed; inset:0; pointer-events:none; z-index
 [dir="rtl"] .nav-item { border-left: none; border-right: 3px solid transparent; }
 [dir="rtl"] .nav-item:hover, [dir="rtl"] .nav-item.active { border-right-color: var(--ac); }
 @media (max-width: 768px) { [dir="rtl"] .main-content { margin-right: 0; } }
+.record-form-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr auto;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.record-submit-cell {
+  display: flex;
+  align-items: flex-end;
+}
+
+.records-table-shell {
+  overflow-x: auto;
+  border: 1px solid var(--bd);
+  border-radius: 18px;
+  background: rgba(255,255,255,.02);
+}
+
+.records-table-shell table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+}
+
+.records-table-shell th,
+.records-table-shell td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+
+.records-table-shell th {
+  color: var(--mt);
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.records-table-shell tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.program-empty-actions {
+  display: grid;
+  gap: 14px;
+  justify-items: start;
+}
+
+.program-empty-actions .empty-state {
+  padding: 0;
+  text-align: left;
+}
+
+.free-workout-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1200;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--bd);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(200,241,53,.12), transparent 28%),
+    rgba(10,10,10,.96);
+  box-shadow: 0 24px 80px rgba(0,0,0,.45);
+}
+
+.free-workout-head,
+.free-workout-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.free-workout-head {
+  margin-bottom: 18px;
+}
+
+.free-workout-body {
+  display: grid;
+  gap: 16px;
+}
+
+.free-workout-builder {
+  display: grid;
+  gap: 14px;
+}
+
+.free-workout-row {
+  padding: 18px;
+  border: 1px solid var(--bd);
+  border-radius: 18px;
+  background: rgba(255,255,255,.03);
+}
+
+.free-workout-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 768px) {
+  .record-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .free-workout-head,
+  .free-workout-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .free-workout-modal {
+    width: min(100vw - 20px, 760px);
+    max-height: calc(100vh - 20px);
+    padding: 18px;
+  }
+}
+
+@media (max-width: 500px) {
+  .records-table-shell {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .free-workout-modal {
+    width: 100vw;
+    max-width: none;
+    max-height: 100vh;
+    left: 0;
+    top: 0;
+    transform: none;
+    border-radius: 0;
+    padding: 14px 12px 18px;
+  }
+}

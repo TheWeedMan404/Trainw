@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <base href="/">
-  <title>Trainw - Acces</title>
+  <title>Trainw - Accès</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="stylesheet" href="tw-role.css?v=20260403-1">
   <link rel="stylesheet" href="trainw-enhancements.css">
-  <link rel="stylesheet" href="trainw-v14.css">
+  <link rel="stylesheet" href="trainw-v17.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -23,7 +23,7 @@
   <div class="orb orb-2"></div>
 
   <div class="topbar">
-    <a href="/" class="back-btn">&larr; <span data-i18n="backBtn">Retour a l'accueil</span></a>
+    <a href="/" class="back-btn">&larr; <span data-i18n="backBtn">Retour à l'accueil</span></a>
     <div class="lang-toggle">
       <button class="lang-btn" data-lang="en">EN</button>
       <button class="lang-btn active" data-lang="fr">FR</button>
@@ -35,32 +35,32 @@
     <div class="logo-text">TRAINW</div>
     <h1 class="card-title" data-i18n="cardTitle">Bienvenue</h1>
     <p class="card-sub" data-i18n="cardSub">Choisissez votre type de compte pour continuer.</p>
-    <div class="role-label" data-i18n="roleLabel">Selectionnez votre role</div>
+    <div class="role-label" data-i18n="roleLabel">Sélectionnez votre rôle</div>
 
     <div class="role-grid">
-      <a href="/tw-login.html?role=gym_owner" class="role-card">
+      <a href="/login?role=gym_owner" class="role-card">
         <div class="role-icon">GY</div>
         <div class="role-body">
-          <div class="role-title" data-i18n="gymTitle">Proprietaire de salle</div>
-          <div class="role-desc" data-i18n="gymDesc">Gerez votre salle, vos coachs, vos classes et vos revenus.</div>
+          <div class="role-title" data-i18n="gymTitle">Propriétaire de salle</div>
+          <div class="role-desc" data-i18n="gymDesc">Gérez votre salle, vos coachs, vos classes et vos revenus.</div>
         </div>
         <div class="role-arrow">&rarr;</div>
       </a>
 
-      <a href="/tw-login.html?role=coach" class="role-card">
+      <a href="/login?role=coach" class="role-card">
         <div class="role-icon">CO</div>
         <div class="role-body">
           <div class="role-title" data-i18n="coachTitle">Coach</div>
-          <div class="role-desc" data-i18n="coachDesc">Suivez vos clients, vos programmes et vos seances.</div>
+          <div class="role-desc" data-i18n="coachDesc">Suivez vos clients, vos programmes et vos séances.</div>
         </div>
         <div class="role-arrow">&rarr;</div>
       </a>
 
-      <a href="/tw-login.html?role=client" class="role-card">
+      <a href="/login?role=client" class="role-card">
         <div class="role-icon">CL</div>
         <div class="role-body">
           <div class="role-title" data-i18n="clientTitle">Client</div>
-          <div class="role-desc" data-i18n="clientDesc">Suivez votre progression, vos seances et votre programme.</div>
+          <div class="role-desc" data-i18n="clientDesc">Suivez votre progression, vos séances et votre programme.</div>
         </div>
         <div class="role-arrow">&rarr;</div>
       </a>
