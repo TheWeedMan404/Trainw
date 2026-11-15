@@ -350,7 +350,7 @@ async function requestJoin(gymId) {
   const sb = getSupabaseClient();
   const response = await sb.rpc('request_gym_membership', { p_gym_id: gymId, p_role_code: joinRole });
   if (response.error) {
-    Trainw.ui.showToast(response.error.message || t('joinLoadError'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(response.error, t('joinLoadError')), 'error');
     return;
   }
   Trainw.ui.showToast(t('joinRequestSent'), 'success');
@@ -361,7 +361,7 @@ async function openWorkspace(gymId) {
   const sb = getSupabaseClient();
   const activeResult = await Trainw.auth.setActiveGym(sb, gymId);
   if (activeResult.error) {
-    Trainw.ui.showToast(activeResult.error.message || 'Workspace selection failed.', 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(activeResult.error, 'Workspace selection failed.'), 'error');
     return;
   }
   window.location.href = Trainw.roleToPath(activeResult.data || currentContext?.activeMembership || currentContext?.profile?.role);
@@ -376,7 +376,7 @@ async function handleInvite(action) {
     : await Trainw.auth.declineInvitation(sb, inviteToken);
 
   if (response.error) {
-    Trainw.ui.showToast(response.error.message || 'Invitation request failed.', 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(response.error, 'Invitation request failed.'), 'error');
     return;
   }
 

@@ -4033,3 +4033,1204 @@ No other file touched. No migration, no RLS change, no secret.
 - **Not verified in this session (no live-browser access):** the actual
   browser render of the membership card on production. Browser re-check
   happens after the parent deploys.
+
+## Phase 2 — P2-2: single revenue source (FE-15, FE-16) (2026-11-15)
+
+Commit (local, branch phase1-security-fixes): `P2-2` (see `git log`). The
+parent pushes; no merge, no deploy from this round.
+
+### Step 1 — what was already done vs what was actually broken
+
+Already done in round 3, verified again against the current code (not the
+notes): revenue is computed once, from the ledger, in `loadLedgerRevenue`
+(`tw-gym-acc.js:1892`) — the dashboard (`loadDashboardStats`), analytics
+(`loadAnalytics`) and the prediction (`#pred-monthly`) all call that one
+function, so the three views cannot disagree. The old v17 `revenueFor()`
+list-price estimate is gone; `refreshRevenue()` in `tw-gym-acc-v17.js` is
+a thin wrapper around `loadLedgerRevenue`. The ai-proxy edge function
+computes no revenue. FE-15's "three ways" and the v17 override are closed
+by the round-3 work, not by this round.
+
+Genuinely broken, found by this round:
+
+1. **No DB CHECK on any money column.** `prepare_payment_write`
+   silently clamps negatives with `GREATEST(..., 0)` — so a −500 payment
+   inserted through the API did NOT fail, it landed as a 0-amount PAID
+   payment and the settlement trigger extended the membership for free.
+   The audit step's "entering −500 as a price is rejected" could not
+   pass against the DB.
+2. **No upper cap anywhere.** `parseMoneyInput` accepted 999999999; the
+   `numeric(12,2)` columns accept ~10 billion.
+3. **Coach rates had NO validation at all.** `saveEditCoach` and
+   `submitNewCoach` used bare `parseFloat()` and stored −500 verbatim
+   (edit path) or into the invite metadata (add path).
+4. **Revenue was GROSS, not net.** `loadLedgerRevenue` summed
+   `amount_paid` and ignored `amount_refunded`, so a partially refunded
+   payment still counted in full; `renderDayTotals` had the same flaw.
+
+### Step 2 — fixes
+
+**Migration `20261116120000_phase2_p22_price_validation.sql`** (9 CHECKs,
+all validated — no NOT VALID dodge, so DB-35's
+`assert_no_unvalidated_constraints` stays green):
+- `payments`: `amount_total > 0 AND <= 100000`;
+  `amount_paid >= 0 AND <= 100000 AND <= amount_total`;
+  `status <> 'paid' OR amount_paid > 0`. The `paid ⇒ > 0` split is
+  deliberate: a live PENDING 80/0 row exists (the DB-66 credit flow's
+  pending rebooking payment) and `book_coach_session` legitimately
+  inserts pending payments with `amount_paid = 0` — so 0 is allowed
+  only for non-paid rows. `amount_paid <= amount_total` is safe because
+  `apply_member_credit_to_session` only ever grows `amount_paid` up to
+  `amount_total` (`v_take = LEAST(remaining, owed)`).
+- `gyms`: `price_monthly/quarterly/annual > 0 AND <= 100000`.
+- `coach_profiles`: `hourly_rate` / `price_per_session` NULL or
+  `> 0 AND <= 100000`.
+- `client_profiles`: `price_paid >= 0 AND <= 100000` (ledger-derived,
+  bound for defence in depth).
+- Cap is 100 000 DT everywhere — ~30x the most expensive Tunisian gym
+  annual plan, so real prices never hit it and typos do. The
+  `GREATEST(..., 0)` clamp in `prepare_payment_write` is left alone:
+  with the CHECKs in place a negative now fails the CHECK instead of
+  landing as 0.
+- Live-data pre-checks (Management API, before writing): all 6 live
+  payments satisfy the new CHECKs; all 5 gyms price 150/400/1400; coach
+  rates are NULL or 80; no `price_paid < 0` or `> 100000`. None of the
+  9 constraint names existed live before the apply.
+
+**Frontend (`tw-gym-acc.js`, `tw-gym-acc.html`):**
+- `parseMoneyInput` gains the shared cap `MAX_MONEY_DT = 100000`
+  (anything above is invalid). Zero stays allowed in the parser because
+  it means "none" in the new-client flow (a member added with no payment
+  yet stays pending); entry points that take a real price reject ≤ 0
+  themselves, and the DB CHECKs enforce the same bounds.
+- `loadLedgerRevenue` now selects `amount_refunded` and sums
+  `amount_paid − amount_refunded` (net collected); `renderDayTotals`
+  nets the same way.
+- `savePricing` rejects a 0 list price (empty still means "keep the
+  current value" — a 0 DT price is not a price, per the audit step).
+- `saveEditCoach` / `submitNewCoach` validate the rate through
+  `parseMoneyInput` (empty = no rate; present must be > 0 and ≤ cap);
+  the old `parseFloat` paths are gone.
+- `max="100000"` on the 7 money inputs in `tw-gym-acc.html`
+  (browser-level guard only; JS + DB CHECKs are the enforcement).
+- Deliberately NOT changed: the coach self-profile rate input
+  (`#coach-rate-input`, `tw-coach-acc.js`) is display-only —
+  `saveCoachProfile` never sends it, so there is nothing to validate
+  there; wiring it up is a separate product decision. `recordPayment`
+  already rejected ≤ 0; it inherits the cap from `parseMoneyInput`.
+
+### Local verification
+
+Throwaway Postgres 16.4 cluster, built from source (round-7 recipe:
+`configure --with-openssl --without-readline --without-icu
+--without-libxml --without-libxslt --without-ldap --without-pam`,
+`make -j4 && make install`, contrib `pgcrypto`/`btree_gist`/`citext`).
+Why built: this VM has no system Postgres, `deb.debian.org` is throttled
+to ~290 B/s, and the pip `pgserver` wheel ships no contrib (no
+`pgcrypto`). `ftp.postgresql.org` is fast (14.8 MB/s). Server ran as
+`nobody` (initdb refuses root); install tree `/var/tmp/p22-pgsql`
+(`chmod -R o+rX` after install — umask 0007 leaves it group-only, same
+trap as round 7); datadir `/tmp/p22-pgdata` — the /home mount denies ALL
+access to uid 65534, so the datadir could NOT live under
+`~/workspace/.p22-scratch` as first tried. Harness + suite:
+`~/workspace/.p22-scratch/` (`p22-harness.sh` port 54402,
+`p22-tests.sql`, `supabase-stubs.sql` copied from `.r9-scratch`).
+- Full chain applies: **64 OK, 2 FAIL** — exactly the two known
+  by-design failures (`20261115050000` B5, `20261115300000` DB-61).
+- **P2-2 suite: 24/24 pass** — −500 / 0-total / 100001 payments
+  rejected; pending 80/0 still inserts; paid 80/0 and paid 80/100
+  rejected; paid 80/80 inserts and settles; partial refund 30 → ledger
+  revenue nets to 50, not gross 80; gym prices −500/0/100001 rejected,
+  200 saves; coach rates −500/0/100001 rejected, 45 saves; profile
+  `price_paid` −1/100001 rejected; all 9 CHECKs present and validated.
+- Round-6 suite as a regression check: **147/151** on a fresh chain —
+  identical with and without this migration (diff of the two runs shows
+  only random UUIDs), so the migration causes zero regressions. The 3
+  named failures are all DB-48 (gate lockout), pre-existing drift: the
+  r6 suite predates round 7 moving the pepper into `app_secrets`, so
+  credential enrolment fails with "pepper is not configured" before the
+  lockout logic runs. (An earlier 122/150 reading was a double-run
+  artifact — the suite is not idempotent on one DB; ignore it.)
+- `node --check` on every touched JS file; `node env-config.js` +
+  `npm run verify` pass (env vars from the live project, transient).
+
+### Live verification (Supabase "Trainw", caylegavnekidhytlswo)
+
+Migration applied live via the Management API; all 9 CHECKs confirmed
+present afterwards. Owner-JWT PostgREST tests (owner@test.com):
+- **−500 payment insert → HTTP 400** `payments_amount_total_check`
+  (the audit's −500 verify, now passing live).
+- Valid 150 payment for client@test.com → HTTP 201
+  (id `a8a1ef5f-f824-4775-a52d-825d82250ed9`).
+- Gym price −500 PATCH → HTTP 400 `gyms_price_monthly_check`;
+  coach rate −500 PATCH → HTTP 400
+  `coach_profiles_price_per_session_check`.
+- Partial refund 30 via `record_payment_refund` → HTTP 200.
+- Final live state: TEST Gym holds 2 paid payments — the 150 above
+  (30 refunded) plus a **10.00 payment I did not create**
+  (`53cd3045-8cee-476b-b4c1-5c58fc223822`, paid 2026-11-15) — it
+  appeared between my baseline query (0 payments) and the final check,
+  so another agent/round was testing live concurrently. Net revenue
+  this month for TEST Gym is **130 DT** (150 − 30 + 10); gross is 160.
+  That 130 is the single number dashboard, analytics and prediction
+  will all show (one function), once deployed. The −500 payment did not
+  land; gym price is unchanged at 150; client@test.com settled to
+  `paid` with end date 2027-01-15 (the later 10 payment extended it
+  past my 150's month, per existing renewal semantics).
+
+### What this round deliberately did NOT do
+
+- **Push to GitHub / merge / deploy** — local only, per the task.
+  The parent pushes and deploys; the frontend changes (net revenue,
+  validation messages) only reach users after that deploy.
+- **No data deletion** on the live project. The test payment + refund
+  stay as test data, like the existing Gym A test payments.
+- **No RLS change**; no new secrets in files (the JWT lived only in a
+  shell variable for the live calls; the anon key was fetched via the
+  Management API and never written down).
+
+### Not verified in this session (no live-browser access)
+
+- The actual browser render: dashboard `#stat-revenue`, the analytics
+  page and `#pred-monthly` all showing 130 DT on production after
+  deploy. The DOM equality check needs the parent's browser pass — the
+  API-level proof (one shared function + one ledger number) is done,
+  the pixels are not.
+- The frontend validation messages in a real browser (typing −500 into
+  the payment / pricing / coach-rate forms). The JS paths are covered by
+  `node --check` + the shared `parseMoneyInput` logic, and the DB
+  CHECKs were proven live, but no form was typed into.
+
+## Phase 2 — P2-5: stop the enumeration and spam paths (FE-08 + NX-02/05/06/14, vanilla side) (2026-11-15)
+
+Commit (local, branch phase1-security-fixes): `P2-5` (see `git log`). The
+parent pushes; no merge, no deploy from this round.
+
+### Step 1 — what was already done vs what was actually broken
+
+Already done, verified again against the current code (not the notes):
+
+- **Email confirmation gates workspace provisioning.** `doSignup`
+  (`tw-login.js:506`) signs up, then — with no session — signs in; an
+  `eEmailNotConfirmed` result stops the flow before `ensureProfile` /
+  `bootstrap_authenticated_user` ever runs. `handle_new_user` (DB-10)
+  ignores role/gym_id from metadata: every signup is a bare client,
+  gym NULL, no gym created. Auth config live:
+  `mailer_autoconfirm=false`, `rate_limit_email_sent=2`,
+  `rate_limit_verify=30`.
+- **Gate rate limits (P1-12 / GT-03).** `trainw_gate_rate_limit_consume`
+  (60/min IP, 30/min device) + the gate-checkin handler, all 4 edge
+  functions ACTIVE live.
+- **Password-reset flow exists** (`tw-login.js:592` forgot + dashboard
+  reset buttons in all three portals, `resetPasswordForEmail` with
+  redirect to `/tw-login.html`). Its Phase 1 failure was the default
+  mailer's rate limit, not broken code (see live verification below).
+- **Invite flow.** `invite_gym_member` + `accept_gym_invitation`
+  (7-day expiry, DB-40) + `sendInvitationEmail` via
+  `signInWithOtp({shouldCreateUser: false})`. The invitee MUST already
+  have a Trainw account (the UI says so; `accept` requires a signed-in
+  user whose email matches the invite). No temporary password is ever
+  issued, so there is nothing to force-change on first login — the
+  "forced password change" item is moot by design, not missing.
+
+Genuinely broken / missing, found by this round:
+
+1. **Coach search had no minimum query length and no wildcard
+   escaping.** Any 1-char term fired two queries, and `%`/`_` in the
+   term acted as LIKE wildcards (live proof: `users.name ilike *%*`
+   matched every coach name; `*\%*` matched none).
+2. **The embedded-users name filter does not restrict rows.**
+   PostgREST puts a filter on an embedded relation in the JOIN, not
+   the WHERE: a non-matching `coach_profiles` row is still returned,
+   with `users: null` (live proof: `ilike *ZZZZNoMatch*` returned TEST
+   Gym's coach with `users: null`; `ilike *TEST A*` the same). The
+   search still returns correct results today ONLY because the merge
+   loop drops rows with no email. The stale FE-08 comment claimed the
+   filter "needs live verification" and guessed the failure mode
+   backwards (it said name search would return nothing — it returns
+   everything, with null embeds). Related recall gap, left as a
+   residual: the name query is capped at 20 rows by rating, so in a
+   gym with >20 coaches a low-rated matching coach can be missed.
+   Fixing that properly needs a server-side search RPC; out of scope
+   for this round.
+3. **The public directory + join requests had no rate limit.**
+   `list_public_gyms` (authenticated-only, safe columns) and
+   `request_gym_membership` (idempotent) could be hammered without
+   limit. The directory has NO search input in the vanilla app, so the
+   step's "minimum query length + wildcard escaping on search" is moot
+   there — there is no query to constrain.
+4. **No CAPTCHA on vanilla signup.** The Next.js hCaptcha (NX-01) died
+   with src/. The vanilla controls are Auth email confirmation +
+   `rate_limit_email_sent=2`/hour. Adding a CAPTCHA needs a provider +
+   keys — a user decision, not taken here.
+
+### Step 2 — fixes
+
+**Frontend (`tw-gym-acc.js`):**
+- `COACH_SEARCH_MIN_LENGTH = 2` — enforced in
+  `scheduleExistingCoachSearch`, in `searchExistingCoaches` (it is
+  also called directly after adding a coach), and in
+  `renderCoachSearchResults` (new `coachSearchMinLength` hint, fr/en/
+  ar). A 1-char term now shows the hint and fires no query.
+- `escapeIlikeTerm(term)` — escapes `\` → `\\`, `%` → `\%`,
+  `_` → `\_` (backslash first), applied to BOTH ilike patterns
+  (name + specialty). Node-tested against the extracted function:
+  10/10 cases pass. PostgREST passes the backslash escape through to
+  SQL ILIKE (verified live: escaped `%` matches nothing).
+- FE-08 comment rewritten with the verified PostgREST semantics
+  (null embed = no match; merge loop's email check is what makes the
+  result correct) instead of the stale "verify on staging" guess.
+
+**Migration `20261116130000_phase2_p25_join_rate_limits.sql`** (mirror
+of the proven gate limiter `20261114040000`, separate table so
+join-flow buckets can never collide with gate buckets):
+- `public.rpc_rate_limits` (bucket_key, window_start, hits) + RLS on,
+  no policies. `trainw_rpc_rate_limit_consume(text, int)` — same
+  fixed-calendar-minute window, counter only increments under the
+  limit, stale windows for the key deleted on consume. Owner-only
+  (REVOKE ALL FROM PUBLIC, no GRANT): it is called only from inside
+  the SECURITY DEFINER RPCs, which run as the owner. Granting it to
+  `authenticated` would let any user burn another user's bucket by
+  naming it.
+- `list_public_gyms()` rewritten SQL → plpgsql (same columns, order,
+  grants): per-user 30/min (`dir:<uid>`), then the same SELECT.
+- `request_gym_membership()` body carried verbatim from
+  `20261116100000` except the limiter block + `v_limited` declaration:
+  per-user 10/min (`join:<uid>`).
+- Both fail OPEN on limiter error (logged via RAISE LOG) so a broken
+  limiter can never block the join flow — same policy as the gate
+  handler. The flag dance matters: raising inside the BEGIN block
+  would be swallowed by its own EXCEPTION handler, so the consume
+  result is stored in `v_limited` and raised after the block.
+
+### Step 3 — local verification
+
+- Full chain fresh-apply: **65 OK, 2 FAIL** — the 2 known by-design
+  failures (`20261115050000` B5, `20261115300000` DB-61 non-portable
+  hash, repaired by `20261115330000`).
+- **P2-5 suite (`~/workspace/.p25-scratch/p25-tests.sql`): 13/13 pass**
+  — consume limit 3 = T,T,T,F; separate keys independent; stale
+  window purged (1 row, hits=1); invalid inputs false; anon cannot
+  call consume (42501) or list gyms (42501); directory lists active
+  gyms only, name-ordered; directory 30 OK / 31st `Too many requests`;
+  second user unaffected by first user's exhaustion; join 10 OK /
+  11th rejected, first two calls idempotent (pending, then
+  already_requested); owner-role join still rejected; LIKE-escape
+  semantics (escaped `%` literal, unescaped `%` wildcard);
+  coach_profiles RLS scopes a gym-A coach to gym-A rows only.
+  (One false alarm during the run: C07 first read 27/30 because C06
+  had already spent 3 of the same user's directory hits that minute —
+  correct behaviour; the test now uses a fresh user for the loop. C03
+  first failed for the same class of reason — subselect evaluation
+  order inside one expression is not guaranteed; rewritten as
+  sequential statements.)
+- `escapeIlikeTerm` node-tested 10/10 (extracted from the file).
+- `node --check` on `tw-gym-acc.js` (+ `tw-role.js` untouched);
+  `node env-config.js` + `npm run verify` pass (env vars from the
+  live project, transient — keys never written down).
+
+### Live verification (Supabase "Trainw", caylegavnekidhytlswo)
+
+Probes in `~/workspace/.p25-scratch/p25-live-probe*.py` (keys fetched
+via the Management API, kept in memory, never printed; VM↔Supabase
+transport flakes retried — two sign-in calls returned HTTP 0
+`RemoteDisconnected`/`IncompleteRead` before succeeding on retry):
+
+- **Auth config re-verified:** `mailer_autoconfirm=false`,
+  `rate_limit_email_sent=2`, `rate_limit_verify=30`,
+  `security_captcha_enabled=false`. All 4 edge functions ACTIVE.
+- **Unconfirmed email cannot provision a gym.** Admin-created test
+  user `p25-unconfirmed@test.trainw.live` (`email_confirm=false`,
+  hostile metadata `role=gym_owner`, `gym_name="P2-5 Fake Gym"`):
+  sign-in → **HTTP 400 `email_not_confirmed`** ("Email not
+  confirmed"). Its `users` row is `role=client, gym_id=NULL`, a
+  `client_profiles` row exists with `gym_id=NULL`, and **0 gyms**
+  have it as manager. DB-10 holds against hostile metadata.
+  **Test user left on the live project for later cleanup** (same
+  bucket as the existing TEST accounts).
+- **50 fake registrations are blocked.** A single signup attempt
+  with a fresh address → **HTTP 429 `over_email_send_rate_limit`**
+  ("email rate limit exceeded") on the FIRST attempt. No account
+  was created by the probe. The step's 50-in-a-minute hammer was
+  deliberately not run; the limiter triggers at attempt 1, which is
+  the proof.
+- **Password-reset failure mode is the mailer limit, not code.**
+  One `recover` call for the test user → **HTTP 429
+  `over_email_send_rate_limit`** (same as P1-13/R8). The flow itself
+  is intact in code; delivery needs the custom-SMTP user decision.
+- **Gate limiter still live.** `trainw_gate_rate_limit_consume`
+  with a probe bucket, limit 3: **T,T,T,F** — the 4th call refused.
+  (One probe bucket row left in `gate_rate_limits`; it expires with
+  its minute window.)
+- **Coach search scoping re-verified.** As `coach@test.com`:
+  unfiltered `coach_profiles` returns 1 row (TEST Gym's coach only);
+  `users.name ilike *Client*` returns that row with `users: null`
+  (no client is enumerable through it); ground truth via
+  service_role is 4 coach rows, all coaches, no clients.
+- **Directory:** `list_public_gyms` as `owner@test.com` returns 5
+  rows with exactly the safe keys (`gym_id, name, address, location,
+  logo_storage_bucket, logo_storage_path`).
+- **P2-2's test rows untouched.** No live data was deleted or
+  modified except the one test user above + the probe rate-limit
+  bucket row. (The live check also re-confirmed the P2-2 note: TEST
+  Gym holds the 150 payment with a 30 refund plus the 10.00 payment
+  this round did not create.)
+
+### What this round deliberately did NOT do
+
+- **Push to GitHub / merge / deploy / apply the migration live** —
+  local only, per the task. The parent pushes and deploys; the new
+  migration needs the parent's live apply, and the frontend changes
+  (min length, escaping, hint) only reach users after that deploy.
+- **No data deletion** on the live project. The new test user stays
+  for the user-decided cleanup, with the existing TEST accounts.
+- **No 50-registration hammer** on the live project (see above).
+- **No custom SMTP** — user decision, still open.
+- **No CAPTCHA on vanilla signup** — needs a provider + keys, user
+  decision.
+- **No server-side coach-search RPC** — the >20-coaches recall gap
+  stays a residual (see below).
+- **No RLS weakening**; no new secrets in files.
+
+### Not verified in this session (no live-browser access)
+
+- The coach-search UI in a real browser after deploy: typing 1
+  character shows the min-length hint and fires no query; typing `%`
+  returns no coaches; typing a real coach name still finds them.
+- The new rate limits firing through the real UI (31st directory
+  load / 11th join request in a minute → toast). The DB behaviour is
+  proven locally; the toast path is not.
+- The unconfirmed-signup UX in a real browser (signup → "check your
+  email" message, no workspace). The API-level proof (400
+  `email_not_confirmed` + no gym) is done; the pixels are not.
+
+### Residuals (not findings, but worth knowing)
+
+- **Coach search recall in gyms with >20 coaches.** The name query
+  is capped at 20 rows by rating and the embedded name filter does
+  not restrict rows, so a low-rated matching coach past the cap is
+  missed. A `search_coaches(p_gym_id, p_term)` RPC with server-side
+  ILIKE would fix it; that is a small follow-up, not this round.
+- **No CAPTCHA on vanilla signup.** Controls are email confirmation
+  + Auth rate limits (`rate_limit_email_sent=2`/h). If the user
+  wants a CAPTCHA, it needs a provider and keys.
+- **GT-03 live throttle test** (60 rapid gate calls) is still owed
+  by design — the limiter function itself is now proven live twice
+  (gate probe above + P1-13 suite); hammering the edge function
+  remains deliberately unrun.
+
+## Phase 2 — P2-8: money and data hygiene (NX-10/13/15/16, DB-32/34/35/38/39/41/50/51/52/61/62) (2026-11-15)
+
+### Step 1 — what was already done vs what was actually broken
+
+Most of the step was already FIXED+VERIFIED in rounds 1–6; this round
+re-verified every item against the live project and the chain, and found
+three real gaps plus one process gap:
+
+- **DB-61 — REAL GAP, live only.** `SELECT assert_rls_helpers_frozen()`
+  on live raised "RLS helper definitions drifted …:
+  membership_is_active_for_access(…)". The live function was
+  byte-identical to the chain's final definition (prosrc diffed clean)
+  and hashed (portable formula, computed live) to exactly the chain's
+  expected value `3a70bd4a…` — but the live assert expected `c90ab575…`,
+  a hash that appears in NO chain file. The other 29 expected hashes in
+  the live assert are identical to the chain's `20261115330000`. The
+  live assert was evidently patched by hand during the P1-13 live apply
+  (when the function still had an intermediate body) and never re-synced.
+- **NX-15 (vanilla) — REAL GAP.** The Next.js fix was superseded with
+  `src/`, but the vanilla app had the same hole: `Trainw.api.run`
+  toasted the raw `error.message`, and ~50 call sites displayed it
+  (toasts, inline errors, `errEl.textContent`). A failed save could show
+  `new row violates row-level security policy for table "client_profiles"`
+  or a foreign-key constraint name to the user.
+- **NX-16 (vanilla) — REAL GAP, class side only.** A class with capacity
+  -5 sailed through: `gym_classes` has no DB CHECK (unlike sessions),
+  and the JS `parseInt(...)||20` only guards NaN/0. Names had no
+  max-length anywhere in the vanilla forms (only the message textareas
+  had `maxlength="2000"`).
+- **DB-50 — PROCESS GAP.** Two post-round-4 migrations deleted user
+  data without logging: `20261115230000` (duplicate `check_ins` dedup)
+  and `20261115400000` (duplicate `personal_records` dedup). Live
+  `data_repair_log` holds 0 rows — the log was never used.
+
+Everything else re-verified clean on live (see Step 3).
+
+### Step 2 — fixes
+
+- **DB-61:** migration `20261116140000_phase2_p28_freeze_hash_resync.sql`
+  re-creates `assert_rls_helpers_frozen()` VERBATIM from
+  `20261115330000` (same body, same 30 hashes — the only difference
+  from the live version is the one stale hash) and runs the assert.
+  No helper semantics change. On a fresh chain it is a no-op
+  redefinition. Applied live via the Management API the same day; the
+  assert now passes live.
+- **NX-15:** `trainw-core.js` — `sanitizeUserErrorMessage()` +
+  `Trainw.api.userMessage(error, fallback)`. `normalizeError` keeps
+  `.message` verbatim (three call sites branch on it:
+  `isInvitationAuthLookupError`, `isJoinGymInvalidError`, the
+  `loadClientReviews` `session_id` fallback — plus the credit-apply
+  branching on RPC messages) and attaches a sanitized `.userMessage`;
+  `api.run` toasts the `userMessage`. Markers that trigger the generic
+  fallback: violates / duplicate key / foreign key / row-level security
+  / permission denied for / relation " / column " / does not exist /
+  schema cache / pgrst / jwt / invalid input syntax / operator does not
+  exist / could not find the. Deliberate `cannot_delete_gym:` /
+  `cannot_delete_user:` guard messages (counts only) and app-authored
+  messages pass through; the raw error is still `console.error`d.
+  All 57 user-facing display sites switched to `userMessage`
+  (`tw-gym-acc.js` 47, `tw-client-acc.js` 4, `tw-coach-acc.js` 4,
+  `tw-role.js` 3); `tw-login.js` already mapped auth errors via
+  `mapAuthError`. One behavioural note: `submitNewSession` used to
+  `throw new Error(error.message)` — now `throw error`, so the
+  normalized error (with `userMessage`) reaches the catch.
+- **NX-16:** `maxlength="100"` on all 15 name inputs
+  (`tw-gym-acc.html` 11, `tw-client-acc.html` 1, `tw-coach-acc.html` 1,
+  `tw-login.html` 2 — signup name + gym name included); client-side
+  capacity ≥ 1 validation in `saveGymClass`, `submitNewSession`,
+  `saveEditSession`; migration `20261116150000_phase2_p28_class_capacity_check.sql`
+  adds `gym_classes_capacity_check CHECK (capacity > 0)` — live data
+  was clean (1 class, capacity 20; 0 bad rows), so it validated
+  immediately. Prices were already bounded (P2-2).
+- **DB-50:** `docs/MIGRATION_CONVENTIONS.md` §4 tightened — a migration
+  that deletes user data must first INSERT one `data_repair_log` row
+  per table (table, count, reason, filename); the two unlogged
+  exceptions are named in the doc. §7 fixed a stale note (the portable
+  hash uses `pg_get_function_arguments`, not `proargdefaults` — the
+  latter was the by-design-failing `20261115300000` formula) and §8 now
+  lists both known by-design fresh-apply failures.
+- **Runbook:** `docs/DEPLOY_RUNBOOK.md` §9 adds the named check per
+  P2-8 item (table, with the check and where it lives). Staging-push
+  sub-check marked deferred to P2-7 (no staging project yet).
+- **DB-38:** NOT built — needs the user (see below).
+
+### Step 3 — local verification
+
+- Fresh chain on the throwaway local Postgres 16.4 cluster
+  (`~/workspace/.p22-scratch/p22-harness.sh`): **67 OK, 2 FAIL** — the
+  same two known by-design failures (`20261115050000` B5,
+  `20261115300000` non-portable hash), both repaired by later
+  migrations. Both new migrations apply OK.
+- On the fresh chain: all three asserts pass
+  (`assert_rls_helpers_frozen`, `assert_no_unvalidated_constraints`,
+  `assert_all_tables_have_rls`); 0 NOT VALID constraints; 7
+  `idx_phase1b_*` indexes; gym delete guard triggers present; seeder
+  has no DELETE; trigger has no blanket handler; `data_repair_log`
+  exists; no table carries the blanket `authenticated=arwd` grant.
+- P2-2 behavioural suite still passes 24/24 on the chain with both new
+  migrations.
+- Capacity CHECK proven on the fresh chain: inserting a class with
+  capacity -5 raises `violates check constraint
+  "gym_classes_capacity_check"`; capacity 20 saves.
+- Sanitizer unit check (`~/workspace/.p28-scratch/test-sanitize.js`,
+  functions extracted verbatim from the shipped `trainw-core.js`):
+  17 cases — raw RLS/FK/unique/schema-cache/JWT messages → generic;
+  `cannot_delete_*:` guard messages and app-authored messages pass
+  through; `.message` preserved for logic, `.code` preserved,
+  `.userMessage` generic. All pass.
+- `node --check` on every touched JS file
+  (`trainw-core.js`, `tw-gym-acc.js`, `tw-client-acc.js`,
+  `tw-coach-acc.js`, `tw-role.js`); `node env-config.js` + `npm run verify`
+  (see below).
+
+### Live verification (Supabase "Trainw", caylegavnekidhytlswo)
+
+Read-only checks first, then the two migration applies (Management API
+`POST /v1/projects/{ref}/database/query`, one call = one transaction):
+
+- DB-35: `pg_constraint WHERE NOT convalidated` → 0 rows.
+- DB-39: all 7 `idx_phase1b_*` indexes present.
+- DB-41: live ACLs are per-table (grants vary, e.g.
+  `admin_audit_log` authenticated=r only); `assert_all_tables_have_rls()`
+  passes.
+- DB-61: drift reproduced (assert raised on
+  `membership_is_active_for_access`), diagnosed (live hash =
+  `3a70bd4a…` = chain value; live expected `c90ab575…`), fixed live by
+  `20261116140000`; `assert_rls_helpers_frozen()` now passes live.
+- DB-62: live `handle_new_user` prosrc has no `EXCEPTION WHEN OTHERS`
+  (the word appears only in a comment explaining the ban).
+- DB-32: live `users_role_check` includes `gym_admin` and `staff`.
+- DB-34: live `ensure_gym_default_roles` body has no `DELETE FROM`.
+- DB-38: both guard triggers exist and are enabled live.
+- DB-50: `data_repair_log` exists, 0 rows (never used — the gap).
+- NX-16: live `gym_classes` 1 row (capacity 20), `sessions` 6 rows
+  (min capacity 1), 0 bad rows — then `20261116150000` applied live;
+  `gym_classes_capacity_check` exists and is validated.
+- No live data was deleted. No test rows were created or modified by
+  this round (the only live writes are the two migration applies).
+
+### What this round deliberately did NOT do
+
+- **Push to GitHub / merge / deploy** — local commit only, per the task.
+  The parent pushes and deploys; the frontend changes (generic errors,
+  capacity checks, maxlengths) only reach users after that deploy.
+- **Soft-delete for gyms/users (DB-38)** — needs the user. Deleting a
+  user still hard-deletes the `users` row and cascades to the other
+  party's messages; `users.is_active` / `gyms.is_active` exist but no
+  deactivate flow uses them, and re-signup after a soft-delete would
+  leave `is_active=false` (the gate already honours it) unless signup
+  resets it. Needs a product decision on what a deactivated gym/user
+  can still do, plus nullable message sender/receiver + chat UI for a
+  deleted counterpart. The audit minimum (gym delete forbidden while
+  tenant data exists; user delete with payments fails with a clear
+  error) is live and verified.
+- **Staging project** — P2-7. The staging-push sub-check is deferred
+  there; the fresh-chain apply is the substitute used here.
+- **No RLS weakening**; no new secrets in files; no data deletion.
+
+### Not verified in this session (no live-browser access)
+
+- The generic-error behaviour in a real browser after deploy: force a
+  failing save (e.g. a payment with a bad amount, a duplicate RFID)
+  and confirm the toast is the generic message, not a constraint name.
+- The capacity ≥ 1 inline error and the 100-char name cap in the real
+  forms (typing -5 capacity; pasting a 200-char name).
+- The staff-revoke / delete-client / delete-coach / delete-class /
+  delete-role actions clicked through in the owner portal on TEST Gym.
+- The submit-button pending states under a slow connection
+  (double-click a save and confirm only one request fires).
+
+### Residuals (not findings, but worth knowing)
+
+- **Live `supabase migration list` is not checkable from here.** The
+  chain is applied via the Management API, which does not populate the
+  CLI version table (`supabase_migrations.schema_migrations` is not
+  visible to the query role). The fresh-chain apply is the working
+  substitute; a CLI `migration list` needs the Supabase CLI + a login,
+  which this VM cannot do.
+- **`__probe_a` / `__probe_b` tables on live.** Two leftover probe
+  tables from an earlier round's grant checks (both carry the
+  per-table grant shape). Harmless, but they are not part of the app;
+  removing them is a cleanup decision, not this round.
+- **DB-61 live-vs-chain drift can recur** any time a hash is patched
+  on live by hand. The conventions §7 note now says so explicitly;
+  the guard is only as good as the discipline of re-deriving hashes
+  from the chain.
+
+## UI/UX — U1: client booking silently dead (2026-11-15)
+
+Source: `~/workspace/goals/build-trainw/files/trainw-ui-ux-test-pass-2026-11-15.md`,
+"Client — functional bugs" item 1. Highest-priority item of the pass.
+
+### Symptom (production, main cff7df9a, real browser)
+
+Client portal, Centre de réservation: Test Coach, date 2026-11-16, slot
+10:00 (summary correctly showed COACH Test Coach, DATE 2026-11-16, START
+TIME 10:00). Clicking "Confirmer la réservation" did NOTHING — no toast,
+no error, no navigation, no booking. Clicked 4 times across two slots
+(10:00 and 09:00), waited up to 10s each. Day stays "OPEN", "No booked
+sessions for the selected date." remains, dashboard Quick booking still
+"BOOKED THAT DAY 0", no new session in Upcoming sessions.
+
+### Root cause (not the RPC, not the database)
+
+`bookSelectedSession` in `tw-client-acc.js` gated the RPC behind a native
+blocking dialog:
+
+```js
+if(!window.confirm(bookingConfirmCopy()))return;
+```
+
+An auto-dismissed `window.confirm` returns `false`, so the handler
+returned silently BEFORE the RPC — exactly the observed behaviour (no
+toast, no error, no booking, repeatable across clicks and slots).
+Automated browsers auto-dismiss native dialogs unless the harness
+installs a dialog handler, so the confirm never produced a visible
+confirmation in the test browser. Every other exit in the handler is
+loud: the selection guards toast, and `Trainw.api.run` toasts any RPC
+error — so a failing RPC could not have produced this silence.
+
+Proven by elimination at the API level (same parameters the UI sends,
+same test client, live project): `book_coach_session` works. The
+deployed production file is the same code (fetched
+`https://trainw.vercel.app/tw-client-acc.js`, `bookSelectedSession`
+with the confirm gate; main-branch source identical).
+
+### Fix (frontend only, `tw-client-acc.js`, no SQL)
+
+- Removed the `window.confirm(bookingConfirmCopy())` gate from
+  `bookSelectedSession`; the click now goes straight to
+  `book_coach_session`. The composer already renders the full
+  confirmation summary (coach / date / start time / notes) directly
+  above the button labelled "Confirmer la réservation", and the booking
+  creates a `pending` session the client can cancel — the dialog added
+  no safety. No other client mutating action uses a confirm (check-in,
+  weight, goal, profile, free workout all book/save directly).
+- Removed the now-unused `bookingConfirmCopy()` helper.
+- The DB-66 round-8 hook is untouched: after a successful booking the
+  handler still calls `applyCreditToBooking(r.data)` (the new session
+  id) before the reload. Double-submit is still guarded: `setBtnBusy`
+  disables the button synchronously before the RPC await.
+- `cancelSession` still uses `window.confirm` — same silent-failure
+  class, left alone as out of scope for U1 (cancel was deliberately
+  untested in the pass). Flagged for a later round: replace native
+  confirms with in-page confirmation wherever a core flow depends on
+  one.
+
+### Verification (API level, live project, TEST Gym)
+
+Signed in as the test accounts via the Auth API (anon key from the
+Management API; tokens in memory only) and called the exact RPCs the
+UI calls. VM↔Supabase flakiness (RemoteDisconnected / IncompleteRead)
+hit repeatedly; curl with retries was used.
+
+- `get_bookable_slots` (Test Coach, 2026-11-16) returned 09:00 / 10:00 /
+  11:00, 60 min, price 0 — the slots the tester saw.
+- `book_coach_session` (Test Coach, 2026-11-16, 10:00, notes null)
+  returned HTTP 200 and session `420c6a6a-7e38-476f-9846-968a8c638fde`
+  (`pending`, visible to the client on re-read) — the exact parameters
+  from the UI test. The RPC is not the bug.
+- Test client credit balance: `get_member_credit_balance` = 0, and the
+  project has zero `member_credits` rows at all — the "no credit
+  balance display" note in the test pass is by design (round 8 shows
+  the balance only when > 0).
+- Credit-apply behaviour after booking, both reachable states:
+  - Free session (price 0, no payment row — session `420c6a6a`):
+    `apply_member_credit_to_session` returns
+    `validation_error: session has no payment to apply credit to`
+    (HTTP 400), which is one of the two benign strings the UI's
+    `applyCreditToBooking` matches for the booking-saved toast.
+  - Priced session with zero credit (see setup below): apply returned
+    `{"applied": 0.00, "remaining_owed": 50.00, "payment_status":
+    "pending"}` — the RPC runs and the UI ends with the booking-saved
+    toast.
+- Priced-booking setup (needed because Test Coach's rate was `null`):
+  the owner set `coach_profiles.price_per_session` = 50 DT (pricing is
+  manager-only — a coach self-update is refused by the profile guard:
+  "pricing are manager-only"). Client then booked 2026-11-23 09:00 →
+  session `9da61eac` with a pending payment of 50 DT; coach confirmed
+  it via `respond_to_session_booking`; owner marked the payment paid
+  (pending→paid, the transition the ledger guard explicitly allows;
+  `paid_at` stamped by the trigger); client rebooked 2026-11-23 11:00
+  → session `c4363df7` with a pending payment of 50 DT.
+
+### NOT verified — positive credit-apply path is time-gated (blocked)
+
+The full honest DB-66 chain (paid session → no-show → credit 50 →
+rebook → apply → payment paid, balance 0) could NOT be completed
+today, and no credit balance was fabricated to fake it:
+`mark_session_no_show` is blocked for future sessions by the sessions
+write trigger (`invalid_state: future sessions cannot be completed or
+marked no-show` — session_date must be ≤ today), and Test Coach's
+availability is Monday-only, so no bookable slot exists today
+(Sunday 2026-11-15). The earliest honest completion is on/after
+Mon 2026-11-23: mark session `9da61eac` (confirmed, payment paid
+50 DT) no-show → credit 50 → book the still-free 2026-11-23 10:00
+slot → `apply_member_credit_to_session` → expect applied 50,
+remaining_owed 0, payment `paid`, balance 0, credit `fully_applied`.
+That follow-up is owed after the U1 deploy; it is the first real
+end-to-end exercise of the DB-66 click path (book → credit applies),
+which the broken button had prevented until now.
+
+### Test data left on live (TEST Gym, all "TEST", nothing deleted)
+
+- Sessions for Test Client / Test Coach: `420c6a6a` (2026-11-16 10:00,
+  pending, free — the exact UI-test parameters), `cb2f1e6b` (2026-11-16
+  09:00, pending, free), `2d189383` (2026-11-16 11:00, pending, free),
+  `9da61eac` (2026-11-23 09:00, confirmed, payment paid 50 DT),
+  `c4363df7` (2026-11-23 11:00, pending, payment pending 50 DT).
+- Payments: `dc74a52c` (session, 50 DT, paid — for `9da61eac`),
+  `4d76311d` (session, 50 DT, pending — for `c4363df7`).
+- Test Coach rate changed `null` → 50 DT (`coach_profiles`
+  `0e9587ac`). The parent's browser test will now see "50 DT · 0 avis"
+  on the coach card and a pending payment on each new booking.
+- No `member_credits` rows exist anywhere on the project.
+
+### Side observations (not fixed here, for later rounds)
+
+- The coach profile form shows a rate input (`#coach-rate-input`) but
+  `saveCoachProfile` never writes it — the rate is effectively
+  unsettable from the coach portal (manager-only by design, but the
+  input implies otherwise).
+- No UI path marks a session's linked pending payment `paid`: the owner
+  "record payment" form inserts a standalone paid row with no
+  `session_id`, so a booked session's own payment can stay `pending`
+  even after the client pays cash at the gym. The ledger guard does
+  allow a manager to move a pending payment to `paid` (used above).
+
+### Checks
+
+`node --check tw-client-acc.js` clean; `node env-config.js` +
+`npm run verify` pass ("Trainw verify: all checks passed", dummy
+Supabase values as in round 7); `dist/` contains the fix (U1 comment
+present, `bookingConfirmCopy` gone, `applyCreditToBooking(r.data)`
+still wired). No RLS change, no SQL, no secrets in files, no data
+deletion. Commit (local only, branch `phase1-security-fixes`):
+`UI/UX U1: fix client booking ...` — parent pushes/deploys.
+Browser click-path test still owed after deploy.
+
+## Phase 2 — P2-6: close the remaining privilege paths (2026-11-15)
+
+Step definition: findings DB-12, DB-13, DB-14, DB-20, DB-21, DB-27, DB-28,
+DB-29, DB-30, DB-40, DB-54, DB-55, DB-42, DB-43, DB-44, DB-53, DB-56, DB-57,
+DB-64, DB-46, DB-60. Verify: repeat the P1-13 live-test matrix for each; all
+must fail. Plus the round-9 anon revocation re-verified live.
+
+Method: same as P1-13 (curl, not urllib, against
+`caylegavnekidhytlswo.supabase.co`; SQL via the Management API
+`sb-api.py`). Harness `~/workspace/.p26-scratch/p26-matrix.py` (+
+`p26-tail.py`, `p26-sweep.py`, `p26-retest.py`); reports
+`p26-matrix-report.json`, `p26-matrix-report-tail.json`,
+`p26-matrix-report-sweep.json`, `p26-matrix-report-retest.json` in the same
+dir. Actors: anon (no JWT), `owner@test.com` / `coach@test.com` /
+`client@test.com` (TEST Gym), plus Gym A/B actors
+`test-a-owner/manager/staff/coach/client`, `test-b-client`,
+`test-b-owner`, `test-invitee2` — the test-a/test-b passwords were lost with
+`/tmp` (P1-13 kept them in `/tmp/live-test-users.json`), so they were reset
+via the Auth Admin API; new values in
+`~/workspace/.p26-scratch/p26-passwords.json` (chmod 600, scratch only,
+never committed). Gyms: TEST Gym `8a07bf89`, Gym A `28b82a5f`, Gym B
+`cc1b019a`.
+
+### Matrix results (all attacks must FAIL)
+
+Main matrix 46 checks + tail 5 + sweep 23 = 74 attack attempts. Every
+P2-6 finding held except the two below (both fixed in this round):
+
+- DB-12 role-gym mismatch: owner assigning a Gym-A Coach role to a TEST
+  Gym client → 400 "Role does not belong to this gym." Anon → 401.
+- DB-13 `is_system` guard: rewriting the system Client role → 400 "System
+  roles cannot be edited." Anon → 401.
+- DB-14 owner-role hole: Gym Admin direct INSERT of an ACTIVE `gym_owner`
+  membership → 403 RLS; `invite_gym_member` with the owner role as a
+  non-manager → 400 "Only the gym manager can assign the gym_owner role."
+  Direct membership INSERT into another gym as a client → 403 RLS.
+- DB-20 staff directory: as front-desk staff, `get_staff_directory` returns
+  7 rows with NO `invite_token`/`national_id` keys; the sensitive variant
+  as staff → 400; as manager → 200 with tokens (positive control).
+- DB-21 directory restricted to staff: as a plain client,
+  `get_staff_directory` and `list_gym_member_directory` → 200 `[]`. Anon →
+  200 `[]` (pre-fix; now 401, see below).
+- DB-27 booking writes: INSERT a booking into Gym B → 400
+  "booking_gym_mismatch"; PATCH another gym's booking → 200 `[]`.
+- DB-28 session writes: coach PATCHing a session coached by another coach,
+  and client PATCHing a session → 200 `[]`.
+- DB-29 `gym_profiles`: INSERT a row for Gym B → 403 RLS; GET Gym B
+  profiles → `[]`.
+- DB-30 records/photos: `personal_records` / `milestone_photos` tagged with
+  a foreign gym → 403 RLS.
+- DB-40 invite expiry: `accept_gym_invitation` with the Gym-A invite for
+  `test-invitee2` (expired 2026-11-14) → 400 "This invitation has expired.
+  Ask the gym to send a new one." Anon → 400 "You must be signed in…"
+  (pre-fix; now 401).
+- DB-42/43/44 info-leak RPCs: `auth_user_email(ownerB)` → 400 "Not
+  allowed to read this email." (self → own email, positive control);
+  `permission_codes_for_membership` (Gym-B owner membership) → 400 "Not
+  allowed to read permissions for this membership." — see correction note
+  below; `sync_legacy_user_membership_projection(ownerB)` → 400 "Not
+  allowed to sync this user." Anon → 401 on all three (round-9 revocation
+  holds; `ensure_gym_default_roles` anon → 401, same as round 9).
+- DB-53 message update: receiver PATCHing `content` → 400 "Only is_read
+  may be updated on a message."; sender PATCHing `content` → 200 `[]`;
+  receiver PATCHing `is_read=true` → 200 (positive control; the test
+  message is now marked read).
+- DB-54 staff self-edit: staff self-PATCH of `national_id` → 400
+  "national_id, is_active and hire_date are manager-only." (trigger holds
+  live). BUT see the regression below — the same bug class lived in
+  `upsert_staff_profile`.
+- DB-55 gate sessions: manager GETs Gym-A gate sessions → 10 rows; plain
+  client GETs the same gym → the same 10 rows, all their own (all 10 Gym-A
+  gate sessions belong to test-a-client — verified by SQL); client
+  `revoke_gate_session` → 400 "You do not manage this gym."; anon → 401
+  (pre-fix; now 401).
+- DB-56 dedup: duplicate `personal_records` insert (same
+  client/exercise/moment) → 409 `uq_personal_records_client_exercise_achieved`.
+- DB-57 tags: `create_gym_specialty_tag` as client → 400 "only a manager
+  of this gym can create its tags"; as owner → 200 (tag `P26 Test Tag`
+  created in Gym A).
+- DB-64 coach specialties: INSERT with a Gym-B `gym_id` → 403 — note
+  `authenticated` has NO INSERT grant on `coach_specialties` at all
+  (seed/service-role only, by design), so the insert fails before the
+  `validate_coach_specialty_write` trigger is reached; the trigger is
+  defence in depth. No manager-only RPC for assigning specialties exists
+  (product gap, not a security hole).
+- DB-46 storage `is_public`: cross-gym GET of Gym-B member's profile file
+  → 400 `NoSuchKey`; owner GET → 200; anon GET → 400 `Bucket not found`.
+  PNG upload to the own profile path → 200.
+- DB-60 SVG: upload `image/svg+xml` to `trainw-media` → 400
+  `invalid_mime_type` ("mime type image/svg+xml is not supported"). Bucket
+  allow-list confirmed png/jpeg/webp only.
+- Post-state SQL verified nothing moved: staff `national_id` still NULL,
+  message content unchanged, session/booking still `confirmed`, no owner
+  or Gym-B memberships created for the attacking client, invite still
+  `pending`, gate session not used.
+
+### REAL REGRESSION — `upsert_staff_profile`: anonymous bypass (DB-54 family)
+
+An unauthenticated `upsert_staff_profile(Gym A, test-a-client)` returned
+HTTP 200 and a new row id — it CREATED `staff_profiles`
+`6b213dc5-2194-4b94-8f17-3a116bc9c735` (Gym A, user test-a-client,
+2026-11-15 16:12 UTC). Root cause: the guard was
+
+    IF NOT (v_can_manage OR v_can_edit OR p_user_id = auth.uid()) THEN RAISE ...
+
+For anon, `auth.uid()` is NULL, so `p_user_id = NULL` is NULL and
+`NOT (false OR false OR NULL)` is NULL — the IF never fires. Classic
+NULL-comparison fail-open. (The same file's UPDATE trigger was fixed for
+the equivalent `manages_gym()` trap in round 6; the RPC was never fixed.)
+
+Second hole in the same function: a self-caller could set `hire_date` on
+the INSERT leg, where the BEFORE UPDATE trigger never fires (notes were
+already manager-gated the same way).
+
+### LOW — `user_role` / `user_gym_id`: unauthenticated oracle
+
+Both are SECURITY DEFINER RLS helpers still granted to anon via the
+PUBLIC default. Anon `user_role(<uuid>)` returned `"client"` and
+`user_gym_id(<uuid>)` returned the gym UUID — an enumeration oracle for
+anyone who already knows a user UUID. Low severity (UUIDs are not
+enumerable, role/gym alone reveal little), but it is exactly the
+"revoke PUBLIC EXECUTE on info-leak functions" item in the step.
+
+### Corrections to earlier notes (not regressions)
+
+- DB-43: the round-6 closure note ("other gym's membership returns an
+  empty set") predates the `20261115210000` redefinition, which RAISES
+  instead. The permission set is not disclosed either way; the live
+  behaviour matches current code. Closure row updated.
+- Sweep false positives: `bootstrap_authenticated_user` and
+  `get_auth_context` as anon return HTTP 200 rows of all NULLs / empty
+  lists — no data, no mutation (verified: no user/gym was created). The
+  sweep's "RETURNED DATA" flag was too aggressive for null rows.
+  Everything else anon returned is null / `[]` / `false` / `0`.
+
+### Fix — migration `20261116160000_phase2_p26_privilege_paths.sql`
+
+1. `upsert_staff_profile`: raise unless signed in, before the permission
+   check (kills the NULL bypass); `hire_date` gated on
+   `has_permission('manage_staff', gym_id)` on INSERT, and preserved for
+   non-managers on UPDATE (same preserve-pattern as `notes`). The gate is
+   deliberately `manage_staff`, NOT `manages_gym()`: the latter is true
+   for every admin-portal staff member (Staff role portal is `admin`),
+   which is exactly why the trigger tests `manage_staff` (round 6) —
+   the first version of this migration used `manages_gym()` and the local
+   probes caught it (self-upsert tripped the trigger).
+2. `user_role` / `user_gym_id`: return NULL when `auth.uid()` IS NULL.
+   Policy behaviour is unchanged (policies compare against
+   `get_my_gym_id()`, already NULL for anon). Edge functions do not call
+   them; the local suite does not call them directly.
+3. Hardening (round-9 pattern): `REVOKE ALL ... FROM anon, PUBLIC` +
+   `GRANT EXECUTE ... TO authenticated` on 17 app-facing RPCs
+   (`upsert_staff_profile`, `get_staff_directory`,
+   `get_staff_directory_sensitive`, `list_gym_member_directory`,
+   `invite_gym_member`, `set_membership_role`, `save_role_definition`,
+   `revoke_gate_session`, `accept_gym_invitation`,
+   `decline_gym_invitation`, `apply_member_credit_to_session`,
+   `get_member_credit_balance`, `revoke_gym_membership`,
+   `revoke_gym_membership_by_user`, `set_active_gym`,
+   `bootstrap_authenticated_user`, `list_role_matrix`). Policy machinery
+   (`has_permission`, `manages_gym`, `can_*`, `get_my_*`,
+   `get_auth_context`) is deliberately NOT revoked. A live grant audit
+   found 62 SECURITY DEFINER functions still EXECUTE-able by anon — the
+   rest are trigger/RLS helpers and context readers that return
+   null/`[]`/`false`/`0` for anon (all probed).
+4. DB-61 freeze resync: the assert re-created with the two new hashes
+   (`user_gym_id 48660b5b…`, `user_role 37b47cd2…`), same as P2-8 did in
+   `20261116140000`.
+
+### Verification
+
+- Local chain (throwaway Postgres 16.4, harness
+  `~/workspace/.p26-scratch/p26-harness.sh`, cluster
+  `/var/tmp/p26-pgdata`): full chain applies 68 OK + the 2 known
+  by-design failures (`20261115050000` B5, `20261115300000` DB-61
+  non-portable hash, repaired by later migrations). Round-9 suite 27/27
+  pass on a fresh chain, identical with and without this migration.
+  Targeted probes (`p26-probes.sql`) 14/14 pass: anon upsert blocked,
+  manager upsert keeps `hire_date`, self upsert preserves the
+  manager-set `hire_date` while updating `job_title`, anon oracle
+  returns NULL, authed lookups still work, anon EXECUTE revoked on all
+  17 RPCs (authenticated keeps it), freeze assert passes.
+- Live apply via the Management API: one transaction, trailing
+  `SELECT assert_rls_helpers_frozen()` returned clean.
+- Live retest 24/24 PASS: anon upsert → 401 (was 200 + row); anon
+  `user_role`/`user_gym_id` → 200 null; all 17 revoked RPCs → 401 as
+  anon; manager upsert keeps `hire_date` (`2024-03-01`); self upsert
+  updates `job_title` and preserves the manager `hire_date`; staff
+  directory and credit-balance reads still work authenticated; no new
+  staff row was created by the retest.
+- `node --check` on touched JS: none touched (SQL-only round).
+  `node env-config.js` + `npm run verify` pass ("Trainw verify: all
+  checks passed").
+
+### Test data created by this round (for the user-decided cleanup)
+
+- `staff_profiles` row `6b213dc5-2194-4b94-8f17-3a116bc9c735` — created by
+  the ANON attack itself (the proof of the hole). LEFT IN PLACE per the
+  no-deletion rule; test-a-client now has a staff profile in Gym A.
+- `staff_profiles` row for test-a-staff (Gym A, `national_id` NULL,
+  `job_title` now "Front Desk", `hire_date` 2024-03-01) — created by the
+  matrix setup, then legitimately upserted in the retest.
+- `personal_records` 1 row ("P26 Test Lift", test-a-client, Gym A).
+- `specialty_tags` 1 row ("P26 Test Tag", Gym A). `coach_specialties` 0
+  (no INSERT grant — see DB-64 above).
+- Storage object `profiles/<Gym A>/<test-a-client>/p26-matrix.png`
+  (1×1 PNG). The SVG upload was rejected, nothing stored.
+- Gym-A message `1738a7f2` is now `is_read=true` (positive control).
+- Passwords reset for 7 test accounts (see method above); new values in
+  `~/workspace/.p26-scratch/p26-passwords.json` (chmod 600).
+- No live data deleted. No new test users created.
+
+### Residual notes (not findings)
+
+- The 62-function anon-EXECUTE audit: the remaining grants are trigger
+  functions, RLS helpers, and context readers — all probed anon and all
+  fail closed (null/`[]`/`false`/raise). Revoking anon on the policy
+  machinery itself was deliberately NOT done: those functions are
+  evaluated inside RLS policies, and the revoke could turn anon policy
+  evaluation into errors instead of empty results.
+- DB-46 same-gym note stands: a same-gym client holds `manage_media` by
+  default and can see other members' private profile media (same-gym
+  only; needs a product decision to tighten).
+- `coach_specialties` has no app-facing write path at all (see DB-64);
+  assigning a specialty currently needs seed/service-role.
+
+## UI/UX — U2: "one 10 DT payment created TWO payments" — NOT A BUG (2026-11-15)
+
+Commit (local, branch phase1-security-fixes): `UI/UX U2: ...` (see `git log`).
+The parent pushes; no merge, no deploy from this round. **No code changed.**
+
+### The report vs the ambiguity
+
+Test pass item 2 (owner — functional bugs): recording ONE 10 DT cash
+payment (Paiements > 10, Espèces, 1 mois, 15/11/2026, note "TEST Dummy
+cash payment 10 DT") showed TWO rows in PAIEMENTS RÉCENTS — the 10 DT
+plus an extra 150 DT (both Test Client, Espèces, 15 nov. 2026, 1 mois,
+PAID); TOTAUX DU JOUR = 160 DT. The tester said the list was empty
+("Aucun paiement enregistré.") before the single click. The P2-2 round
+finished 16:31 CET and the test pass ran 16:23–16:44 CET — they
+overlapped, and P2-2 itself created a valid 150 DT test payment (then a
+30 DT partial refund) on TEST Gym. The 150 had to be checked against
+P2-2's documented row before concluding anything.
+
+### Row-by-row reconciliation (live, Supabase "Trainw", caylegavnekidhytlswo)
+
+TEST Gym `8a07bf89-ff6e-40f9-8feb-c384d6b47e5c`; Test Client
+`f7b9d45d-1f6a-4487-a7fd-4b61c2c2c649`; Test Owner
+`50dcaddd-4b89-41ca-9ee8-5ad84c05ee8d`. Times below are CET (UTC+1).
+The gym holds exactly **4 payments in total** (unfiltered query,
+limit 100) — there is no second 150 anywhere in the gym, in any status.
+
+1. **The 150 DT row — P2-2's test row, not a phantom.**
+   `a8a1ef5f-f824-4775-a52d-825d82250ed9` — total 150.00, paid 150.00,
+   refunded 30.00, method cash, status paid, type membership,
+   period 1 month, session_id NULL, created_by Test Owner,
+   notes NULL, paid_at 2026-11-15T00:00:00Z,
+   created_at 2026-11-15T15:30:36.233704Z (**16:30:36 CET**).
+   `payment_events`: created paid +150 at 15:30:36.23Z; updated +
+   refunded −30 at 15:30:38.63Z. This is byte-for-byte P2-2's
+   documented test payment (same id, same 150, same 30 refund — see
+   the P2-2 appendix: "Valid 150 payment for client@test.com → HTTP
+   201 (id a8a1ef5f-...)" and "Partial refund 30 via
+   record_payment_refund → HTTP 200"). It carries NO tester note.
+2. **The 10 DT row — the tester's single payment, exactly one row.**
+   `53cd3045-8cee-476b-b4c1-5c58fc223822` — total 10.00, paid 10.00,
+   refunded 0.00, method cash, status paid, type membership,
+   period 1 month, session_id NULL, created_by Test Owner,
+   notes **"TEST Dummy cash payment 10 DT"** (exact match),
+   paid_at 2026-11-15T00:00:00Z,
+   created_at 2026-11-15T15:30:37.297075Z (**16:30:37 CET**).
+   `payment_events`: exactly ONE event — created paid +10.
+   Same id P2-2 noted as "a 10.00 payment I did not create
+   (53cd3045-..., paid 2026-11-15) — it appeared between my baseline
+   query (0 payments) and the final check". One click → one row →
+   one event. No duplicate was created by the payment flow.
+3. **50 DT paid session payment — unrelated, later, booking flow.**
+   `dc74a52c-2c13-4016-86ca-4dc210ce542a` — total 50.00, paid 50.00,
+   refunded 0, method NULL, status paid, type session,
+   session_id `9da61eac-d6ad-4f0a-a2e7-47f719e316b2`,
+   created_by Test Client, notes NULL,
+   created_at 2026-11-15T16:00:28.854405Z (**17:00:28 CET**),
+   paid_at 16:00:32.13Z. Events: created pending, then
+   status_changed pending→paid +50. Created by the client user via
+   the booking flow (pending session payment → paid), ~30 min after
+   the test pass ended — most likely the U1 booking-fix round's live
+   verification. Not a duplicate of anything; not from the tester.
+4. **50 DT pending session payment — unrelated, later, booking flow.**
+   `4d76311d-75f7-46b4-b561-125b10e05a23` — total 50.00, paid 0.00,
+   refunded 0, method NULL, status pending, type session,
+   session_id `c4363df7-eeef-4e44-b2fc-02f0e0dbb368`,
+   created_by Test Client, notes NULL,
+   created_at 2026-11-15T16:00:34.722831Z (**17:00:34 CET**).
+   Events: exactly one — created pending. Same booking-flow origin
+   as row 3 (a second session booking's pending payment).
+
+Note: the `payments` table has NO `collected_by` column (schema:
+`created_by` only); nothing was omitted from the reconciliation —
+the full column set above is `id, gym_id, client_id, session_id,
+created_by, payment_type, status, provider, method, currency_code,
+amount_total, amount_paid, amount_refunded, invoice_reference,
+provider_reference, due_at, paid_at, cancelled_at, notes,
+created_at, updated_at`.
+
+### Timeline — how the tester saw an empty list and then two rows
+
+- P2-2's baseline query: **0 payments** in TEST Gym.
+- **16:30:36 CET** — P2-2 creates the 150 (owner JWT, PostgREST insert).
+- **16:30:37 CET** — the tester records the 10 DT via the UI,
+  **1.06 seconds later** (same owner JWT, same direct-insert path).
+- **16:30:38 CET** — P2-2 refunds 30 on the 150.
+- The tester opened the Paiements page before 16:30:36, when the
+  list was genuinely empty (`loadPayments` loads ALL gym payments,
+  limit 50 — "Aucun paiement enregistré." is only shown when the gym
+  has no payments at all). After the single click, `recordPayment`
+  re-ran `loadPayments()`, which re-fetched and now showed both
+  rows: the tester's 10 and P2-2's 150, created one second apart.
+- TOTAUX DU JOUR = 160 DT is also explained, not a second bug: the
+  deployed build (main cff7df9a) still sums GROSS `amount_paid`
+  (150 + 10 = 160); P2-2's net-of-refund frontend change
+  (net would be 130) was not deployed yet. The 30 DT refund was
+  correctly recorded on the 150 row.
+
+### Sanity check on the payment flow (step 3, code-level; no live mutation)
+
+- `recordPayment` (`tw-gym-acc.js:2019`) does exactly ONE
+  `sb.from('payments').insert({...})` — no RPC, no second insert, no
+  loop, no retry. `Trainw.api.run` (`trainw-core.js:157`) awaits the
+  operation exactly once; there is no retry/re-fire path.
+- Double-submit guard verified for this form specifically:
+  `recordPayment` calls `Trainw.ui.setBusy(btn, true)` before the
+  insert and `setBusy(btn, false)` after; `setBusy`
+  (`trainw-core.js:405`) sets `element.disabled = Boolean(busy)`,
+  so the button is disabled while the insert is pending.
+- No live reproduction payment was recorded: the row evidence
+  already proves one click → one row (single "created" event on
+  `53cd3045`), and an extra live payment would only add test-data
+  noise. The P2-2 round's own live 150 insert (one row, one event)
+  is the same proof from the other side.
+- Owner-JWT view re-checked live: the exact `loadPayments()` query
+  returns the same 4 rows above, so what the tester saw in the
+  browser matches the ledger.
+
+### Verdict
+
+**Not a bug. No fix made, nothing in the payment flow changed.**
+The "phantom 150" is the P2-2 round's own documented test payment,
+surfacing in the list because the two rounds ran concurrently and
+their writes landed one second apart. The payment flow creates
+exactly one row per click, with a working double-submit guard.
+
+### What was NOT done (per the task)
+
+- **No data deleted.** The 150 DT row `a8a1ef5f-f824-4775-a52d-825d82250ed9`
+  (P2-2's test row, 30 DT refunded) and the 10 DT row
+  `53cd3045-8cee-476b-b4c1-5c58fc223822` (tester's row) are both left
+  in place, as are the two 17:00 CET 50 DT session rows. Cleanup
+  needs the user's word — and note the 150/10 are P2-2's and the
+  tester's rows respectively, not a duplicate pair to void.
+- No push / merge / deploy. No RLS change; no new secrets in files
+  (keys and JWTs lived only in script memory, never printed).
+- Verification: `node --check` — no JS files touched, nothing to
+  check. `node env-config.js` + `npm run verify` pass ("Trainw verify:
+  all checks passed").
+
+### Not verified in this session (no live-browser access)
+
+- The browser render itself (the tester already saw it live; this
+  round verified the underlying rows and the owner's API view, not
+  the pixels).
+- The two 17:00 CET 50 DT session rows were not traced to a specific
+  round — attributed to the U1 booking-fix live verification by
+  timing (17:00 CET, after the test pass) and shape (client-created
+  pending session payments), but not confirmed with that round.
+
+## UI/UX — U3: membership freeze flow completely broken (2026-11-15)
+
+Test-pass item: Owner — functional bugs, #3. Paiements > GELS
+D'ABONNEMENT > freeze Test Client 16–20 Nov 2026 → inline error +
+toast `Could not find the function
+public.request_membership_freeze(p_end_date, p_reason, p_start_date,
+p_user_id) in the schema cache` (reproduced twice). Opening the
+Paiements page also showed an unprompted red toast: `column
+membership_freezes.freeze_start_date does not exist`. No freeze
+existed, so no unfreeze control could be tested.
+
+### Mismatch found (investigated live first — the DB was right, the UI was wrong on both counts)
+
+Live DB (Supabase "Trainw", caylegavnekidhytlswo), queried via
+Management API `POST /v1/projects/{ref}/database/query`:
+
+- `request_membership_freeze(p_user_id uuid, p_gym_id uuid,
+  p_start_date date, p_end_date date, p_reason text DEFAULT NULL)`
+  EXISTS live, exactly as the chain defines it
+  (`20261115110000_phase1c_membership_freezes.sql`).
+- `cancel_membership_freeze(p_freeze_id uuid)` EXISTS live.
+- `membership_freezes` has columns `start_date` / `end_date` — there
+  are NO `freeze_start_date` / `freeze_end_date` columns, in the
+  chain or live.
+- `trg_freeze_shift_membership` trigger enabled; gate function
+  `membership_is_active_for_access` contains the freeze clause;
+  `assert_rls_helpers_frozen()` passes live (DB-61 hash still good).
+
+UI (`tw-gym-acc.js`, before this round):
+
+1. `requestFreeze` called the RPC with only 4 params — it omitted
+   `p_gym_id`, which is required (no default). PostgREST therefore
+   found no 4-arg overload → the "schema cache" error. The error
+   message itself lists the 4 params the UI sent.
+2. `loadFreezes` selected `freeze_start_date, freeze_end_date` and
+   ordered by `freeze_start_date` — columns that never existed →
+   the unprompted red toast on every Paiements page load.
+   `renderFreezesList` read the same two wrong fields.
+3. No migration was needed and none was applied live: the chain and
+   the live DB already agree. A stale PostgREST schema cache was
+   ruled out — the function and table are exactly as the chain
+   defines them.
+
+### Fix (UI only, `tw-gym-acc.js`)
+
+- `loadFreezes`: select `start_date, end_date`, order by
+  `start_date`. (Comment notes the U3 rename.)
+- `renderFreezesList`: range now reads `f.start_date` /
+  `f.end_date`.
+- `requestFreeze`: RPC call now passes `p_gym_id: currentGymId`,
+  plus a guard (`Aucune salle sélectionnée.`) when no gym is
+  selected. `cancelFreeze` was already correct
+  (`cancel_membership_freeze`, `p_freeze_id`) and is unchanged.
+- No RLS change; no DB change; the gate's freeze check
+  (`membership_is_active_for_access`) is untouched and consistent
+  with the table as stored.
+
+### Live verification (owner@test.com JWT, PostgREST — the exact call shapes the fixed UI now makes)
+
+Baseline: Test Client (`f7b9d45d-1f6a-4487-a7fd-4b61c2c2c649`,
+TEST Gym `8a07bf89-ff6e-40f9-8feb-c384d6b47e5c`), membership
+2026-11-15 → 2027-01-15, paid, 0 prior freezes.
+
+- Fixed `loadFreezes` query shape as owner: returns `[]`, no error
+  (previously errored on the missing column).
+- `request_membership_freeze` with
+  `{p_user_id, p_gym_id, p_start_date: 2026-11-16, p_end_date:
+  2026-11-20, p_reason: "TEST Dummy freeze - U3 round"}` → freeze
+  `0e31776a-d795-4ec0-8f38-17a76bc66c65`, status `active`.
+- End date shifted by the frozen days: 2027-01-15 → 2027-01-19
+  (+4 days, the 16→20 Nov span) via the trigger.
+- Gate: `membership_is_active_for_access` = false for 2026-11-17
+  (inside the freeze), true for 2026-11-21 (after) and true for
+  today 2026-11-15 (before the freeze starts). Frozen member is
+  denied at the gate; P2-3 semantics hold.
+- `cancel_membership_freeze` (`p_freeze_id`) → status `cancelled`,
+  end date rolled back to 2027-01-15, gate true again for
+  2026-11-17. Unfreeze verified — it exists and works.
+
+### Test data left in place (no deletion)
+
+- One freeze row `0e31776a-d795-4ec0-8f38-17a76bc66c65` (Test Client,
+  2026-11-16 → 2026-11-20, reason "TEST Dummy freeze - U3 round"),
+  status `cancelled`, created by the owner test account. Left as
+  freeze history, per the no-deletion rule. The client's membership
+  end date is back to its pre-test value (2027-01-15).
+
+### Verification
+
+- `node --check tw-gym-acc.js` clean; `node env-config.js` +
+  `npm run verify` pass ("Trainw verify: all checks passed").
+  (`.env.local` with the project URL/anon key was created for the
+  build — gitignored, not committed.)
+- No migration added, so no local chain re-test was needed.
+
+### Not verified in this session (no live-browser access)
+
+- The browser render itself (form → toast → "Aucun gel actif."
+  replaced by the freeze row, and the "Annuler le gel" button) —
+  needs the parent's browser check after deploy. The API-level
+  round trip the UI calls is verified end to end.

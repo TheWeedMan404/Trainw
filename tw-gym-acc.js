@@ -75,6 +75,9 @@ let coachSearchRequestId = 0;
 let coachSearchResults = [];
 let coachSearchTerm = '';
 let coachSearchLoading = false;
+// P2-5: coach search needs at least 2 characters — a 1-char term is a
+// full-table scan of the gym's coaches, not a search.
+const COACH_SEARCH_MIN_LENGTH = 2;
 
 const GYM_RUNTIME_LOCALE = {
   fr: {
@@ -307,7 +310,7 @@ const T = {
     noClasses:'Aucun cours. Créez votre premier cours !', deleteClass:'Supprimer',
     membershipStart:'Début Abonnement', membershipEnd:'Fin Abonnement', pricePaid:'Montant Payé (DT)',
     expiresIn:'Expire dans', expiredSince:'Expiré depuis', daysLeft:'jours', renewalNeeded:'Renouvellement requis',
-    expiringLabel:'Expire bientôt', expiredLabel:'Expiré', activeLabel:'Actif', expiringSoonStat:'Expirent bientôt', expiringDelta:'14 prochains jours', sessionsTab:'Séances', classTemplatesTab:'Modèles de cours', coachSearchHint:'Cherchez un nom ou une spécialité pour trouver un coach existant.', searchingInProgress:'Recherche en cours…', credentialSelectClient:'Sélectionnez un client pour gérer ses badges.', noBadgesForClient:'Aucun badge enregistré pour {name}.', thisClient:'ce client',
+    expiringLabel:'Expire bientôt', expiredLabel:'Expiré', activeLabel:'Actif', expiringSoonStat:'Expirent bientôt', expiringDelta:'14 prochains jours', sessionsTab:'Séances', classTemplatesTab:'Modèles de cours', coachSearchHint:'Cherchez un nom ou une spécialité pour trouver un coach existant.', coachSearchMinLength:'Tapez au moins 2 caractères pour lancer la recherche.', searchingInProgress:'Recherche en cours…', credentialSelectClient:'Sélectionnez un client pour gérer ses badges.', noBadgesForClient:'Aucun badge enregistré pour {name}.', thisClient:'ce client',
     membersExpiring:'Membres à Renouveler', noExpiring:'Tous les abonnements sont à jour.',
     revenueReal:'Revenus Réels', revenueMonth:'Ce Mois',
     editSession:'Modifier', deleteSession:'Supprimer', editSessionTitle:'Modifier la Séance',
@@ -370,7 +373,7 @@ const T = {
     noClasses:'No classes yet. Create your first class!', deleteClass:'Delete',
     membershipStart:'Membership Start', membershipEnd:'Membership End', pricePaid:'Amount Paid (DT)',
     expiresIn:'Expires in', expiredSince:'Expired', daysLeft:'days', renewalNeeded:'Renewal needed',
-    expiringLabel:'Expiring soon', expiredLabel:'Expired', activeLabel:'Active', expiringSoonStat:'Expiring soon', expiringDelta:'Next 14 days', sessionsTab:'Sessions', classTemplatesTab:'Class templates', coachSearchHint:'Search a name or specialty to find an existing coach.', searchingInProgress:'Searching…', credentialSelectClient:'Select a client to manage their badges.', noBadgesForClient:'No badge registered for {name}.', thisClient:'this client',
+    expiringLabel:'Expiring soon', expiredLabel:'Expired', activeLabel:'Active', expiringSoonStat:'Expiring soon', expiringDelta:'Next 14 days', sessionsTab:'Sessions', classTemplatesTab:'Class templates', coachSearchHint:'Search a name or specialty to find an existing coach.', coachSearchMinLength:'Type at least 2 characters to search.', searchingInProgress:'Searching…', credentialSelectClient:'Select a client to manage their badges.', noBadgesForClient:'No badge registered for {name}.', thisClient:'this client',
     membersExpiring:'Members to Renew', noExpiring:'All memberships are up to date.',
     revenueReal:'Real Revenue', revenueMonth:'This Month',
     editSession:'Edit', deleteSession:'Delete', editSessionTitle:'Edit Session',
@@ -433,7 +436,7 @@ const T = {
     noClasses:'لا توجد دروس بعد. أنشئ أول درس!', deleteClass:'حذف',
     membershipStart:'بداية الاشتراك', membershipEnd:'نهاية الاشتراك', pricePaid:'المبلغ المدفوع (دت)',
     expiresIn:'ينتهي في', expiredSince:'منتهي منذ', daysLeft:'أيام', renewalNeeded:'يحتاج تجديد',
-    expiringLabel:'ينتهي قريباً', expiredLabel:'منتهي', activeLabel:'نشط', expiringSoonStat:'تنتهي قريباً', expiringDelta:'الأيام الـ 14 القادمة', sessionsTab:'حصص', classTemplatesTab:'قوالب الحصص', coachSearchHint:'ابحث بالاسم أو التخصص للعثور على مدرب موجود.', searchingInProgress:'جارٍ البحث…', credentialSelectClient:'اختر عميلاً لإدارة شاراته.', noBadgesForClient:'لا توجد شارة مسجلة لـ {name}.', thisClient:'هذا العميل',
+    expiringLabel:'ينتهي قريباً', expiredLabel:'منتهي', activeLabel:'نشط', expiringSoonStat:'تنتهي قريباً', expiringDelta:'الأيام الـ 14 القادمة', sessionsTab:'حصص', classTemplatesTab:'قوالب الحصص', coachSearchHint:'ابحث بالاسم أو التخصص للعثور على مدرب موجود.', coachSearchMinLength:'اكتب حرفين على الأقل لبدء البحث.', searchingInProgress:'جارٍ البحث…', credentialSelectClient:'اختر عميلاً لإدارة شاراته.', noBadgesForClient:'لا توجد شارة مسجلة لـ {name}.', thisClient:'هذا العميل',
     membersExpiring:'أعضاء للتجديد', noExpiring:'جميع الاشتراكات سارية.',
     revenueReal:'الإيرادات الفعلية', revenueMonth:'هذا الشهر',
     editSession:'تعديل', deleteSession:'حذف', editSessionTitle:'تعديل الجلسة',
@@ -1405,7 +1408,7 @@ async function approveJoinRequest(membershipId) {
   if (!membershipId) return;
   const result = await Trainw.api.run(sb.rpc('approve_gym_membership', { p_membership_id: membershipId }), { context: 'approve join request', fallback: null });
   if (result.error) {
-    Trainw.ui.showToast(result.error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(result.error, t('errorMsg')), 'error');
     return;
   }
   Trainw.ui.showToast(t('joinRequestApproved'), 'success');
@@ -1416,7 +1419,7 @@ async function rejectJoinRequest(membershipId) {
   if (!membershipId) return;
   const result = await Trainw.api.run(sb.rpc('reject_gym_membership', { p_membership_id: membershipId }), { context: 'reject join request', fallback: null });
   if (result.error) {
-    Trainw.ui.showToast(result.error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(result.error, t('errorMsg')), 'error');
     return;
   }
   Trainw.ui.showToast(t('joinRequestRejected'), 'success');
@@ -1482,7 +1485,7 @@ async function loadStaffDirectory() {
     renderStaffStats();
     renderStaffDirectory();
     renderPendingInvites();
-    Trainw.ui.showToast(error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('errorMsg')), 'error');
   }
 }
 
@@ -1580,7 +1583,7 @@ async function loadAccessControlData(options={}) {
       renderStaffDirectory();
       renderPendingInvites();
     }
-    Trainw.ui.showToast(error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('errorMsg')), 'error');
   }
 }
 
@@ -1611,7 +1614,7 @@ async function saveRoleBuilder() {
     await loadAccessControlData();
     switchSettingsStaffTab('roles');
   } catch (error) {
-    Trainw.ui.showToast(error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('errorMsg')), 'error');
   }
 }
 
@@ -1700,8 +1703,8 @@ async function submitMemberInvite() {
     await loadAccessControlData();
     switchSettingsStaffTab('team');
   } catch (error) {
-    Trainw.ui.setText('invite-member-status', error.message || t('inviteSendFailed'), '');
-    Trainw.ui.showToast(error.message || t('inviteSendFailed'), 'error');
+    Trainw.ui.setText('invite-member-status', Trainw.api.userMessage(error, t('inviteSendFailed')), '');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('inviteSendFailed')), 'error');
   } finally {
     Trainw.ui.setBusy(btn, false);
   }
@@ -1753,7 +1756,7 @@ async function saveStaffProfile(userId) {
     Trainw.ui.showToast(t('staffProfileSaved'), 'success');
     await loadStaffDirectory();
   } catch (error) {
-    Trainw.ui.showToast(error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('errorMsg')), 'error');
   } finally {
     Trainw.ui.setBusy(btn, false);
   }
@@ -1770,7 +1773,7 @@ async function resendInvitation(membershipId, email) {
     if (result.error) throw result.error;
     Trainw.ui.showToast(replaceTextTokens(t('inviteResentTo'), { email: email || invite.invite_email || invite.email }), 'success');
   } catch (error) {
-    Trainw.ui.showToast(error.message || t('inviteSendFailed'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('inviteSendFailed')), 'error');
   }
 }
 
@@ -1784,7 +1787,7 @@ async function deleteCustomRole(roleId) {
     await loadAccessControlData();
   } catch (error) {
     const blocked = error?.code === '23503' || /violates foreign key/i.test(error?.message || '');
-    Trainw.ui.showToast(blocked ? t('roleDeleteBlocked') : (error.message || t('errorMsg')), 'error');
+    Trainw.ui.showToast(blocked ? t('roleDeleteBlocked') : (Trainw.api.userMessage(error, t('errorMsg'))), 'error');
   }
 }
 
@@ -1797,7 +1800,7 @@ async function updateMembershipRole(membershipId, roleId) {
     await loadAccessControlData();
     await Promise.allSettled([loadClients(), loadCoaches(), loadGymCoaches(), loadDashboardStats(), loadAnalytics()]);
   } catch (error) {
-    Trainw.ui.showToast(error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('errorMsg')), 'error');
   }
 }
 
@@ -1810,7 +1813,7 @@ async function revokeMembership(membershipId) {
     await loadAccessControlData();
     await Promise.allSettled([loadClients(), loadCoaches(), loadGymCoaches(), loadDashboardStats(), loadAnalytics()]);
   } catch (error) {
-    Trainw.ui.showToast(error.message || t('errorMsg'), 'error');
+    Trainw.ui.showToast(Trainw.api.userMessage(error, t('errorMsg')), 'error');
   }
 }
 
@@ -1895,7 +1898,7 @@ async function loadLedgerRevenue(){
   const curStart=Trainw.dateOnly(new Date(now.getFullYear(),now.getMonth(),1));
   const prevStart=Trainw.dateOnly(new Date(now.getFullYear(),now.getMonth()-1,1));
   const result=await Trainw.api.run(
-    sb.from('payments').select('amount_paid,paid_at,created_at')
+    sb.from('payments').select('amount_paid,amount_refunded,paid_at,created_at')
       .eq('gym_id',currentGymId).eq('status','paid')
       .gte('created_at',prevStart),
     {context:'load ledger revenue',fallback:[]});
@@ -1903,7 +1906,9 @@ async function loadLedgerRevenue(){
   let cur=0,prev=0;
   for(const row of rows){
     const paidDate=String(row.paid_at||row.created_at||'').slice(0,10);
-    const amount=Number(row.amount_paid)||0;
+    // P2-2: revenue is NET collected — a partially refunded payment only
+    // counts what the gym kept (amount_paid - amount_refunded).
+    const amount=(Number(row.amount_paid)||0)-(Number(row.amount_refunded)||0);
     if(paidDate>=curStart) cur+=amount;
     else if(paidDate>=prevStart) prev+=amount;
   }
@@ -1999,7 +2004,8 @@ function renderDayTotals(){
     if(String(p.status||'')!=='paid') continue;
     const d=String(p.paid_at||p.created_at||'').slice(0,10);
     if(d!==today) continue;
-    const amt=Number(p.amount_paid)||0;
+    // P2-2: day totals are NET collected, same as loadLedgerRevenue.
+    const amt=(Number(p.amount_paid)||0)-(Number(p.amount_refunded)||0);
     if(p.method==='card') card+=amt;
     else if(p.method==='bank_transfer') transfer+=amt;
     else cash+=amt;
@@ -2039,7 +2045,7 @@ async function recordPayment(){
     notes,
   }),{context:'record payment'});
   Trainw.ui.setBusy(btn,false);
-  if(result.error){showInlineError(errEl,result.error.message||'Erreur lors de l\'enregistrement.');return;}
+  if(result.error){showInlineError(errEl,Trainw.api.userMessage(result.error, 'Erreur lors de l\'enregistrement.'));return;}
   document.getElementById('pay-amount').value='';
   document.getElementById('pay-invoice-number').value='';
   document.getElementById('pay-buyer-tax-id').value='';
@@ -2059,7 +2065,7 @@ async function voidPayment(paymentId){
     voided_by:currentUser?.id||null, voided_at:new Date().toISOString(),
   }).eq('id',paymentId).eq('gym_id',currentGymId),
   {context:'void payment'});
-  if(result.error){toast(result.error.message||'Erreur lors de l\'annulation.');return;}
+  if(result.error){toast(Trainw.api.userMessage(result.error, 'Erreur lors de l\'annulation.'));return;}
   await loadPayments();
   await loadLedgerRevenue();
   await loadClients();
@@ -2068,9 +2074,11 @@ async function voidPayment(paymentId){
 
 async function loadFreezes(){
   if(!currentGymId) return;
+  // U3: columns are start_date/end_date — the old freeze_start_date /
+  // freeze_end_date names never existed, so the page load errored.
   const result=await Trainw.api.run(
-    sb.from('membership_freezes').select('id,user_id,freeze_start_date,freeze_end_date,reason,status,created_at')
-      .eq('gym_id',currentGymId).eq('status','active').order('freeze_start_date',{ascending:false}).limit(20),
+    sb.from('membership_freezes').select('id,user_id,start_date,end_date,reason,status,created_at')
+      .eq('gym_id',currentGymId).eq('status','active').order('start_date',{ascending:false}).limit(20),
     {context:'load freezes',fallback:[]});
   freezesList=Array.isArray(result.data)?result.data:[];
   renderFreezesList();
@@ -2082,7 +2090,7 @@ function renderFreezesList(){
   if(!freezesList.length){el.innerHTML='<p class="empty-state">Aucun gel actif.</p>';return;}
   el.innerHTML=freezesList.map(f=>{
     const name=Trainw.escapeHtml(paymentMemberName(f.user_id));
-    const range=`${Trainw.formatDate(f.freeze_start_date)} → ${Trainw.formatDate(f.freeze_end_date)}`;
+    const range=`${Trainw.formatDate(f.start_date)} → ${Trainw.formatDate(f.end_date)}`;
     const reason=f.reason?` · ${Trainw.escapeHtml(f.reason)}`:'';
     return `<div class="panel-row"><div><div class="panel-row-title">${name}</div><div class="panel-row-sub">${range}${reason}</div></div><button class="assignment-btn" type="button" data-cancel-freeze="${f.id}">Annuler le gel</button></div>`;
   }).join('');
@@ -2097,8 +2105,12 @@ async function requestFreeze(){
   const reason=document.getElementById('freeze-reason')?.value.trim()||null;
   if(!userId){showInlineError(errEl,'Choisissez un membre.');return;}
   if(!start||!end||end<start){showInlineError(errEl,'Dates invalides — la fin doit suivre le début.');return;}
-  const result=await Trainw.api.run(sb.rpc('request_membership_freeze',{p_user_id:userId,p_start_date:start,p_end_date:end,p_reason:reason}),{context:'request freeze'});
-  if(result.error){showInlineError(errEl,result.error.message||'Erreur lors du gel.');return;}
+  if(!currentGymId){showInlineError(errEl,'Aucune salle sélectionnée.');return;}
+  // U3: the RPC takes p_gym_id (required, no default) — the old call
+  // omitted it, so PostgREST found no 4-arg overload ("Could not find
+  // the function ... in the schema cache").
+  const result=await Trainw.api.run(sb.rpc('request_membership_freeze',{p_user_id:userId,p_gym_id:currentGymId,p_start_date:start,p_end_date:end,p_reason:reason}),{context:'request freeze'});
+  if(result.error){showInlineError(errEl,Trainw.api.userMessage(result.error, 'Erreur lors du gel.'));return;}
   await loadFreezes();
   await loadClients();
   toast('Abonnement gelé');
@@ -2107,7 +2119,7 @@ async function requestFreeze(){
 async function cancelFreeze(freezeId){
   if(!confirm('Annuler ce gel ? La date de fin de l\'abonnement sera raccourcie des jours restants.')) return;
   const result=await Trainw.api.run(sb.rpc('cancel_membership_freeze',{p_freeze_id:freezeId}),{context:'cancel freeze'});
-  if(result.error){toast(result.error.message||'Erreur lors de l\'annulation du gel.');return;}
+  if(result.error){toast(Trainw.api.userMessage(result.error, 'Erreur lors de l\'annulation du gel.'));return;}
   await loadFreezes();
   await loadClients();
   toast('Gel annulé');
@@ -2522,6 +2534,13 @@ async function saveGymClass() {
     showInlineError(errEl, 'Le nom du cours est requis.');
     return;
   }
+  // P2-8 (NX-16): class capacity is a whole number >= 1. The HTML input
+  // has min="1", but a typed value bypasses it, and gym_classes has no DB
+  // CHECK (unlike sessions) — the migration in this round adds one.
+  if (!Number.isFinite(capacity) || capacity < 1) {
+    showInlineError(errEl, 'La capacité doit être au moins 1.');
+    return;
+  }
 
   Trainw.ui.setBusy(btn, true);
   try {
@@ -2546,7 +2565,7 @@ async function saveGymClass() {
     await loadGymClasses();
     toast(classId ? 'Cours mis a jour.' : 'Cours cree.');
   } catch (error) {
-    showInlineError(errEl, error.message || t('errorMsg'));
+    showInlineError(errEl, Trainw.api.userMessage(error, t('errorMsg')));
   } finally {
     Trainw.ui.setBusy(btn, false);
   }
@@ -2569,7 +2588,7 @@ async function deleteGymClass(classId) {
     await loadGymClasses();
     toast('Cours supprime.');
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   }
 }
 
@@ -2780,6 +2799,9 @@ async function saveEditSession() {
   const errEl    = document.getElementById('edit-sess-err');
   errEl.classList.remove('show'); errEl.textContent = '';
   if (!name) { errEl.textContent = t('sessNameMissing'); errEl.classList.add('show'); return; }
+  // P2-8 (NX-16): session capacity is a whole number >= 1 (the DB CHECK
+  // also enforces it — this gives a readable inline error instead).
+  if (!Number.isFinite(capacity) || capacity < 1) { errEl.textContent = 'La capacité doit être au moins 1.'; errEl.classList.add('show'); return; }
   const btn = document.getElementById('btn-save-edit-session');
   btn.textContent = '…'; btn.disabled = true;
   try {
@@ -2821,7 +2843,7 @@ async function saveEditSession() {
     toast(t('savedOk'));
     document.getElementById('edit-session-modal')?.classList.remove('show');
     await loadSchedule(); await loadDashboardStats();
-  } catch(err) { errEl.textContent = err.message; errEl.classList.add('show'); }
+  } catch(err) { errEl.textContent = Trainw.api.userMessage(err, t('errorMsg')); errEl.classList.add('show'); }
   finally { btn.textContent = t('saveChanges'); btn.disabled = false; }
 }
 
@@ -2837,7 +2859,7 @@ async function deleteSession(sessionId) {
     renderSchedule();
     await loadDashboardStats(); animateCounters();
     toast('Séance supprimée');
-  } catch(err) { toast(t('errorMsg') + ': ' + err.message, 'err'); }
+  } catch(err) { toast(Trainw.api.userMessage(err, t('errorMsg')), 'err'); }
   finally { inFlightActions.delete(key); }
 }
 async function submitNewSession() {
@@ -2852,12 +2874,15 @@ async function submitNewSession() {
   if (!name){errEl.textContent=t('sessNameMissing');errEl.classList.add('show');return;}
   if (!date){errEl.textContent=t('sessDateMissing');errEl.classList.add('show');return;}
   if (!time){errEl.textContent=t('sessTimeMissing');errEl.classList.add('show');return;}
+  // P2-8 (NX-16): session capacity is a whole number >= 1 (the DB CHECK
+  // also enforces it — this gives a readable inline error instead).
+  if (!Number.isFinite(capacity) || capacity < 1){errEl.textContent='La capacité doit être au moins 1.';errEl.classList.add('show');return;}
   const btn=document.getElementById('btn-submit-session'); btn.textContent='…'; btn.disabled=true;
   try {
     const selectedClientIds = Array.from(new Set(getChecklistSelectedIds('sess-clients-list')));
     const primaryClientId = selectedClientIds[0] || document.getElementById('sess-client')?.value || null;
     const {data:createdSession,error}=await sb.from('sessions').insert({gym_id:currentGymId,coach_id:coachId||null,client_id:primaryClientId||null,class_id:basedClassId||null,session_date:date,start_time:time+':00',duration_minutes:duration,type:dbType,session_name:name,notes:category||name,status:'confirmed',capacity}).select('id').single();
-    if(error) throw new Error(error.message);
+    if(error) throw error;
     if (selectedClientIds.length) {
       const { error: enrollmentError } = await sb.from('session_enrollments').upsert(
         selectedClientIds.map(clientId => ({ session_id: createdSession.id, client_id: clientId, gym_id: currentGymId })),
@@ -2873,7 +2898,7 @@ async function submitNewSession() {
     const sessClassSelect = document.getElementById('sess-based-class');
     if (sessClassSelect) sessClassSelect.value = '';
     await loadSchedule(); await loadDashboardStats(); animateCounters();
-  } catch(err){errEl.textContent=err.message;errEl.classList.add('show');}
+  } catch(err){errEl.textContent=Trainw.api.userMessage(err, t('errorMsg'));errEl.classList.add('show');}
   finally{btn.textContent=t('createSession');btn.disabled=false;}
 }
 
@@ -3153,7 +3178,12 @@ async function loadCoachTagSuggestions(){
 async function saveEditCoach(){
   const profileId=document.getElementById('edit-coach-profile-id').value;
   const specialty=document.getElementById('edit-coach-specialty2').value.trim();
-  const rate=parseFloat(document.getElementById('edit-coach-rate2').value)||null;
+  // P2-2: the old parseFloat stored any number, including -500 and
+  // absurd values. Empty means "no rate set"; a rate that is present
+  // must be a valid price: > 0 and <= MAX_MONEY_DT.
+  const rateParsed=parseMoneyInput(document.getElementById('edit-coach-rate2').value);
+  if(!rateParsed.valid||(!rateParsed.empty&&rateParsed.value<=0)){toast('Tarif invalide — utilisez un nombre positif (ex. 45).','err');return;}
+  const rate=rateParsed.empty?null:rateParsed.value;
   const bio=document.getElementById('edit-coach-bio2').value.trim();
   const btn=document.getElementById('btn-save-edit-coach'); btn.textContent='…'; btn.disabled=true;
   try{const{error}=await sb.from('coach_profiles').update({specialty:specialty||null,hourly_rate:rate,bio:bio||null}).eq('id',profileId).eq('gym_id', currentGymId);if(error)throw error;toast(t('savedOk'));document.getElementById('edit-coach-modal').classList.remove('show');await loadCoaches();await loadDashboardStats();}
@@ -3165,7 +3195,7 @@ async function deleteCoach(userId,profileId){
   if(inFlightActions.has(key)) return;
   inFlightActions.add(key);
   try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('coach_profiles').delete().eq('id',profileId).eq('gym_id', currentGymId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;document.getElementById('coach-modal').classList.remove('show');await loadCoaches();await loadDashboardStats();animateCounters();toast('Coach supprimé');}
-  catch(e){toast(`${t('errorMsg')}: ${e?.message||'Erreur'}`,'err');}
+  catch(e){toast(Trainw.api.userMessage(e, t('errorMsg')),'err');}
   finally{inFlightActions.delete(key);}
 }
 
@@ -3365,6 +3395,13 @@ function renderCoachSearchResults() {
     return;
   }
 
+  // P2-5: a 1-character term never searches — the hint says so.
+  if (coachSearchTerm.trim().length < COACH_SEARCH_MIN_LENGTH) {
+    statusEl.textContent = t('coachSearchMinLength');
+    resultsEl.innerHTML = '';
+    return;
+  }
+
   if (coachSearchLoading) {
     statusEl.textContent = t('searchingInProgress');
     resultsEl.innerHTML = skeletonCards(2);
@@ -3421,9 +3458,27 @@ function scheduleExistingCoachSearch(term) {
     return;
   }
 
+  // P2-5: minimum query length — do not fire the search for 1 character.
+  if (coachSearchTerm.length < COACH_SEARCH_MIN_LENGTH) {
+    coachSearchLoading = false;
+    coachSearchResults = [];
+    renderCoachSearchResults();
+    return;
+  }
+
   coachSearchDebounceTimer = window.setTimeout(() => {
     void searchExistingCoaches(coachSearchTerm);
   }, 300);
+}
+
+// P2-5: escape LIKE wildcards in a user search term so `%`, `_` and `\`
+// are matched literally, not as pattern operators. PostgREST passes the
+// backslash escape through to SQL ILIKE (verified live 2026-11-15: an
+// escaped `%` matches nothing, an unescaped one matches every name).
+// Backslash first, so an existing `\` cannot turn a later escape into a
+// literal backslash + wildcard.
+function escapeIlikeTerm(term) {
+  return String(term || '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 async function searchExistingCoaches(term) {
@@ -3431,6 +3486,15 @@ async function searchExistingCoaches(term) {
   coachSearchTerm = normalizedTerm;
 
   if (!currentGymId || !normalizedTerm) {
+    coachSearchLoading = false;
+    coachSearchResults = [];
+    renderCoachSearchResults();
+    return;
+  }
+
+  // P2-5: minimum query length — also enforced here because this function
+  // is called directly after adding a coach, not only via the debouncer.
+  if (normalizedTerm.length < COACH_SEARCH_MIN_LENGTH) {
     coachSearchLoading = false;
     coachSearchResults = [];
     renderCoachSearchResults();
@@ -3452,18 +3516,24 @@ async function searchExistingCoaches(term) {
     // FE-08: the old search ran a bare global `users` query (ilike on name,
     // returning every matching user's name + email, coach or not). The
     // search now runs against coach_profiles only — a coach is findable
-    // only if they have a coach_profiles row. Name matching goes through
-    // the embedded users relation (PostgREST embedded filter
-    // `users.name=ilike.*term*`); verify on staging that the live API
-    // honours it — if it does not, name search returns nothing and only
-    // specialty matches appear.
+    // only if they have a coach_profiles row — and RLS on coach_profiles
+    // scopes it to the caller's gym (verified live 2026-11-15: as
+    // coach@test.com the unfiltered query returns only TEST Gym's coach).
+    // PostgREST quirk, verified live the same day: a filter on the
+    // embedded `users` relation does NOT restrict the parent rows — a
+    // non-matching coach_profiles row is still returned, with `users`
+    // null. That is why the merge loop below drops rows with no email:
+    // a null embed means the name did not match. The specialty filter
+    // is a plain column filter and restricts rows normally. Terms are
+    // wildcard-escaped (P2-5) so `%`/`_` cannot match every name.
+    const escapedTerm = escapeIlikeTerm(normalizedTerm);
     const [nameResult, specialtyResult] = await Promise.all([
       Trainw.api.run(
         sb.from('coach_profiles')
           .select('user_id, specialty, rating, users:users!coach_profiles_user_id_fkey(id, name, email)')
           .eq('is_active', true)
           .neq('approval_status', 'rejected')
-          .ilike('users.name', `%${normalizedTerm}%`)
+          .ilike('users.name', `%${escapedTerm}%`)
           .order('rating', { ascending: false })
           .limit(20),
         { context: 'search coaches by name', fallback: [] }
@@ -3473,7 +3543,7 @@ async function searchExistingCoaches(term) {
           .select('user_id, specialty, rating, users:users!coach_profiles_user_id_fkey(id, name, email)')
           .eq('is_active', true)
           .neq('approval_status', 'rejected')
-          .ilike('specialty', `%${normalizedTerm}%`)
+          .ilike('specialty', `%${escapedTerm}%`)
           .order('rating', { ascending: false })
           .limit(20),
         { context: 'search coach specialties', fallback: [] }
@@ -3509,7 +3579,7 @@ async function searchExistingCoaches(term) {
   } catch (error) {
     if (requestId !== coachSearchRequestId) return;
     coachSearchResults = [];
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (requestId === coachSearchRequestId) {
       coachSearchLoading = false;
@@ -3536,7 +3606,7 @@ async function addExistingCoachToGym(email, name, button) {
     await Promise.allSettled([loadCoaches(), loadGymCoaches(), loadDashboardStats()]);
     await searchExistingCoaches(coachSearchTerm);
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     Trainw.ui.setBusy(button, false);
   }
@@ -3601,14 +3671,21 @@ async function submitNewCoach() {
   const email = document.getElementById('new-coach-email')?.value.trim().toLowerCase() || '';
   const phone = document.getElementById('new-coach-phone')?.value.trim() || '';
   const specialty = document.getElementById('new-coach-specialty')?.value.trim() || '';
-  const rateValue = parseFloat(document.getElementById('new-coach-rate')?.value);
-  const rate = Number.isFinite(rateValue) ? rateValue : null;
+  // P2-2: the old parseFloat stored any number, including -500, in the
+  // invite metadata. Empty means "no rate set"; a rate that is present
+  // must be a valid price: > 0 and <= MAX_MONEY_DT.
+  const rateParsed = parseMoneyInput(document.getElementById('new-coach-rate')?.value);
+  const rate = rateParsed.empty ? null : rateParsed.value;
   const errEl = document.getElementById('add-coach-err');
   const btn = document.getElementById('btn-submit-coach');
 
   clearInlineError(errEl);
   if (!currentGymId) {
     showInlineError(errEl, t('errorMsg'));
+    return;
+  }
+  if (!rateParsed.valid || (rate !== null && rate <= 0)) {
+    showInlineError(errEl, 'Tarif invalide — utilisez un nombre positif (ex. 45).');
     return;
   }
   if (!name) {
@@ -3668,8 +3745,8 @@ async function submitNewCoach() {
     await loadAccessControlData();
     await Promise.allSettled([loadCoaches(), loadGymCoaches(), loadDashboardStats()]);
   } catch (error) {
-    showInlineError(errEl, error.message || t('errorMsg'));
-    toast(error.message || t('errorMsg'), 'err');
+    showInlineError(errEl, Trainw.api.userMessage(error, t('errorMsg')));
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (btn) btn.textContent = t('submitCoach');
     Trainw.ui.setBusy(btn, false);
@@ -3725,7 +3802,7 @@ async function saveEditClient(){
     const idx=allClients.findIndex(c=>c.id===userId);
     if(idx!==-1){allClients[idx].name=name;allClients[idx].phone=phone;const esd2=document.getElementById('edit-client-start-date')?.value;allClients[idx].profile={...allClients[idx].profile,membership_tier:membership,training_type:training,fitness_goal:training,age,membership_start_date:esd2||allClients[idx].profile.membership_start_date,membership_end_date:esd2?calcEndDate(esd2,membership):allClients[idx].profile.membership_end_date};}
     toast(t('savedOk')); document.getElementById('edit-client-modal').classList.remove('show'); renderClients();
-  }catch(err){errEl.textContent=err.message;errEl.classList.add('show');}
+  }catch(err){errEl.textContent=Trainw.api.userMessage(err, t('errorMsg'));errEl.classList.add('show');}
   finally{btn.textContent=t('saveChanges');btn.disabled=false;}
 }
 async function deleteClient(userId){
@@ -3734,7 +3811,7 @@ async function deleteClient(userId){
   if(inFlightActions.has(key)) return;
   inFlightActions.add(key);
   try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('client_profiles').delete().eq('user_id',userId).eq('gym_id', currentGymId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;allClients=allClients.filter(c=>c.id!==userId);renderClients();await loadDashboardStats();animateCounters();toast('Client supprimé');}
-  catch(e){toast(t('errorMsg')+': '+e.message,'err');}
+  catch(e){toast(Trainw.api.userMessage(e, t('errorMsg')),'err');}
   finally{inFlightActions.delete(key);}
 }
 
@@ -3930,7 +4007,7 @@ async function submitNewClient() {
     await Promise.allSettled([loadClients(), loadDashboardStats(), loadCheckIns()]);
     animateCounters();
   } catch (error) {
-    showInlineError(errEl, error.message || t('errorMsg'));
+    showInlineError(errEl, Trainw.api.userMessage(error, t('errorMsg')));
   } finally {
     if (btn) btn.textContent = t('submitClient');
     Trainw.ui.setBusy(btn, false);
@@ -4376,7 +4453,7 @@ async function loadGateSettingsCredentials() {
 
   gateSettingsCredentialsList = Array.isArray(result.data) ? result.data : [];
   renderGateSettingsCredentialsTable();
-  if (result.error) toast(result.error.message || t('errorMsg'), 'err');
+  if (result.error) toast(Trainw.api.userMessage(result.error, t('errorMsg')), 'err');
 }
 
 async function issueGateRfidCredential(clientId, button) {
@@ -4454,7 +4531,7 @@ async function issueGateRfidCredential(clientId, button) {
   } catch (error) {
     const message = error?.code === '23505'
       ? 'This RFID card is already assigned.'
-      : (error.message || t('errorMsg'));
+      : (Trainw.api.userMessage(error, t('errorMsg')));
     toast(message, 'err');
   } finally {
     if (button) {
@@ -4485,7 +4562,7 @@ async function revokeGateRfidCredential(credentialId, button) {
     toast('RFID revoked.');
     await loadGateSettingsCredentials();
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (button) {
       button.disabled = false;
@@ -4516,7 +4593,7 @@ async function loadGateSettingsAccessLog() {
 
   gateSettingsAccessLogList = Array.isArray(result.data) ? result.data : [];
   renderGateSettingsAccessLogTable();
-  if (result.error) toast(result.error.message || t('errorMsg'), 'err');
+  if (result.error) toast(Trainw.api.userMessage(result.error, t('errorMsg')), 'err');
 }
 
 function stopGateSettingsAccessLogAutoRefresh() {
@@ -4673,7 +4750,7 @@ async function loadClientCredentials() {
   );
   memberCredentialsList = Array.isArray(result.data) ? result.data : [];
   renderCredentialList();
-  if (result.error) toast(result.error.message || t('errorMsg'), 'err');
+  if (result.error) toast(Trainw.api.userMessage(result.error, t('errorMsg')), 'err');
 }
 
 function renderCredentialList() {
@@ -4764,7 +4841,7 @@ async function saveMemberCredential() {
     if (error.code === '23505') {
       showInlineError(errEl, 'Ce badge est déjà enregistré');
     } else {
-      showInlineError(errEl, error.message || t('errorMsg'));
+      showInlineError(errEl, Trainw.api.userMessage(error, t('errorMsg')));
     }
   } finally {
     if (btn) btn.textContent = 'Enregistrer';
@@ -4779,7 +4856,7 @@ async function toggleMemberCredential(credentialId, nextActive) {
     { context: 'toggle member credential', fallback: null }
   );
   if (result.error) {
-    toast(result.error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(result.error, t('errorMsg')), 'err');
     return;
   }
   await loadClientCredentials();
@@ -4792,7 +4869,7 @@ async function deleteMemberCredential(credentialId) {
     { context: 'delete member credential', fallback: null }
   );
   if (result.error) {
-    toast(result.error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(result.error, t('errorMsg')), 'err');
     return;
   }
   toast('Badge supprimé');
@@ -4813,7 +4890,7 @@ async function loadGateAccessLog() {
   );
   gateAccessLogList = Array.isArray(result.data) ? result.data : [];
   renderGateAccessLog();
-  if (result.error) toast(result.error.message || t('errorMsg'), 'err');
+  if (result.error) toast(Trainw.api.userMessage(result.error, t('errorMsg')), 'err');
 }
 
 function renderGateAccessLog() {
@@ -4930,8 +5007,8 @@ async function saveTerminalPin() {
     updateGateTerminalPreview();
     toast('PIN du terminal défini.');
   } catch (error) {
-    if (status) status.textContent = error.message || t('errorMsg');
-    else toast(error.message || t('errorMsg'), 'err');
+    if (status) status.textContent = Trainw.api.userMessage(error, t('errorMsg'));
+    else toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     Trainw.ui.setBusy(btn, false);
   }
@@ -5079,7 +5156,7 @@ async function sendMessage() {
     renderConversation(activeConvId);
     await updateMessageBadge();
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     Trainw.ui.setBusy(btn, false);
   }
@@ -5096,7 +5173,7 @@ async function deleteOwnMessage(messageId) {
     { context: 'delete message', fallback: null }
   );
   if (result.error) {
-    toast(result.error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(result.error, t('errorMsg')), 'err');
     return;
   }
   conversationMap[activeConvId] = (conversationMap[activeConvId] || []).filter(message => message.id !== messageId);
@@ -5164,7 +5241,7 @@ async function submitManualCheckIn() {
       toast(t('alreadyCheckedIn'), 'err');
       return;
     }
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (btn) btn.textContent = t('confirmCheckIn');
     Trainw.ui.setBusy(btn, false);
@@ -5312,7 +5389,7 @@ async function saveSettings() {
     updateGateTerminalPreview();
     toast(t('savedOk'));
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (btn) btn.textContent = t('saveChanges');
     Trainw.ui.setBusy(btn, false);
@@ -5323,12 +5400,19 @@ async function saveSettings() {
 // 12) and the old code silently fell back to hardcoded 150/400/1400 when
 // the input was empty or invalid — a blank field could overwrite a real
 // price with a made-up one. Returns { empty, value, valid }.
+// P2-2: absurd values are capped at MAX_MONEY_DT (100 000 DT — ~30x the
+// most expensive Tunisian gym annual plan); anything above is invalid.
+// Zero is allowed here because it means "none" in the new-client flow
+// (a member added with no payment yet stays pending); entry points that
+// take a real price reject <= 0 themselves (recordPayment, savePricing,
+// coach rates), and the DB CHECKs enforce the same bounds.
+const MAX_MONEY_DT = 100000;
 function parseMoneyInput(raw) {
   const text = String(raw ?? '').trim();
   if (!text) return { empty: true, value: null, valid: true };
   if (!/^\d+(\.\d{1,2})?$/.test(text)) return { empty: false, value: null, valid: false };
   const value = Number(text);
-  if (!Number.isFinite(value) || value < 0) return { empty: false, value: null, valid: false };
+  if (!Number.isFinite(value) || value < 0 || value > MAX_MONEY_DT) return { empty: false, value: null, valid: false };
   return { empty: false, value, valid: true };
 }
 
@@ -5338,10 +5422,12 @@ async function savePricing() {
   const quarterly = parseMoneyInput(document.getElementById('gym-price-quarterly')?.value);
   const annual = parseMoneyInput(document.getElementById('gym-price-annual')?.value);
   const status = document.getElementById('pricing-status');
-  // An invalid or negative price aborts the save; an empty field keeps the
-  // current server value (fetched below). No hardcoded defaults any more.
+  // An invalid, negative, zero or absurd price aborts the save; an empty
+  // field keeps the current server value (fetched below). No hardcoded
+  // defaults any more. P2-2: a list price of 0 DT is not a price — the
+  // audit step rejects <= 0 (empty means "keep", not "free").
   for (const parsed of [monthly, quarterly, annual]) {
-    if (!parsed.valid) {
+    if (!parsed.valid || (!parsed.empty && parsed.value <= 0)) {
       if (status) {
         status.textContent = 'Montant invalide — utilisez un nombre positif (ex. 150).';
         status.style.color = 'var(--err, #e5484d)';
@@ -5374,7 +5460,7 @@ async function savePricing() {
     }
     toast(t('savedOk'));
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (btn) btn.textContent = t('saveChanges');
     Trainw.ui.setBusy(btn, false);
@@ -5454,7 +5540,7 @@ async function triggerInactivityMessages() {
     populateMessagesList(document.getElementById('msg-contact-search')?.value || '');
     await updateMessageBadge();
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (btn) btn.textContent = 'Envoyer les Messages Auto';
     Trainw.ui.setBusy(btn, false);

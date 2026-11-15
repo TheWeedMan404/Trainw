@@ -59,6 +59,19 @@ operation run through `docs/DATA_REPAIR_RUNBOOK.md`. Migrations 003 and
 copied as a pattern. `scripts/data-repair-audit.sql` is the read-only
 dry-run; `public.data_repair_log` is where every repair is recorded.
 
+Two later migrations broke it again, and were caught by the P2-8 audit
+(2026-11-15): `20261115230000` deletes duplicate `check_ins` rows after
+the timezone backfill, and `20261115400000` deletes duplicate
+`personal_records` rows before adding a unique index — neither logged a
+row to `data_repair_log` (live: 0 rows). Both were exact-duplicate
+dedups, not silent loss of live rows, and both are already applied, so
+there is nothing to replay — but the rule is tightened from here on:
+**a migration that deletes user data must first INSERT one
+`data_repair_log` row per affected table (table, row count, reason,
+migration filename) in the same file, before the DELETE.** A dedup that
+cannot be logged this way does not ship in a migration; it goes through
+the runbook instead.
+
 ## 5. NOT VALID constraints are validated in the same migration (DB-35)
 
 Never add a `NOT VALID` constraint without validating it in the same file.
@@ -85,11 +98,22 @@ that migration (see DB-37, migration `20261115230000`, for the worked
 example). Never update a hash to silence the check without reviewing the
 definition diff.
 
-Known gap, closed in round 5 (migration `20261115300000`): the hash now
-covers a function's DEFAULT expressions via `proargdefaults`, so a
-default-only change is caught too. The frozen hash table was recomputed
-under the new formula; all 30 values changed (the added term alters the
-input even for helpers without defaults).
+Known gap, closed in round 5 (migration `20261115330000`): the hash now
+covers a function's DEFAULT expressions via `pg_get_function_arguments`
+(the `20261115300000` attempt used `proargdefaults::text`, which embeds
+callee OIDs and differs between clusters — that migration fails by design
+on a fresh apply and is repaired by `20261115330000`). The frozen hash
+table was recomputed under the new formula; all 30 values changed (the
+added term alters the input even for helpers without defaults).
+
+Live caution, found by the P2-8 audit (2026-11-15): the live assert can
+drift from the chain if it was ever patched by hand during a live apply —
+live expected `c90ab575…` for `membership_is_active_for_access` while the
+chain expected `3a70bd4a…`, although the live function was byte-identical
+to the chain's. The fix is a resync migration that re-creates the assert
+verbatim from the chain (`20261116140000`); never patch a hash on live
+without re-deriving it from the chain definition, and never update a hash
+to silence the check without reviewing the definition diff.
 
 ## 8. Verify on the throwaway cluster before committing
 
@@ -97,9 +121,11 @@ Every DB change is verified by applying the FULL chain end to end on a
 throwaway local Postgres cluster and running a behavioural assertion
 suite for the change (`/tmp/r4-harness.sh`, `/tmp/r4-tests*.sql`).
 `node --check` (or a transpile-only check) on every touched JS/TS file.
-The only apply failure ever seen is the by-design B5 return-type failure
-in `20261115050000` (repaired by `20261115120000`). A migration that has
-not been applied to the throwaway cluster has not been verified.
+The only apply failures ever seen are the two by-design ones:
+`20261115050000` (B5 return-type, repaired by `20261115120000`) and
+`20261115300000` (non-portable DB-61 hash, repaired by
+`20261115330000`). A migration that has not been applied to the throwaway
+cluster has not been verified.
 
 ## 9. Time is the gym's time (DB-37)
 
