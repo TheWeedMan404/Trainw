@@ -971,13 +971,30 @@ select.form-input option { background:var(--s2); }
 .expiring-alert { background:#3d2a05; border:1px solid #854f0b; color:#fac775; border-radius:12px; padding:12px 16px; font-size:13px; margin-bottom:20px; font-weight:500; }
 .expiring-alert.hidden { display:none; }
 .mobile-settings-shortcuts {
-  display:flex;
+  display:none;
   gap:12px;
   flex-wrap:wrap;
+  margin-bottom:20px;
+}
+@media (max-width:768px) {
+  .mobile-settings-shortcuts {
+    display:flex;
+  }
 }
 .settings-shortcut {
   flex:1 1 160px;
   text-align:center;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:10px 16px;
+  border:1px solid #e3e7ec;
+  border-radius:10px;
+  background:#f7f8fa;
+  color:#1f2937;
+  font-weight:600;
+  text-decoration:none;
+  cursor:pointer;
 }
 
 /* ── Skeleton loading states ── */
@@ -2940,6 +2957,7 @@ select.form-input option { background:var(--s2); }
 }
 
 #settings-page .branding-color-card {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2947,6 +2965,21 @@ select.form-input option { background:var(--s2); }
   border-radius: 14px;
   border: 1px solid var(--bd);
   background: var(--s2);
+  /* U9 item 10: the cards open the colour picker. */
+  cursor: pointer;
+}
+
+#settings-page .branding-color-card:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 2px;
+}
+
+#settings-page .branding-color-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 #settings-page .branding-color-chip {
@@ -3194,3 +3227,10 @@ select.form-input option { background:var(--s2); }
     flex-basis: 100%;
   }
 }
+
+/* U10: invalid plain-text time input */
+[data-time-input][aria-invalid="true"]{border-color:#e5484d}
+
+/* U10: card subtitles (reservations/sessions explanation) */
+.card-sub{color:var(--mt);font-size:13px;margin:0 0 12px}
+.schedule-list-head{margin:0 0 14px}

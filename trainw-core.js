@@ -269,14 +269,68 @@
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
       if (typeof value === 'string' && /^\d{2}:\d{2}/.test(value)) {
-        return value.slice(0, 5);
+        return formatTimeOfDay(value, lang);
       }
       return safeVal(null);
     }
     return date.toLocaleTimeString(localeForLang(lang || 'fr'), options || {
       hour: '2-digit',
       minute: '2-digit',
+      hour12: (lang || 'fr') === 'en',
     });
+  }
+
+
+  // U10: times are stored as "HH:MM" (24h). In English they must display
+  // 12-hour ("00:00" reads as an error; midnight is 12:00 AM), 24-hour
+  // in French/Arabic. parseTimeOfDay accepts what a user can type into a
+  // plain HH:MM field ("9", "9:00", "9h30", "2:00 PM", "14:30", "1430")
+  // and normalizes to "HH:MM", or returns null when unparseable.
+  function parseTimeOfDay(raw) {
+    if (raw === null || raw === undefined) return null;
+    let text = String(raw).trim().toLowerCase().replace(/[\u00a0 ]+/g, ' ');
+    if (!text) return null;
+    let ampm = null;
+    const ampmMatch = text.match(/\b(a\.?m\.?|p\.?m\.?)\s*$/);
+    if (ampmMatch) {
+      ampm = ampmMatch[1][0] === 'a' ? 'am' : 'pm';
+      text = text.slice(0, ampmMatch.index).trim();
+    }
+    text = text.replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+    let hours, minutes = 0;
+    const parts = text.match(/^(\d{1,2})[:h](\d{1,2})$/);
+    if (parts) {
+      hours = +parts[1];
+      minutes = +parts[2];
+    } else if (/^\d{3,4}$/.test(text)) {
+      hours = +text.slice(0, text.length - 2);
+      minutes = +text.slice(-2);
+    } else if (/^\d{1,2}$/.test(text)) {
+      hours = +text;
+      minutes = 0;
+    } else {
+      return null;
+    }
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes > 59) return null;
+    if (ampm) {
+      if (hours < 1 || hours > 12) return null;
+      if (ampm === 'pm' && hours !== 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+    } else if (hours > 23) {
+      return null;
+    }
+    return String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+  }
+
+  function formatTimeOfDay(value, lang) {
+    const normalized = parseTimeOfDay(value);
+    if (!normalized) return safeVal(null);
+    if ((lang || 'fr') !== 'en') return normalized;
+    const hours = +normalized.slice(0, 2);
+    const minutes = normalized.slice(3, 5);
+    const suffix = hours < 12 ? 'AM' : 'PM';
+    const hour12 = hours % 12 === 0 ? 12 : hours % 12;
+    return hour12 + ':' + minutes + ' ' + suffix;
   }
 
   function formatCurrencyDT(value) {
@@ -304,6 +358,31 @@
     }
     window.__trainwRecentToast = { key, at: now };
     return false;
+  }
+
+  // U9 item 10: gym branding colours (gyms.accent_color /
+  // surface_color / muted_color, nullable = theme default). Only a
+  // strict #rrggbb hex is ever applied — anything else falls back to
+  // the default, so a bad stored value can never inject CSS. Accepts
+  // either the DB column names or the short keys. Returns the resolved
+  // colours that were actually applied.
+  const GYM_BRANDING_DEFAULTS = { accent: '#C8F135', surface: '#0d0d0d', muted: '#555555' };
+  function resolveGymBrandingColour(value, fallback) {
+    return /^#[0-9a-fA-F]{6}$/.test(String(value || '')) ? String(value) : fallback;
+  }
+  function applyGymBranding(colours) {
+    const resolved = {
+      accent: resolveGymBrandingColour(colours?.accent_color ?? colours?.accent, GYM_BRANDING_DEFAULTS.accent),
+      surface: resolveGymBrandingColour(colours?.surface_color ?? colours?.surface, GYM_BRANDING_DEFAULTS.surface),
+      muted: resolveGymBrandingColour(colours?.muted_color ?? colours?.muted, GYM_BRANDING_DEFAULTS.muted),
+    };
+    const root = typeof document !== 'undefined' ? document.documentElement : null;
+    if (root) {
+      root.style.setProperty('--ac', resolved.accent);
+      root.style.setProperty('--s1', resolved.surface);
+      root.style.setProperty('--mt', resolved.muted);
+    }
+    return resolved;
   }
 
   function showToast(message, type) {
@@ -709,6 +788,34 @@
         backdrop.classList.remove('open');
       });
       document.body.classList.remove('trainw-panel-open');
+      // U10: course/session edit modals had only an X — Escape closed
+      // nothing. Closing a modal is the same as its X button (removing
+      // 'show'); forms are re-populated when re-opened.
+      document.querySelectorAll('.modal.show').forEach(function (modal) {
+        modal.classList.remove('show');
+      });
+    });
+
+    // U10: plain HH:MM time fields (data-time-input) normalize on change,
+    // so "9", "9h30" or "2:00 PM" become "09:00"/"14:00". Unparseable
+    // input is flagged, never silently stored.
+    document.addEventListener('change', function (event) {
+      const input = event.target && event.target.closest
+        ? event.target.closest('[data-time-input]')
+        : null;
+      if (!input) return;
+      const raw = input.value;
+      if (!raw.trim()) {
+        input.removeAttribute('aria-invalid');
+        return;
+      }
+      const normalized = parseTimeOfDay(raw);
+      if (normalized) {
+        input.value = normalized;
+        input.removeAttribute('aria-invalid');
+      } else {
+        input.setAttribute('aria-invalid', 'true');
+      }
     });
   }
 
@@ -1268,12 +1375,16 @@
     addDays,
     formatDate,
     formatTime,
+    parseTimeOfDay,
+    formatTimeOfDay,
     formatCurrencyDT,
     renderEffortBar,
     roleToPath,
     redirectToRole,
     installGlobalErrorHandlers,
     applyDocumentLanguage,
+    applyGymBranding,
+    GYM_BRANDING_DEFAULTS,
     openPanel,
     closePanel,
     emptyState,

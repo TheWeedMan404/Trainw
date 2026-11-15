@@ -584,3 +584,6 @@ canvas { transition: opacity 0.3s; }
 .tag-chip.is-new {
   border-style: dashed;
 }
+
+/* U10: invalid plain-text time input */
+[data-time-input][aria-invalid="true"]{border-color:#e5484d}

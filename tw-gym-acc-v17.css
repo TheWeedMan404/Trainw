@@ -409,6 +409,7 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 6px;
+  white-space:nowrap;
 }
 
 .panel-stat-value {

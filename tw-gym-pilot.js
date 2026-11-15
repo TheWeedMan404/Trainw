@@ -6,9 +6,15 @@
   let currentGymId=null;
   let currentLang=localStorage.getItem('trainw_lang')||'fr';
   const inFlightApprovals=new Set();
+  // U9 item 2: refresh() is fired from many places (load, nav clicks,
+  // window focus, post-toggle) and getContext() is slow, so an older
+  // in-flight refresh could finish AFTER a newer one and repaint the
+  // approval list with pre-toggle data. The generation counter drops
+  // every render from a superseded refresh.
+  let refreshSeq=0;
 
   const COPY={
-    fr:{pending:'En attente',confirmed:'Confirmee',completed:'Terminee',cancelled:'Annulee',pendingShort:'en attente',approved:'Approuve',approve:'Approuver',hold:'Mettre en attente',saved:'Mise a jour enregistree.',noBookings:'Aucune reservation a afficher.',noApprovals:'Aucun coach en attente.',queueEmpty:'Toutes les validations coach sont traitees.',nextSessions:'Prochaines reservations',pendingCount:'En attente',confirmedCount:'Confirmees',completedCount:'Terminees',cancelledCount:'Annulees'},
+    fr:{pending:'En attente',confirmed:'Confirmée',completed:'Terminée',cancelled:'Annulée',pendingShort:'en attente',approved:'Approuvé',approve:'Approuver',hold:'Mettre en attente',saved:'Mise à jour enregistrée.',noBookings:'Aucune réservation à afficher.',noApprovals:'Aucun coach en attente.',queueEmpty:'Toutes les validations coach sont traitées.',nextSessions:'Prochaines réservations',pendingCount:'En attente',confirmedCount:'Confirmées',completedCount:'Terminées',cancelledCount:'Annulées'},
     en:{pending:'Pending',confirmed:'Confirmed',completed:'Completed',cancelled:'Cancelled',pendingShort:'pending',approved:'Approved',approve:'Approve',hold:'Set pending',saved:'Update saved.',noBookings:'No bookings to show.',noApprovals:'No coach approval is pending.',queueEmpty:'All coach approvals are up to date.',nextSessions:'Upcoming bookings',pendingCount:'Pending',confirmedCount:'Confirmed',completedCount:'Completed',cancelledCount:'Cancelled'},
     ar:{pending:'قيد الانتظار',confirmed:'مؤكد',completed:'مكتمل',cancelled:'ملغي',pendingShort:'قيد الانتظار',approved:'موافق عليه',approve:'موافقة',hold:'تعليق',saved:'تم حفظ التحديث.',noBookings:'لا توجد حجوزات للعرض.',noApprovals:'لا يوجد مدرب بانتظار الموافقة.',queueEmpty:'تمت معالجة كل الموافقات.',nextSessions:'الحجوزات القادمة',pendingCount:'قيد الانتظار',confirmedCount:'مؤكد',completedCount:'مكتمل',cancelledCount:'ملغي'}
   };
@@ -54,6 +60,7 @@
 
   async function refresh(){
     currentLang=localStorage.getItem('trainw_lang')||currentLang;
+    const mySeq=++refreshSeq;
     const ctx=await Trainw.auth.getContext(sb,{expectedRoles:['gym_owner','gym','admin'],loginHref:LOGIN_HREF,redirectOnMismatch:false});
     if(!ctx.session||!ctx.profile)return;
     currentGymId=ctx.profile.gym_id||null;
@@ -71,6 +78,9 @@
 
     const sessions=Array.isArray(sessionsRes.data)?sessionsRes.data:[];
     const coaches=Array.isArray(coachesRes.data)?coachesRes.data:[];
+    // U9 item 2: a newer refresh started while this one was in flight —
+    // its render wins; this stale snapshot must not paint over it.
+    if(mySeq!==refreshSeq)return;
     // U6: a failed query returns the [] fallback — never render that as
     // "no bookings". Leave the previous content (or "Chargement…" on
     // first load) in place; api.run already toasted the error. Before
@@ -78,6 +88,28 @@
     // on Planning while the dashboard counted the sessions.
     if(!sessionsRes.error){renderBookingsOverview(sessions);renderScheduleOverview(sessions);}
     if(!coachesRes.error)renderCoachApproval(coaches);
+  }
+
+  // U9 item 2: paint the confirmed new status onto the clicked card at
+  // once — the update already succeeded, so the badge must not wait for
+  // the re-fetch (which can lag or be superseded). refresh() still runs
+  // afterwards as the source of truth for both approval containers.
+  function updateApprovalCardInPlace(profileId,status){
+    const approved=status==='approved';
+    document.querySelectorAll(`[data-approve-profile="${profileId}"]`).forEach(button=>{
+      const card=button.closest('.approval-card');
+      if(!card)return;
+      const pill=card.querySelector('.approval-pill');
+      if(pill){
+        pill.textContent=approved?copy('approved'):copy('pendingShort');
+        pill.classList.toggle('approved',approved);
+        pill.classList.toggle('pending',!approved);
+      }
+      button.textContent=approved?copy('hold'):copy('approve');
+      button.dataset.approvalStatus=approved?'pending':'approved';
+      button.classList.toggle('btn-secondary',approved);
+      button.classList.toggle('btn-primary',!approved);
+    });
   }
 
   async function updateCoachApproval(profileId,status,button){
@@ -89,6 +121,7 @@
       const result=await Trainw.api.run(sb.from('coach_profiles').update(payload).eq('id',profileId).eq('gym_id',currentGymId),{context:'gym pilot coach approval',fallback:null});
       if(result.error)return;
       Trainw.ui.showToast(copy('saved'),'success');
+      updateApprovalCardInPlace(profileId,status);
       if(typeof loadCoaches==='function')await Promise.allSettled([loadCoaches(),typeof loadDashboardStats==='function'?loadDashboardStats():Promise.resolve(),typeof loadSchedule==='function'?loadSchedule():Promise.resolve()]);
       await refresh();
     }finally{

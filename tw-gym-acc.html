@@ -85,7 +85,7 @@
     .staff-panel-avatar-meta{display:flex;flex-direction:column;gap:10px}
     .staff-panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
     .staff-schedule-grid{display:flex;flex-direction:column;gap:10px}
-    .staff-schedule-row{display:grid;grid-template-columns:110px 120px 1fr 1fr;gap:10px;align-items:center;padding:12px;border:1px solid var(--bd);border-radius:14px;background:var(--s2)}
+    .staff-schedule-row{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:center;padding:12px;border:1px solid var(--bd);border-radius:14px;background:var(--s2)}.staff-schedule-row input[type="time"]{min-width:0;width:100%}
     .staff-schedule-day{font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt)}
     .staff-schedule-toggle{display:flex;align-items:center;gap:8px;color:var(--txt)}
     .staff-schedule-row input[type="time"]:disabled{opacity:.45}
@@ -121,10 +121,10 @@
       <div class="nav-item" data-page="coaches"><span class="nav-icon"><i data-lucide="users"></i></span><span class="nav-label" data-i18n="navCoaches">Coachs</span></div>
       <div class="nav-item" data-page="clients"><span class="nav-icon"><i data-lucide="user-check"></i></span><span class="nav-label" data-i18n="navClients">Clients</span></div>
       <div class="nav-item" data-page="analytics"><span class="nav-icon"><i data-lucide="bar-chart-2"></i></span><span class="nav-label" data-i18n="navAnalytics">Analytiques</span></div>
-      <div class="nav-item" data-page="payments"><span class="nav-icon"><i data-lucide="banknote"></i></span><span class="nav-label">Paiements</span></div>
+      <div class="nav-item" data-page="payments"><span class="nav-icon"><i data-lucide="banknote"></i></span><span class="nav-label" data-i18n="navPayments">Paiements</span></div>
       <div class="nav-item" data-page="checkin"><span class="nav-icon"><i data-lucide="scan-line"></i></span><span class="nav-label" data-i18n="navCheckIn">Check-In</span></div>
       <div class="nav-item" data-page="messages"><span class="nav-icon"><i data-lucide="message-square"></i></span><span class="nav-label" data-i18n="navMessages">Messages</span></div>
-      <div class="nav-item" data-page="classes"><span class="nav-icon"><i data-lucide="dumbbell"></i></span><span class="nav-label" data-i18n="navClasses">Classes</span></div>
+      <div class="nav-item" data-page="classes"><span class="nav-icon"><i data-lucide="dumbbell"></i></span><span class="nav-label" data-i18n="navClasses">Cours</span></div>
       <div class="nav-item" data-page="settings"><span class="nav-icon"><i data-lucide="settings"></i></span><span class="nav-label" data-i18n="navSettings">Paramètres</span></div>
     </nav>
     <div class="sidebar-footer">
@@ -166,7 +166,7 @@
       </div>
       <div class="content-grid">
         <div class="card card-animated">
-          <div class="card-header"><h2 class="card-title">Bookings Overview</h2></div>
+          <div class="card-header"><h2 class="card-title" data-i18n="Bookings Overview">Bookings Overview</h2></div>
           <div id="gym-bookings-overview"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
         </div>
         <div class="card card-animated">
@@ -184,13 +184,13 @@
             <h1 class="page-title" data-i18n="navSchedule">Planning</h1>
             <p class="page-subtitle" data-i18n="schedSub">Toutes les séances de votre salle</p>
           </div>
-          <button class="btn-primary" id="btn-create-session" data-i18n="createSession">+ Creer une seance</button>
+          <button class="btn-primary" id="btn-create-session" data-i18n="createSession">+ Créer une séance</button>
           <button class="btn-primary hidden" id="btn-open-gym-class-modal" type="button">+ Nouveau cours</button>
         </div>
       </div>
       <div class="schedule-subtabs" id="schedule-subtabs">
-        <button class="schedule-subtab active" type="button" data-schedule-tab="sessions">SÃ©ances</button>
-        <button class="schedule-subtab" type="button" data-schedule-tab="classes">ModÃ¨les de Cours</button>
+        <button class="schedule-subtab active" type="button" data-schedule-tab="sessions">Séances</button>
+        <button class="schedule-subtab" type="button" data-schedule-tab="classes">Modèles de Cours</button>
       </div>
       <div class="schedule-tab-panel" id="schedule-tab-sessions">
       <div class="schedule-toolbar">
@@ -203,9 +203,14 @@
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h2 class="card-title">Vue Réservations</h2></div>
+        <div class="card-header"><h2 class="card-title" data-i18n="Vue Réservations">Vue Réservations</h2></div>
+        <p class="card-sub" data-i18n="reservationsCardSub">Les prochaines réservations à venir — le détail complet est dans la liste des séances ci-dessous.</p>
         <div id="schedule-booking-overview"><p class="empty-state" data-i18n="loading">Chargement…</p></div>
       </div>
+      <div class="schedule-list-head">
+          <h2 class="card-title" data-i18n="sessionsListTitle">Vue des séances</h2>
+          <p class="card-sub" data-i18n="sessionsListSub">Toutes les séances planifiées de la salle, avec filtres par statut.</p>
+        </div>
       <div class="session-cards-grid" id="schedule-list">
         <p class="empty-state" data-i18n="loading">Chargement…</p>
       </div>
@@ -304,7 +309,7 @@
     <!-- PAYMENTS (FE-19 / DB-36) -->
     <div id="payments-page" class="page hidden">
       <div class="page-header">
-        <h1 class="page-title">Paiements</h1>
+        <h1 class="page-title" data-i18n="navPayments">Paiements</h1>
         <p class="page-subtitle">Registre des paiements — les statuts et les revenus sont calculés à partir de ce registre, jamais saisis à la main.</p>
       </div>
 
@@ -359,8 +364,8 @@
       <div class="page-header">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
           <div>
-            <h1 class="page-title" data-i18n="classesTitle">Classes</h1>
-            <p class="page-subtitle" data-i18n="classesSub">Gerez vos classes et planifiez des seances a partir des templates.</p>
+            <h1 class="page-title" data-i18n="classesTitle">Cours &amp; Activités</h1>
+            <p class="page-subtitle" data-i18n="classesSub">Gérez vos cours et planifiez des séances à partir des modèles.</p>
           </div>
           <button class="btn-primary" id="btn-open-gym-class-modal-secondary" type="button" data-i18n="addClass">+ Nouvelle classe</button>
         </div>
@@ -414,7 +419,7 @@
           <section class="settings-tab-panel" id="settings-general-panel">
             <div class="settings-panel-head">
               <div class="settings-panel-label">General</div>
-              <p class="settings-panel-copy">Les informations principales de votre salle restent regroupÃ©es ici pour garder la page claire.</p>
+              <p class="settings-panel-copy">Les informations principales de votre salle restent regroupées ici pour garder la page claire.</p>
             </div>
           <div class="card settings-section">
         <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="gymInfo">Informations de la Salle</h2></div>
@@ -488,29 +493,32 @@
           </div>
         </div>
       </div>
-      <div class="card settings-section" data-settings-tab="branding">
+      <div class="card settings-section" data-settings-tab="branding" id="settings-branding-colours">
         <div class="settings-section-header"><div class="settings-section-icon"><i data-lucide="swatch-book"></i></div><h2 class="card-title">Couleurs</h2></div>
         <div class="branding-color-grid">
-          <div class="branding-color-card">
+          <div class="branding-color-card" data-branding-colour="accent" role="button" tabindex="0" title="Choisir la couleur Accent">
             <span class="branding-color-chip branding-color-chip-accent"></span>
             <div>
               <div class="branding-color-name">Accent</div>
-              <div class="branding-color-token">var(--ac)</div>
+              <div class="branding-color-token" id="branding-accent-token">#C8F135 · défaut</div>
             </div>
+            <input type="color" class="branding-color-input" id="branding-accent-input" value="#C8F135" aria-label="Couleur Accent">
           </div>
-          <div class="branding-color-card">
+          <div class="branding-color-card" data-branding-colour="surface" role="button" tabindex="0" title="Choisir la couleur Surface">
             <span class="branding-color-chip branding-color-chip-surface"></span>
             <div>
               <div class="branding-color-name">Surface</div>
-              <div class="branding-color-token">var(--s1)</div>
+              <div class="branding-color-token" id="branding-surface-token">#0d0d0d · défaut</div>
             </div>
+            <input type="color" class="branding-color-input" id="branding-surface-input" value="#0d0d0d" aria-label="Couleur Surface">
           </div>
-          <div class="branding-color-card">
+          <div class="branding-color-card" data-branding-colour="muted" role="button" tabindex="0" title="Choisir la couleur Muted">
             <span class="branding-color-chip branding-color-chip-muted"></span>
             <div>
               <div class="branding-color-name">Muted</div>
-              <div class="branding-color-token">var(--mt)</div>
+              <div class="branding-color-token" id="branding-muted-token">#555555 · défaut</div>
             </div>
+            <input type="color" class="branding-color-input" id="branding-muted-input" value="#555555" aria-label="Couleur Muted">
           </div>
         </div>
       </div>
@@ -847,7 +855,7 @@
         </div>
         <div class="msg-conversation">
           <div class="msg-empty-state" id="msg-empty-state">
-            <div class="msg-empty-icon">??</div>
+            <div class="msg-empty-icon">💬</div>
             <div class="msg-empty-title">Sélectionnez une conversation</div>
             <div class="msg-empty-sub">Choisissez un client à gauche pour commencer à échanger</div>
           </div>
@@ -895,7 +903,7 @@
       </div>
       <div class="form-group" style="flex:1;">
         <label class="form-label" data-i18n="sessTime">Heure</label>
-        <input type="time" class="form-input" id="edit-sess-time">
+        <input type="text" class="form-input" id="edit-sess-time" data-time-input inputmode="numeric" placeholder="09:00" autocomplete="off" maxlength="8">
       </div>
     </div>
     <div class="form-row">
@@ -924,6 +932,7 @@
     </div>
     <div class="alert aerr" id="edit-sess-err"></div>
     <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn-secondary modal-cancel" type="button" data-i18n="cancel">Annuler</button>
       <button class="btn-primary" id="btn-save-edit-session" style="flex:1;" data-i18n="saveChanges">Enregistrer</button>
       <button class="btn-danger" id="btn-delete-session">? <span data-i18n="deleteSession">Supprimer</span></button>
     </div>
@@ -1088,7 +1097,7 @@
     <div class="form-group"><label class="form-label" data-i18n="sessCategory">Catégorie</label><select class="form-input" id="sess-category"></select></div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessDate">Date</label><input type="date" class="form-input" id="sess-date"></div>
-      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessTime">Heure</label><input type="time" class="form-input" id="sess-time"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessTime">Heure</label><input type="text" class="form-input" id="sess-time" data-time-input inputmode="numeric" placeholder="09:00" autocomplete="off" maxlength="8"></div>
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="sessDuration">Durée (min)</label><input type="number" class="form-input" id="sess-duration" value="60" min="15" step="15"></div>
@@ -1103,7 +1112,10 @@
       <select class="form-input" id="sess-coach"><option value="" data-i18n="noCoachOpt">— Aucun coach —</option></select>
     </div>
     <div class="alert aerr" id="create-session-err"></div>
-    <button class="btn-primary" id="btn-submit-session" data-i18n="createSession">+ Créer une Séance</button>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn-secondary modal-cancel" type="button" data-i18n="cancel" style="flex:1">Annuler</button>
+      <button class="btn-primary" id="btn-submit-session" data-i18n="createSession" style="flex:1">+ Créer une Séance</button>
+    </div>
   </div>
 </div>
 <div class="trainw-panel-backdrop" id="client-panel-backdrop" data-panel-target="client-profile-panel"></div>
@@ -1185,6 +1197,7 @@
 
       <div class="form-group">
         <label class="form-label" data-i18n="scheduleTitle">Planning hebdomadaire</label>
+              <p class="settings-section-copy" data-i18n="staffScheduleNote">Activez les jours travaillés de ce membre et définissez ses horaires — les jours désactivés sont des jours de repos.</p>
         <div class="staff-schedule-grid" id="staff-schedule-grid"></div>
       </div>
 
@@ -1214,7 +1227,7 @@
     <div class="form-group"><label class="form-label" data-i18n="classDesc">Description</label><textarea class="form-input" id="class-desc" rows="3"></textarea></div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classDay">Jour</label><input class="form-input" id="class-day" type="text" placeholder="Lundi"></div>
-      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classTime">Heure</label><input class="form-input" id="class-time" type="time"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classTime">Heure</label><input class="form-input" id="class-time" type="text" data-time-input inputmode="numeric" placeholder="09:00" autocomplete="off" maxlength="8"></div>
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classDuration">Duree (min)</label><input class="form-input" id="class-duration" type="number" min="15" step="15" value="60"></div>
@@ -1222,7 +1235,10 @@
     </div>
     <div class="form-group"><label class="form-label" data-i18n="classCoach">Coach</label><select class="form-input" id="class-coach"><option value="">—</option></select></div>
     <div class="alert aerr" id="class-template-err"></div>
-    <button class="btn-primary" id="btn-save-class-template" data-i18n="submitClass">Enregistrer la classe</button>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn-secondary modal-cancel" type="button" data-i18n="cancel" style="flex:1">Annuler</button>
+      <button class="btn-primary" id="btn-save-class-template" data-i18n="submitClass" style="flex:1">Enregistrer la classe</button>
+    </div>
   </div>
 </div>
 
@@ -1256,7 +1272,7 @@
       </div>
       <div class="form-group" style="flex:1;">
         <label class="form-label" for="gym-class-time">Heure</label>
-        <input class="form-input" id="gym-class-time" type="time">
+        <input class="form-input" id="gym-class-time" type="text" data-time-input inputmode="numeric" placeholder="09:00" autocomplete="off" maxlength="8">
       </div>
     </div>
     <div class="form-row">
@@ -1274,7 +1290,10 @@
       <textarea class="form-input" id="gym-class-description" rows="3" placeholder="Objectif, intensite, public cible..."></textarea>
     </div>
     <div class="alert aerr" id="gym-class-err"></div>
-    <button class="btn-primary" id="btn-save-gym-class" type="button">Enregistrer le cours</button>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn-secondary modal-cancel" type="button" data-i18n="cancel" style="flex:1">Annuler</button>
+      <button class="btn-primary" id="btn-save-gym-class" type="button" style="flex:1">Enregistrer le cours</button>
+    </div>
   </div>
 </div>
 
