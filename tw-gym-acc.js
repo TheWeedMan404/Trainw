@@ -1882,11 +1882,27 @@ function openPaymentsFor(userId){
   showPage('payments');
   const sel=document.getElementById('pay-client-select');
   if(sel && userId) sel.value=userId;
+  refreshPayCreditBalance();
+}
+
+// DB-66: show the selected member's available credit on the payments
+// page (manager view). Silent on failure — the line just stays empty.
+// A staff user without the manager role sees nothing: the RPC only
+// returns a balance to the member themself or a gym manager.
+async function refreshPayCreditBalance(){
+  const el=document.getElementById('pay-credit-balance');
+  if(!el) return;
+  const clientId=document.getElementById('pay-client-select')?.value||'';
+  if(!clientId||!currentGymId){el.textContent='';return;}
+  const res=await Trainw.api.run(sb.rpc('get_member_credit_balance',{p_client_id:clientId,p_gym_id:currentGymId}),{context:'load member credit balance',fallback:0,toastOnError:false,silent:true});
+  const balance=Number(res.data)||0;
+  el.textContent=balance>0?`Crédit disponible : ${Trainw.formatCurrencyDT(balance)}`:'';
 }
 
 async function loadPayments(){
   if(!currentGymId) return;
   fillPaymentClientSelects();
+  refreshPayCreditBalance();
   const result=await Trainw.api.run(
     sb.from('payments').select('id,client_id,amount_total,amount_paid,amount_refunded,method,status,payment_type,period_months,period_start,period_end,paid_at,created_at,invoice_number,void_reason')
       .eq('gym_id',currentGymId).order('created_at',{ascending:false}).limit(50),
@@ -5644,6 +5660,7 @@ function bindUi() {
   document.getElementById('btn-save-gym-class')?.addEventListener('click', saveGymClass);
   document.getElementById('btn-submit-client')?.addEventListener('click', submitNewClient);
   document.getElementById('btn-record-payment')?.addEventListener('click', recordPayment);
+  document.getElementById('pay-client-select')?.addEventListener('change', refreshPayCreditBalance);
   document.getElementById('btn-request-freeze')?.addEventListener('click', requestFreeze);
   document.getElementById('btn-edit-client-record-payment')?.addEventListener('click', () => {
     const id=document.getElementById('edit-client-id')?.value;

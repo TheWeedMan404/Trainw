@@ -3454,3 +3454,63 @@ as duplicate_checkin_today).
 - Production deploy only on his word; accountant check on TEIF fields.
 - Frontend hook for the credit flow (call `apply_member_credit_to_session`
   after `book_coach_session`; balance display) — not built yet.
+
+## Round 8 — DB-66 credit frontend hook (2026-11-15)
+
+Frontend only: no SQL changes, no new migrations, no live writes. RPC
+signatures verified against migration `20261116090000` (not guessed):
+`apply_member_credit_to_session(p_session_id uuid)` RETURNS jsonb
+`{applied, remaining_owed, payment_status}`; `get_member_credit_balance(p_client_id, p_gym_id)`
+RETURNS numeric(12,2). `book_coach_session` RETURNS uuid (the new session
+id), so the apply call takes `r.data` directly.
+
+Client view (`tw-client-acc.js`):
+- `bookSelectedSession` now calls `applyCreditToBooking(r.data)` after a
+  successful booking, before the reload. The helper calls the apply RPC
+  with `{context:'apply member credit', fallback:null, toastOnError:false,
+  silent:true}` and ends with exactly one toast: applied > 0 → the
+  credit-applied toast (amount + remaining owed); applied 0 → the usual
+  booking-saved toast; a real failure → the credit-failed toast (the
+  booking is saved, settle at the gym).
+- Two benign apply failures are treated as no-ops (booking-saved toast):
+  free sessions have no payment row (`validation_error: session has no
+  payment to apply credit to` — `book_coach_session` only creates a
+  payment when price > 0), and a payment that is already settled has
+  nothing left to owe (`invalid_state: ... pending payment`). Matched on
+  the RPC exception text in `error.message`, the same pattern
+  `isJoinGymInvalidError` already uses for invite errors.
+- Balance display: `loadData` fetches `get_member_credit_balance` (self)
+  into `memberCreditBalance` (silent fallback 0, never blocks the
+  dashboard); `renderDashboardHero` appends ` · Crédit disponible : X DT`
+  to the membership copy when the balance is > 0, and shows nothing extra
+  at zero — same element/style as the membership display.
+- New `creditBalance` / `creditApplied` / `creditApplyFailed` keys in the
+  fr/en/ar `T` dicts.
+
+Manager view (`tw-gym-acc.js` + `tw-gym-acc.html`, payments page):
+- `refreshPayCreditBalance()` shows the selected member's available
+  credit (`Crédit disponible : X DT`, via `Trainw.formatCurrencyDT`) in a
+  `#pay-credit-balance` line under the record-payment form, empty at zero
+  or on failure. Refreshed on `loadPayments`, on `pay-client-select`
+  change, and in `openPaymentsFor`. A staff user without the manager role
+  sees nothing — the RPC only returns a balance to the member or a gym
+  manager, by design.
+
+Encoding note: `tw-client-acc.js` is double-encoded UTF-8 (76
+double-encoded é sequences; pre-existing, out of scope). The new French
+strings are written as proper UTF-8 and will render correctly; the
+neighbours' mojibake is unchanged. `tw-gym-acc.js`/`.html` are proper
+UTF-8 already.
+
+Verification: `node --check` clean on both touched JS files; `node
+env-config.js` + `npm run verify` pass ("Trainw verify: all checks
+passed", dummy Supabase values as in round 7); `dist/` contains the new
+RPC calls and the balance element. Not live-tested in a browser (no
+logged-in session in this VM) — the end-to-end click path (book →
+credit applied → hero balance drops) is the one remaining check, and it
+needs a real member login against the live project.
+
+Open: nothing in code. The P1-13 live-test agent's results and the two
+launch decisions (DB-66 CREDIT, P2-10 delete src/) are recorded in the
+round-7 appendix; this round closes the "frontend hook" open item listed
+there.
