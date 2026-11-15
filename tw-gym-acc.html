@@ -540,9 +540,9 @@
                 </div>
               </div>
               <div class="invite-grid">
-                <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="invite-member-name" placeholder="Sana Ben Ali" maxlength="100"></div>
-                <div class="form-group"><label class="form-label" data-i18n="emailLbl">Email</label><input type="email" class="form-input" id="invite-member-email" placeholder="sana@salle.tn"></div>
-                <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="invite-member-phone" placeholder="+216 92 123 456"></div>
+                <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="invite-member-name" placeholder="Prénom Nom" maxlength="100"></div>
+                <div class="form-group"><label class="form-label" data-i18n="emailLbl">Email</label><input type="email" class="form-input" id="invite-member-email" placeholder="exemple@email.com"></div>
+                <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="invite-member-phone" placeholder="+216 XX XXX XXX"></div>
                 <div class="form-group"><label class="form-label" data-i18n="roleLbl">Rôle</label><select class="form-input" id="invite-role-select"></select></div>
                 <div class="form-group"><label class="form-label" data-i18n="jobTitleLbl">Titre du poste</label><input type="text" class="form-input" id="invite-member-job-title" placeholder="Réceptionniste"></div>
                 <div class="form-group"><label class="form-label" data-i18n="departmentLbl">Département</label><input type="text" class="form-input" id="invite-member-department" placeholder="Front Desk"></div>
@@ -948,9 +948,9 @@
       <button class="coach-modal-tab" type="button" data-coach-modal-tab="search">Chercher un coach existant</button>
     </div>
     <div class="coach-modal-panel" id="coach-modal-panel-invite">
-    <div class="form-group"><label class="form-label" data-i18n="coachName">Nom Complet</label><input type="text" class="form-input" id="new-coach-name" placeholder="Ahmed Ben Ali" maxlength="100"></div>
-    <div class="form-group"><label class="form-label" data-i18n="coachEmail">Email</label><input type="email" class="form-input" id="new-coach-email" placeholder="ahmed@salle.tn"></div>
-    <div class="form-group"><label class="form-label" data-i18n="coachPhone">Téléphone</label><input type="text" class="form-input" id="new-coach-phone" placeholder="+216 92 123 456"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachName">Nom Complet</label><input type="text" class="form-input" id="new-coach-name" placeholder="Prénom Nom" maxlength="100"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachEmail">Email</label><input type="email" class="form-input" id="new-coach-email" placeholder="exemple@email.com"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachPhone">Téléphone</label><input type="text" class="form-input" id="new-coach-phone" placeholder="+216 XX XXX XXX"></div>
     <div class="form-group"><label class="form-label" data-i18n="coachSpecialty">Spécialité</label><input type="text" class="form-input" id="new-coach-specialty" placeholder="CrossFit, Yoga, Natation…"></div>
     <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif / Séance (DT)</label><input type="number" class="form-input" id="new-coach-rate" placeholder="45" min="0" max="100000" step="5"></div>
     <div class="alert aerr" id="add-coach-err"></div>
@@ -986,10 +986,10 @@
   <div class="modal-content" style="max-width:480px;">
     <button class="modal-close" id="close-add-client-modal" aria-label="Fermer">×</button>
     <h2 class="form-modal-title" data-i18n="addClientTitle">Ajouter un Client</h2>
-    <div class="form-group"><label class="form-label" data-i18n="clientName">Nom Complet</label><input type="text" class="form-input" id="new-client-name" placeholder="Sana Ben Ali"></div>
-    <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" id="new-client-email" placeholder="sana@salle.tn"></div>
+    <div class="form-group"><label class="form-label" data-i18n="clientName">Nom Complet</label><input type="text" class="form-input" id="new-client-name" placeholder="Prénom Nom"></div>
+    <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" id="new-client-email" placeholder="exemple@email.com"></div>
     <div class="form-group"><label class="form-label" data-i18n="clientAge">Âge</label><input type="number" class="form-input" id="new-client-age" placeholder="28" min="10" max="100"></div>
-    <div class="form-group"><label class="form-label" data-i18n="clientPhone">Téléphone</label><input type="text" class="form-input" id="new-client-phone" placeholder="+216 92 123 456"></div>
+    <div class="form-group"><label class="form-label" data-i18n="clientPhone">Téléphone</label><input type="text" class="form-input" id="new-client-phone" placeholder="+216 XX XXX XXX"></div>
     <div class="form-group">
       <label class="form-label" data-i18n="clientMembership">Type d'Abonnement</label>
       <select class="form-input" id="new-client-membership">
@@ -1031,7 +1031,7 @@
     <h2 class="form-modal-title">Modifier le Client</h2>
     <input type="hidden" id="edit-client-id">
     <div class="form-group"><label class="form-label">Nom Complet</label><input type="text" class="form-input" id="edit-client-name" maxlength="100"></div>
-    <div class="form-group"><label class="form-label">Téléphone</label><input type="text" class="form-input" id="edit-client-phone" placeholder="+216 92 123 456"></div>
+    <div class="form-group"><label class="form-label">Téléphone</label><input type="text" class="form-input" id="edit-client-phone" placeholder="+216 XX XXX XXX"></div>
     <div class="form-group"><label class="form-label">Âge</label><input type="number" class="form-input" id="edit-client-age" min="10" max="99"></div>
     <div class="form-group">
       <label class="form-label">Type d'Abonnement</label>

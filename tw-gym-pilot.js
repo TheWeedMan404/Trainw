@@ -71,9 +71,13 @@
 
     const sessions=Array.isArray(sessionsRes.data)?sessionsRes.data:[];
     const coaches=Array.isArray(coachesRes.data)?coachesRes.data:[];
-    renderBookingsOverview(sessions);
-    renderScheduleOverview(sessions);
-    renderCoachApproval(coaches);
+    // U6: a failed query returns the [] fallback — never render that as
+    // "no bookings". Leave the previous content (or "Chargement…" on
+    // first load) in place; api.run already toasted the error. Before
+    // this, a single failed refresh left "Aucune reservation a afficher."
+    // on Planning while the dashboard counted the sessions.
+    if(!sessionsRes.error){renderBookingsOverview(sessions);renderScheduleOverview(sessions);}
+    if(!coachesRes.error)renderCoachApproval(coaches);
   }
 
   async function updateCoachApproval(profileId,status,button){
@@ -110,4 +114,10 @@
 
   bind();
   refresh();
+  // U6: tw-gym-acc.js re-runs this after session create/edit/delete —
+  // the pilot renders the "Vue Réservations" card from its own refresh,
+  // not from loadSchedule, so without this the card kept its pre-creation
+  // empty state while the session list below it already showed the new
+  // sessions (and the dashboard KPI showed them too).
+  window.TrainwPilotRefresh=refresh;
 })();
