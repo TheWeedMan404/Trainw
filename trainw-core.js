@@ -73,8 +73,44 @@
     );
   }
 
+  // P2-8 (NX-15): raw Supabase/Postgres errors must never reach the user.
+  // normalizeError keeps .message verbatim — several call sites branch on
+  // it (isNoRowsError, isInvitationAuthLookupError, isJoinGymInvalidError,
+  // the loadClientReviews 'session_id' fallback) — so the display-safe
+  // text lives in a separate .userMessage property instead. api.run toasts
+  // the userMessage; pages that display an error directly should call
+  // Trainw.api.userMessage(error, fallback). The raw message is still
+  // logged to the console by api.run, so debugging loses nothing.
+  const RAW_BACKEND_ERROR_MARKERS = [
+    'violates', 'duplicate key', 'foreign key', 'row-level security',
+    'permission denied for', 'relation "', 'column "', 'does not exist',
+    'schema cache', 'pgrst', 'jwt', 'invalid input syntax',
+    'operator does not exist', 'could not find the',
+  ];
+  // Deliberate user-facing server messages (DB-38 gym/user delete guards):
+  // short, contain only a count, safe to show as-is.
+  const USER_FACING_ERROR_PREFIXES = ['cannot_delete_gym:', 'cannot_delete_user:'];
+
+  function sanitizeUserErrorMessage(message, fallbackMessage) {
+    const raw = typeof message === 'string' ? message.trim() : '';
+    const fallback = fallbackMessage || 'Unexpected error';
+    if (!raw) return fallback;
+    if (USER_FACING_ERROR_PREFIXES.some((prefix) => raw.startsWith(prefix))) return raw;
+    const lower = raw.toLowerCase();
+    if (RAW_BACKEND_ERROR_MARKERS.some((marker) => lower.includes(marker))) return fallback;
+    return raw;
+  }
+
+  function userMessage(error, fallbackMessage) {
+    if (error && typeof error.userMessage === 'string' && error.userMessage) return error.userMessage;
+    return sanitizeUserErrorMessage(error?.message, fallbackMessage);
+  }
+
   function normalizeError(error, fallbackMessage) {
-    if (error instanceof Error) return error;
+    if (error instanceof Error) {
+      if (!error.userMessage) error.userMessage = sanitizeUserErrorMessage(error.message, fallbackMessage);
+      return error;
+    }
 
     const message =
       (typeof error === 'string' && error) ||
@@ -87,6 +123,7 @@
     if (error?.details) normalized.details = error.details;
     if (error?.hint) normalized.hint = error.hint;
     if (error?.status) normalized.status = error.status;
+    normalized.userMessage = sanitizeUserErrorMessage(message, fallbackMessage);
     return normalized;
   }
 
@@ -164,7 +201,7 @@
       const normalized = normalizeError(error, config.context + ' failed');
       console.error('[Trainw]', config.context, normalized);
       if (!config.silent && config.toastOnError) {
-        showToast(normalized.message || 'Unexpected error', 'error');
+        showToast(normalized.userMessage || 'Unexpected error', 'error');
       }
       if (config.throwOnError) {
         throw normalized;
@@ -1246,6 +1283,7 @@
     installTextRepairObserver,
     api: {
       run,
+      userMessage,
     },
     auth: {
       getSession,

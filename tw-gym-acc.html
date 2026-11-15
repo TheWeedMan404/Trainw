@@ -312,7 +312,7 @@
         <div class="card-header"><h2 class="card-title">Enregistrer un paiement</h2></div>
         <div class="form-row">
           <div class="form-group" style="flex:2;"><label class="form-label">Membre</label><select class="form-input" id="pay-client-select"></select></div>
-          <div class="form-group" style="flex:1;"><label class="form-label">Montant (DT)</label><input type="number" class="form-input" id="pay-amount" min="0" step="0.01" placeholder="150.00"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Montant (DT)</label><input type="number" class="form-input" id="pay-amount" min="0" max="100000" step="0.01" placeholder="150.00"></div>
           <div class="form-group" style="flex:1;"><label class="form-label">Moyen de paiement</label><select class="form-input" id="pay-method"><option value="cash" selected>Espèces</option><option value="card">Carte bancaire</option><option value="bank_transfer">Virement bancaire</option></select></div>
           <div class="form-group" style="flex:1;"><label class="form-label">Période</label><select class="form-input" id="pay-period"><option value="1" selected>1 mois</option><option value="3">3 mois</option><option value="12">12 mois</option><option value="0">Séance / sans période</option></select></div>
         </div>
@@ -418,7 +418,7 @@
             </div>
           <div class="card settings-section">
         <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title" data-i18n="gymInfo">Informations de la Salle</h2></div>
-        <div class="form-group"><label class="form-label" data-i18n="gymNameLbl">Nom de la Salle</label><input type="text" class="form-input" id="gym-name-input"></div>
+        <div class="form-group"><label class="form-label" data-i18n="gymNameLbl">Nom de la Salle</label><input type="text" class="form-input" id="gym-name-input" maxlength="100"></div>
         <div class="form-group"><label class="form-label" data-i18n="addressLbl">Adresse</label><input type="text" class="form-input" id="gym-address-input"></div>
         <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="gym-phone-input"></div>
         <div class="form-group"><label class="form-label" data-i18n="descLbl">Description</label><textarea class="form-input" id="gym-desc-input" rows="3"></textarea></div>
@@ -435,9 +435,9 @@
         <div class="settings-section-header"><div class="settings-section-icon">?</div><h2 class="card-title">Tarifs de la Salle</h2></div>
         <p style="font-size:13px;color:var(--mt);margin-bottom:16px;">Ces tarifs seront utilisés pour le suivi des revenus et les rapports.</p>
         <div class="form-row">
-          <div class="form-group" style="flex:1;"><label class="form-label">Mensuel (DT)</label><input type="number" class="form-input" id="gym-price-monthly" placeholder="150" min="0" step="5"></div>
-          <div class="form-group" style="flex:1;"><label class="form-label">Trimestriel (DT)</label><input type="number" class="form-input" id="gym-price-quarterly" placeholder="400" min="0" step="5"></div>
-          <div class="form-group" style="flex:1;"><label class="form-label">Annuel (DT)</label><input type="number" class="form-input" id="gym-price-annual" placeholder="1400" min="0" step="10"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Mensuel (DT)</label><input type="number" class="form-input" id="gym-price-monthly" placeholder="150" min="0" max="100000" step="5"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Trimestriel (DT)</label><input type="number" class="form-input" id="gym-price-quarterly" placeholder="400" min="0" max="100000" step="5"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Annuel (DT)</label><input type="number" class="form-input" id="gym-price-annual" placeholder="1400" min="0" max="100000" step="10"></div>
         </div>
         <button class="btn-primary" id="btn-save-pricing">Enregistrer les Tarifs</button>
         <div class="save-status" id="pricing-status"></div>
@@ -540,7 +540,7 @@
                 </div>
               </div>
               <div class="invite-grid">
-                <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="invite-member-name" placeholder="Sana Ben Ali"></div>
+                <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="invite-member-name" placeholder="Sana Ben Ali" maxlength="100"></div>
                 <div class="form-group"><label class="form-label" data-i18n="emailLbl">Email</label><input type="email" class="form-input" id="invite-member-email" placeholder="sana@salle.tn"></div>
                 <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="invite-member-phone" placeholder="+216 92 123 456"></div>
                 <div class="form-group"><label class="form-label" data-i18n="roleLbl">Rôle</label><select class="form-input" id="invite-role-select"></select></div>
@@ -599,7 +599,7 @@
               <input type="hidden" id="role-builder-id">
               <input type="hidden" id="role-builder-code">
               <input type="hidden" id="role-builder-portal" value="admin">
-              <div class="form-group"><label class="form-label" data-i18n="roleNameLbl">Nom du rôle</label><input type="text" class="form-input" id="role-builder-name" placeholder="Front Desk"></div>
+              <div class="form-group"><label class="form-label" data-i18n="roleNameLbl">Nom du rôle</label><input type="text" class="form-input" id="role-builder-name" placeholder="Front Desk" maxlength="100"></div>
               <div class="form-group">
                 <label class="form-label" data-i18n="portalLbl">Portail</label>
                 <div class="role-portal-toggle" id="role-builder-portal-toggle">
@@ -886,7 +886,7 @@
     <input type="hidden" id="edit-sess-id">
     <div class="form-group">
       <label class="form-label" data-i18n="sessName">Nom de la Séance</label>
-      <input type="text" class="form-input" id="edit-sess-name">
+      <input type="text" class="form-input" id="edit-sess-name" maxlength="100">
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1;">
@@ -948,11 +948,11 @@
       <button class="coach-modal-tab" type="button" data-coach-modal-tab="search">Chercher un coach existant</button>
     </div>
     <div class="coach-modal-panel" id="coach-modal-panel-invite">
-    <div class="form-group"><label class="form-label" data-i18n="coachName">Nom Complet</label><input type="text" class="form-input" id="new-coach-name" placeholder="Ahmed Ben Ali"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachName">Nom Complet</label><input type="text" class="form-input" id="new-coach-name" placeholder="Ahmed Ben Ali" maxlength="100"></div>
     <div class="form-group"><label class="form-label" data-i18n="coachEmail">Email</label><input type="email" class="form-input" id="new-coach-email" placeholder="ahmed@salle.tn"></div>
     <div class="form-group"><label class="form-label" data-i18n="coachPhone">Téléphone</label><input type="text" class="form-input" id="new-coach-phone" placeholder="+216 92 123 456"></div>
     <div class="form-group"><label class="form-label" data-i18n="coachSpecialty">Spécialité</label><input type="text" class="form-input" id="new-coach-specialty" placeholder="CrossFit, Yoga, Natation…"></div>
-    <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif / Séance (DT)</label><input type="number" class="form-input" id="new-coach-rate" placeholder="45" min="0" step="5"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif / Séance (DT)</label><input type="number" class="form-input" id="new-coach-rate" placeholder="45" min="0" max="100000" step="5"></div>
     <div class="alert aerr" id="add-coach-err"></div>
     <button class="btn-primary" id="btn-submit-coach" data-i18n="submitCoach">Ajouter le Coach</button>
     </div>
@@ -975,7 +975,7 @@
     <input type="hidden" id="edit-coach-profile-id">
     <div class="form-group"><label class="form-label">Nom</label><input type="text" class="form-input" id="edit-coach-name2" disabled style="opacity:.5;"></div>
     <div class="form-group"><label class="form-label" data-i18n="coachSpecialty">Spécialité</label><input type="text" class="form-input" id="edit-coach-specialty2" placeholder="CrossFit, Yoga, Natation…"><div class="tag-suggestions" id="edit-coach-tag-suggestions"></div></div>
-    <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif par Séance (DT)</label><input type="number" class="form-input" id="edit-coach-rate2" min="0" step="5"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif par Séance (DT)</label><input type="number" class="form-input" id="edit-coach-rate2" min="0" max="100000" step="5"></div>
     <div class="form-group"><label class="form-label">Bio</label><textarea class="form-input" id="edit-coach-bio2" rows="3" placeholder="Expérience, certifications…"></textarea></div>
     <button class="btn-primary" id="btn-save-edit-coach" data-i18n="saveChanges">Enregistrer</button>
   </div>
@@ -1017,7 +1017,7 @@
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="membershipStart">Début Abonnement</label><input type="date" class="form-input" id="new-client-start-date"></div>
-      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="pricePaid">Montant Payé (DT)</label><input type="number" class="form-input" id="new-client-price" placeholder="150" min="0" step="5"></div>
+      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="pricePaid">Montant Payé (DT)</label><input type="number" class="form-input" id="new-client-price" placeholder="150" min="0" max="100000" step="5"></div>
     </div>
     <div class="alert aerr" id="add-client-err"></div>
     <button class="btn-primary" id="btn-submit-client" data-i18n="submitClient">Ajouter le Client</button>
@@ -1030,7 +1030,7 @@
     <button class="modal-close" id="close-edit-client-modal" aria-label="Fermer">×</button>
     <h2 class="form-modal-title">Modifier le Client</h2>
     <input type="hidden" id="edit-client-id">
-    <div class="form-group"><label class="form-label">Nom Complet</label><input type="text" class="form-input" id="edit-client-name"></div>
+    <div class="form-group"><label class="form-label">Nom Complet</label><input type="text" class="form-input" id="edit-client-name" maxlength="100"></div>
     <div class="form-group"><label class="form-label">Téléphone</label><input type="text" class="form-input" id="edit-client-phone" placeholder="+216 92 123 456"></div>
     <div class="form-group"><label class="form-label">Âge</label><input type="number" class="form-input" id="edit-client-age" min="10" max="99"></div>
     <div class="form-group">
@@ -1070,7 +1070,7 @@
   <div class="modal-content" style="max-width:520px;">
     <button class="modal-close" id="close-session-modal" aria-label="Fermer">×</button>
     <h2 class="form-modal-title" data-i18n="createSessionTitle">Créer une Séance</h2>
-    <div class="form-group"><label class="form-label" data-i18n="sessName">Nom de la Séance</label><input type="text" class="form-input" id="sess-name" placeholder="Ex: HIIT Matin, Yoga Débutant…"></div>
+    <div class="form-group"><label class="form-label" data-i18n="sessName">Nom de la Séance</label><input type="text" class="form-input" id="sess-name" placeholder="Ex: HIIT Matin, Yoga Débutant…" maxlength="100"></div>
     <div class="form-group">
       <label class="form-label">Base sur un cours <span style="color:var(--mt);font-size:10px;">(optionnel)</span></label>
       <select class="form-input" id="sess-based-class">
@@ -1174,7 +1174,7 @@
       </div>
 
       <div class="staff-panel-grid">
-        <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="staff-panel-name"></div>
+        <div class="form-group"><label class="form-label" data-i18n="fullNameLbl">Nom complet</label><input type="text" class="form-input" id="staff-panel-name" maxlength="100"></div>
         <div class="form-group"><label class="form-label" data-i18n="emailLbl">Email</label><input type="email" class="form-input" id="staff-panel-email" readonly></div>
         <div class="form-group"><label class="form-label" data-i18n="phoneLbl">Téléphone</label><input type="text" class="form-input" id="staff-panel-phone"></div>
         <div class="form-group"><label class="form-label" data-i18n="jobTitleLbl">Titre du poste</label><input type="text" class="form-input" id="staff-panel-job-title"></div>
@@ -1189,7 +1189,7 @@
       </div>
 
       <div class="staff-panel-grid">
-        <div class="form-group"><label class="form-label" data-i18n="emergencyContactNameLbl">Contact d’urgence — nom</label><input type="text" class="form-input" id="staff-panel-emergency-name"></div>
+        <div class="form-group"><label class="form-label" data-i18n="emergencyContactNameLbl">Contact d’urgence — nom</label><input type="text" class="form-input" id="staff-panel-emergency-name" maxlength="100"></div>
         <div class="form-group"><label class="form-label" data-i18n="emergencyContactPhoneLbl">Contact d’urgence — téléphone</label><input type="text" class="form-input" id="staff-panel-emergency-phone"></div>
       </div>
 
@@ -1210,7 +1210,7 @@
     <button class="modal-close" id="close-class-template-modal" aria-label="Fermer">×</button>
     <h2 class="form-modal-title" data-i18n="addClassTitle">Nouvelle classe</h2>
     <input type="hidden" id="class-template-id">
-    <div class="form-group"><label class="form-label" data-i18n="className">Nom de la classe</label><input class="form-input" id="class-name" type="text"></div>
+    <div class="form-group"><label class="form-label" data-i18n="className">Nom de la classe</label><input class="form-input" id="class-name" type="text" maxlength="100"></div>
     <div class="form-group"><label class="form-label" data-i18n="classDesc">Description</label><textarea class="form-input" id="class-desc" rows="3"></textarea></div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="classDay">Jour</label><input class="form-input" id="class-day" type="text" placeholder="Lundi"></div>
@@ -1233,7 +1233,7 @@
     <input type="hidden" id="gym-class-id">
     <div class="form-group">
       <label class="form-label" for="gym-class-name">Nom du cours</label>
-      <input class="form-input" id="gym-class-name" type="text" placeholder="Ex: HIIT Matin">
+      <input class="form-input" id="gym-class-name" type="text" placeholder="Ex: HIIT Matin" maxlength="100">
     </div>
     <div class="form-group">
       <label class="form-label" for="gym-class-coach">Coach</label>

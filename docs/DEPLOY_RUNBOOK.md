@@ -185,3 +185,45 @@ are not configured — the values are never printed) and the usual
 strings, which carry no credential material. Keep it that way: if a
 future debug log needs a token, log a truncated hash or the first 4
 characters, never the value.
+
+## 9. P2-8 named checks (money and data hygiene, 2026-11-15)
+
+One check per P2-8 item. Run the live SQL checks through the Management
+API `POST /v1/projects/{ref}/database/query`; run the chain check on the
+throwaway local Postgres cluster (see `docs/MIGRATION_CONVENTIONS.md`
+§8). The Next.js items (NX-10/13/15/16) are SUPERSEDED — `src/` was
+deleted in round 7 (P2-10) — so each has a vanilla-frontend equivalent
+check below instead.
+
+| Item | Named check | Where |
+| --- | --- | --- |
+| NX-10 (vanilla) | Owner dashboard has working edit/delete for clients, coaches, classes, custom roles, and a staff-revoke action (`revoke_gym_membership`); deleting a client/coach revokes the membership first. Verify by clicking each action in the owner portal on TEST Gym. | `tw-gym-acc.js` (`deleteClient`, `deleteCoach`, `deleteGymClass`, `deleteCustomRole`, `revokeMembership`) |
+| NX-13 (vanilla) | Every submit handler disables its button while the request is in flight (`Trainw.ui.setBusy` / `setBtnBusy` / `setCoachBusy` / direct `disabled = true`) and re-enables it in `finally`. Grep: `setBusy\|disabled = true` across `tw-*.js` — no submit handler without one. | `tw-gym-acc.js`, `tw-client-acc.js`, `tw-coach-acc.js`, `tw-login.js` |
+| NX-15 (vanilla) | No user-facing toast/inline error shows a raw Supabase/Postgres message. `Trainw.api.run` toasts `normalized.userMessage`; all display sites call `Trainw.api.userMessage(error, fallback)`. Grep: `showToast(.*\.message\|toast(.*\.message` must return nothing. Unit check: `~/workspace/.p28-scratch/test-sanitize.js` (raw RLS/FK/unique/schema-cache messages → generic; `cannot_delete_*:` guard messages and app-authored messages pass through). | `trainw-core.js` (`sanitizeUserErrorMessage`), `tw-gym-acc.js`, `tw-client-acc.js`, `tw-coach-acc.js`, `tw-role.js` |
+| NX-16 (vanilla) | Names capped at 100 chars (`maxlength="100"` on every name input in `tw-*-acc.html` + `tw-login.html`); class/session capacity validated ≥ 1 client-side (`saveGymClass`, `submitNewSession`, `saveEditSession`); prices validated > 0 and ≤ 100000 (P2-2); `gym_classes_capacity_check` exists and is validated live. | `tw-gym-acc.html`, `tw-gym-acc.js`, migration `20261116150000` |
+| DB-35 | `SELECT conname FROM pg_constraint WHERE NOT convalidated AND connamespace = 'public'::regnamespace;` returns 0 rows, live and on the fresh chain. `assert_no_unvalidated_constraints()` passes. | Live + fresh chain |
+| DB-38 | Gym delete guard triggers `trg_prevent_gym_delete_with_data` and `trg_prevent_user_delete_with_payments` exist and are enabled live. Full soft-delete for gyms/users is NOT built — it needs a user decision (see §9 note below). | Migration `20261115240000` |
+| DB-39 | All 7 `idx_phase1b_*` indexes exist live (`pg_indexes`, `indexname LIKE 'idx_phase1b_%'`). | Migration (round 2) |
+| DB-41 | No public table carries the blanket `authenticated` grant; grants are per-table (`assert_all_tables_have_rls()` passes live). | Migration `20261115170000` |
+| DB-50 | No migration after round 4 deletes user data without first logging to `data_repair_log` (see `docs/MIGRATION_CONVENTIONS.md` §4 for the two unlogged exceptions, `20261115230000` and `20261115400000`). | `docs/MIGRATION_CONVENTIONS.md` §4 |
+| DB-51 | Foundation file is `20260408180000_trainw_001_foundation.sql` and the v18 file is `20260419000000_trainw_013_v18_additions.sql` (no duplicate "012"). Live `supabase migration list` cannot be checked from here — the chain is applied via the Management API, which does not populate the CLI version table; the substitute is the fresh-chain apply (67 OK + the 2 known by-design failures). | `supabase/migrations/` |
+| DB-52 | No migration after `20260408183000` (004) drops policies in a loop; policy changes are per-table, additive. Grep: `DROP POLICY` appears only in 004/005. | `docs/MIGRATION_CONVENTIONS.md` §3 |
+| DB-61 | `SELECT assert_rls_helpers_frozen();` passes live and on the fresh chain (resynced 2026-11-15, migration `20261116140000`). | Migration `20261116140000` |
+| DB-62 | `handle_new_user` has no blanket `EXCEPTION WHEN OTHERS` handler — a failed profile creation fails the signup loudly. Verify: `prosrc` contains no `EXCEPTION WHEN OTHERS`. | Migration `20261115270000` |
+| DB-32 | `users_role_check` includes `gym_admin` and `staff`: `CHECK ((role = ANY (ARRAY['client','coach','gym_owner','gym','admin','gym_admin','staff'])))`. | Live `pg_constraint` |
+| DB-34 | `ensure_gym_default_roles` is insert-only: no `DELETE FROM` in its body; roles seeded `ON CONFLICT DO NOTHING`. | Migration `20261115080000` |
+| Staging push | **DEFERRED to P2-7.** There is no staging project yet; a staging push cannot be run in this round. The substitute is the fresh-chain apply on the local Postgres cluster (67 OK + 2 by-design failures). | P2-7 |
+
+**DB-38 note (needs the user).** Gym/user deletion is still hard: the
+owner portal deletes a client/coach by revoking the membership, deleting
+the profile, then deleting the `users` row — which cascades to that
+user's messages (the other party's copy included). The audit's minimum
+is live (gym delete is forbidden while tenant data exists; user delete
+with payments fails with a clear error). True soft-delete
+(`is_active`/archived flags + an admin purge) is not a small safe change:
+it needs a product decision on what a deactivated gym/user can still do
+(can they sign in? do they keep history? does re-signup reactivate them
+— `membership_is_active_for_access` already honours `users.is_active`,
+but `handle_new_user` would not reset it), plus nullable
+`messages.sender_id`/`receiver_id` and chat UI for a deleted
+counterpart. Do not build it without his call.
