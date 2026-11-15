@@ -3037,3 +3037,225 @@ missing); severities follow the audit report's findings table.
 - **Full type-check + `next build`:** now DONE in round 6 (tsc clean,
   vitest 33/33, eslint clean, next build green, in a scratch copy).
   Re-run at deploy time after any further change.
+
+---
+
+## Live tests (P1-13) — 2026-11-15 ~08:00–08:50 Tunis
+
+Run on the real Supabase project **Trainw (`caylegavnekidhytlswo`, eu-west-2)** with the
+user's explicit approval (2026-11-15 07:53). Live DB was EMPTY and pre-launch; no
+production data exists. Harness: `/tmp/live-matrix.py`, `/tmp/live-retest.py`,
+`/tmp/live-retest2.py` (+ ad-hoc probes); reports `/tmp/live-matrix-report.json`,
+`/tmp/live-retest-report.json`, `/tmp/live-retest2-report.json`.
+Test users/gyms: two gyms `TEST — Gym A` (`28b82a5f-8e2d-4ce5-8a80-5a6428820f8c`)
+and `TEST — Gym B` (`cc1b019a-1680-4414-a4ca-468aabe70f2b`), 10 users
+`test-{a,b}-{owner,manager,staff,coach,client}@trainw.live` (fresh random
+passwords in `/tmp/live-test-users.json`, chmod 600 — never commit/print),
+plus invitees `test-invitee@`, `test-invitee2@trainw.live` and
+`trainw-live-test-xyz123@gmail.com`. Test data LEFT IN PLACE for verification;
+cleanup steps at the end of this section.
+
+### Method notes (traps for the next live run)
+
+- SQL route: Management API `POST /v1/projects/{ref}/database/query` via
+  `sb-api.py` — one call = one transaction (rolls back on error); a file that
+  fails mid-way must be split (B5's prefix was applied separately). `sb-api.py`
+  takes `@file`, NOT `@-` (stdin) — it opens the argument as a filename.
+- HTTP to the project host (`*.supabase.co`) MUST go through `curl`: Python
+  `urllib` hits truncated chunked responses through this egress proxy
+  (`RemoteDisconnected` / `IncompleteRead`). All harness HTTP was rewritten
+  to curl with retries.
+- Supabase CLI 3.1.0 cannot authenticate here (rejects the vault surrogate
+  token format before any network call). Edge functions were deployed via the
+  Management API multipart deploy endpoint (`/tmp/deploy-functions.py`).
+
+### Migration apply — 60 files, 58 OK + 2 by-design failures
+
+Identical to the local chain: `20261115050000` (B5 return-type) and
+`20261115300000` (DB-61 non-portable hash) fail by design, both repaired by
+later migrations. Live DB after apply: **47 tables, 355 functions, 127
+policies, 7 extensions**; `assert_rls_helpers_frozen()`,
+`assert_no_unvalidated_constraints()`, `assert_all_tables_have_rls()` all pass.
+Plus repair migration `20261115190000` (Phase 1g, see below) — chain is now
+61 files.
+
+### Edge functions — all 4 ACTIVE
+
+`gate-checkin`, `gate-terminal-auth`, `gate-feed` (`verify_jwt=false`),
+`ai-proxy` (`verify_jwt=true`) — all ACTIVE, versions bumped to v4 after the
+Phase 1g redeploy (SERVICE_ROLE_KEY fix). `verify_jwt` matches
+`supabase/config.toml` (GT-09 verified live).
+
+### Secrets / config set live
+
+- Edge secrets set via Management API: `GATE_TERMINAL_PEPPER` (fresh random),
+  `APP_ORIGINS` (`https://trainw.vercel.app`), `TURNSTILES_ENABLED` (see below),
+  `SERVICE_ROLE_KEY` (alias of the platform-injected key — needed until the
+  Phase 1g code fix shipped; kept as fallback).
+- Auth config (GET/PATCH `/config/auth`): `jwt_exp = 3600` (1h, already the
+  runbook §8 target), `refresh_token_rotation_enabled = true` (already ON),
+  `mailer_autoconfirm = false`, `security_captcha_enabled = false`.
+  Redirect allowlist set: `https://trainw.vercel.app/tw-login.html`,
+  `https://trainw.vercel.app/auth/reset-password`.
+- **No custom SMTP is configured** (`smtp_host` null) — the project uses
+  Supabase's default mailer, whose rate limit blocked the password-reset
+  retest (R8, 429). Recommend a custom SMTP before real users.
+- **Realtime Authorization NOT flipped** (deliberate): `private_only` left
+  null — setting it would break the dashboards and gate terminal, which
+  subscribe to PUBLIC channels with no private-channel config and no
+  `realtime.messages` RLS policies. `postgres_changes` already enforces
+  source-table RLS server-side. Flipping needs a code change first.
+- **Missing / blocked:** `ANTHROPIC_API_KEY` (ai-proxy fails closed without
+  it — F3 proves it); the DB GUC `trainw.member_credential_pepper` CANNOT be
+  set via the API (ALTER DATABASE / ALTER ROLE SET denied 42501; Management
+  API config rejects custom GUC keys; ALTER SYSTEM impossible inside a
+  transaction) — credential enrolment/validation fails closed live until the
+  pepper moves to another source (Vault / edge secret) by a code change.
+  CAPTCHA keys: **no longer needed for launch** (user decision 2026-11-15).
+
+### Turnstile flag protocol (important)
+
+`TURNSTILES_ENABLED=false` is the user's standing decision. For the gate
+matrix it was temporarily set to `true` (edge secret), the full gate suite
+run, then set back to `false` and verified: all three gate functions now
+answer `turnstiles_disabled` again. Never leave it `true` after a test run.
+
+### Matrix results
+
+- **Run 2 (full matrix, 50 assertions): 38/50 PASS.** The 12 non-passes
+  split into 2 real bugs, 1 blocked item, 2 superseded NX items, and 7 test
+  artifacts (see below) — none of the artifacts is a product failure.
+- **Retest-1 (22 assertions):** freeze + void re-tests after the Phase 1g
+  fix; invite crashed on a reused email (fixed in retest-2).
+- **Retest-2 (17 assertions): 13/17 PASS** (2 storage fails were a wrong
+  test path — fixed in the final probe; 2 reset fails are the 429 rate limit).
+- **Final probes:** storage with the correct `profiles/<gym>/<user>/` path
+  (upload 200, cross-gym download 404, own download 200); FE-08 coach
+  bare-`users` query returns only same-gym users, name filter for the other
+  gym returns 0 rows; Vercel preview `trainw-cv9qwmo3q-...` answers **302**
+  (healthy behind Vercel Authentication).
+
+Proven live (mapped to closure rows): DB-01 (self-pay guard 400), DB-08/DB-09
+(published demo accounts absent from `auth.users`), DB-14 (cross-gym role
+change refused), DB-16 (cross-gym payment insert 403), DB-40 (invite flow
+end-to-end incl. expiry message), DB-54 (self-grant 403), FE-06/FE-07/FE-08
+(cross-gym reads/writes/names all blocked), FE-11 (RLS is the real boundary),
+FE-12 (rotation ON + 1h JWT verified via API), FE-10 (gate-feed needs a valid
+terminal token, 401 without), GT-01 (ai-proxy: 401 no JWT, 403 wrong gym,
+reaches Anthropic step when authed), GT-02 (terminal token from another
+device, or without device, → 401), GT-09 (verify_jwt matches config.toml),
+ledger settle → gate admits → void → gate denies (after voiding ALL payments),
+freeze → gate denies → cancel → gate admits, no-show keeps the money
+(DB-66 CREDIT core), storage private-by-default with gym-scoped paths.
+
+### REAL BUGS FOUND BY LIVE TESTING (all fixed, Phase 1g)
+
+1. **`SERVICE_ROLE_KEY` is not injected by Supabase (gate functions 500).**
+   `gate-checkin`, `gate-feed`, `gate-terminal-auth` all read
+   `SERVICE_ROLE_KEY`, but the platform injects `SUPABASE_SERVICE_ROLE_KEY`
+   — every gate call returned 500 `server_not_configured` until fixed.
+   Fix: code now reads `SUPABASE_SERVICE_ROLE_KEY` first, `SERVICE_ROLE_KEY`
+   as fallback (3 files); functions redeployed as v4. A `SERVICE_ROLE_KEY`
+   edge secret (alias of the injected key) was also set so the pre-fix
+   deployment worked during the run; it is now redundant but harmless.
+2. **Freeze ignored at the gate (C15b).** `membership_is_active_for_access`
+   used the RAW `p_reference_date` in its freeze clause while every other
+   clause uses `COALESCE(p_reference_date, gym_today(...))`. The gate calls
+   it without a date (DB-37), so `NULL BETWEEN ...` is NULL and frozen
+   members were admitted. Local tests passed because they passed explicit
+   dates (or used `client_membership_is_active`, which does). Fix:
+   COALESCE in the freeze clause (source files `20261115110000`,
+   `20261115210000`, `20261115230000` + repair migration). Verified live:
+   function returns false during a freeze with no date arg; gate denies
+   with `membership_inactive`.
+3. **Invite flow broken live (D1, DB-40 again).** `invite_gym_member`
+   calls unqualified `gen_random_bytes(18)`; on Supabase pgcrypto lives in
+   the `extensions` schema and the function sets
+   `search_path TO 'public','auth','pg_temp'` → 42883. Locally pgcrypto was
+   in `public`, masking it. Fix: `extensions.gen_random_bytes` (source file
+   `20261115360000` + repair migration). Same latent defect in
+   `hash_member_credential` (`hmac()` → `extensions.hmac`, source file
+   `20261115010000` + repair migration); verified it now raises the pepper
+   error, not 42883. Repair migration: `20261115190000_phase1g_live_fixes.sql`
+   (also applied live; chain is now 61 files).
+
+### Test artifacts (not product failures — read before re-running)
+
+- A3 (run 2): the profile was already `paid` from run 1's payment, so the
+  self-pay PATCH was a no-op 200. Clean retest (R1, pending client-b) → 400
+  guard, as in run 1.
+- C14b/C14c (run 2): the client had TWO paid payments (run 1 + run 2);
+  voiding one correctly leaves the other. Clean retest (R3, both voided) →
+  profile `pending`, end date NULL, gate denies.
+- R2b expectation was wrong (expected 2027-01-15, got 2026-12-15): run 2's
+  void had already reverted the end date to the single remaining payment's
+  end; the DIAG-freeze cancel rollback to 2026-12-15 is exactly correct.
+- R3a-83d57cf7: re-voiding an already-voided payment → 400
+  `payment_immutable` — the immutability guard working, not a failure.
+- R6a (part 1): a FUTURE session cannot be marked no-show
+  (`invalid_state`) — correct guard; retested with a today session (R6a pass).
+- H1/H3 (run 2) + R5a/R5c (retest-2): wrong test inputs, not product bugs —
+  `text/plain` is not an allowed bucket MIME (only png/jpeg/webp), and the
+  upload path must be `profiles/<gym_id>/<user_id>/...` per the storage
+  policies. Corrected probes pass.
+- D3 (run 2) "passed" for the wrong reason (invite never issued); retested
+  properly in R4f (exact message: "This invitation has expired.").
+- E1/G1 400s in run 2 were the email rate limiter already engaging; R8
+  retries return 429 for both `@trainw.live` and `@gmail.com` addresses.
+
+### Decisions made during the run (user, 2026-11-15 08:12)
+
+- **DB-66 = CREDIT.** No-show credits the member for rebooking; money stays
+  in the gym. Verified what exists: marking a session no-show leaves all
+  payments `paid` and the profile `paid` (R6b). A dedicated credit-balance
+  mechanism does NOT exist in code (no `credit` concept in migrations or
+  functions) — implementing it is a follow-up code task, not blocking.
+- **P2-10 = DELETE src/.** Ship vanilla only. Consequence: the 9 NX findings
+  (NX-02/04/05/08/09/10/14/28 + NX-03, plus NX-01 which is the same src/
+  situation) can no longer be live-tested and are marked SUPERSEDED in
+  `AUDIT_CLOSURE.md`. The `src/` deletion itself is a follow-up code task —
+  NOT done in this run.
+- **hCaptcha keys no longer needed for launch.**
+
+### Still open after P1-13
+
+- `ANTHROPIC_API_KEY` — needed from the user before ai-proxy works at all.
+- Pepper GUC — needs a code change (different pepper source) or a dashboard
+  attempt; credential enrolment stays fail-closed until then.
+- DB-66 credit-balance mechanism — follow-up code task.
+- `src/` deletion (P2-10) — follow-up code task.
+- GT-03 gate throttle — deliberately NOT hammered live (would lock the test
+  terminal); local suite proves the limiter. A live throttle test is still
+  owed if wanted.
+- Password-reset delivery — blocked by the default-mailer rate limit (429);
+  retry after the window, and consider a custom SMTP before real users.
+- Realtime `private_only` — needs a code change first (private channels +
+  `realtime.messages` policies) before flipping.
+- Production deploy — only on his word. Accountant check on TEIF fields.
+- `AUDIT_CLOSURE.md` counts after this run: **124 FIXED+VERIFIED,
+  1 FIXED+NEEDS-LIVE-TEST (GT-03), 2 DECISION MADE — CODE FOLLOW-UP
+  (DB-66, NX-03), 9 SUPERSEDED (NX rows), 1 NOT-APPLICABLE (GT-04).**
+
+### Test-data inventory + cleanup (do NOT run until verification is done)
+
+Gyms: `TEST — Gym A` (28b82a5f…), `TEST — Gym B` (cc1b019a…).
+Auth users (`@trainw.live`): `test-{a,b}-{owner,manager,staff,coach,client}`,
+`test-invitee`, `test-invitee2`; plus `trainw-live-test-xyz123@gmail.com` and
+`test-signup@trainw.live` (never confirmed — G1 signup failed at the rate
+limiter; check whether the row exists before deleting).
+Live rows created: gyms ×2, gym_memberships (10 + invitee ×1 active +
+invitee2 pending-expired), client_profiles (auto, 10 + invitees),
+coach_profiles ×2, payments ×3 (2 voided, 1 paid — client-a's current paid
+payment `36aac56f-65e9-4e0c-a283-f71c668bf634`), sessions ×3 (1 no-show,
+1 future, 1 today-no-show), messages ×2, gate_sessions (many, expired/used),
+gate_terminal_sessions ×1–2, gate_access_log rows, check_ins rows,
+membership_freezes (all cancelled), storage object
+`trainw-media/profiles/<gym-B>/<client-B>/test-b.png`.
+Cleanup (exact): delete the storage object; delete the two gyms
+(`DELETE FROM public.gyms WHERE name LIKE 'TEST — %'` cascades memberships,
+payments, sessions, messages, freezes, profiles where FKs cascade — verify
+row counts after); delete the auth users via the Admin API
+(`DELETE /auth/v1/admin/users/{id}` for each test address, which also removes
+their `public.users` rows via the sync trigger — verify); delete
+`test-signup@trainw.live` if present. Passwords for the test accounts are in
+`/tmp/live-test-users.json` (0600, not committed).

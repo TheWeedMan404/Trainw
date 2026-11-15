@@ -100,7 +100,7 @@ BEGIN
     RAISE EXCEPTION 'credential data is required';
   END IF;
   -- pgcrypto hmac(): keyed hash; the raw credential never leaves this call.
-  RETURN encode(hmac(BTRIM(p_credential_data), v_pepper, 'sha256'), 'hex');
+  RETURN encode(extensions.hmac(BTRIM(p_credential_data), v_pepper, 'sha256'), 'hex');
 END;
 $$;
 

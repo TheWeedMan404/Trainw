@@ -223,7 +223,11 @@ async function recordAccessLog(admin, entry) {
 
 function createAdminClientOrNull(options, corsHeaders) {
   const supabaseUrl = safeString(options?.getEnv?.('SUPABASE_URL'));
-  const serviceRoleKey = safeString(options?.getEnv?.('SERVICE_ROLE_KEY'));
+  // Live fix (2026-11-15, P1-13): Supabase injects SUPABASE_SERVICE_ROLE_KEY,
+  // not SERVICE_ROLE_KEY. Read the injected name first; keep the alias as a
+  // fallback for self-hosted deploys that set SERVICE_ROLE_KEY directly.
+  const serviceRoleKey = safeString(options?.getEnv?.('SUPABASE_SERVICE_ROLE_KEY'))
+    || safeString(options?.getEnv?.('SERVICE_ROLE_KEY'));
 
   if (!supabaseUrl || !serviceRoleKey) {
     return {

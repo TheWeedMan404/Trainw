@@ -20,8 +20,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.119.0';
 //     auth fail closed (server_not_configured).
 //   TURNSTILES_ENABLED — must be exactly 'true' for any of this to work.
 //     Default (unset / anything else) = turnstiles disabled, fail closed.
-//   SUPABASE_URL / SUPABASE_ANON_KEY / SERVICE_ROLE_KEY are injected by
-//     Supabase into every edge function automatically.
+//   SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are injected
+//     by Supabase into every edge function automatically. (SERVICE_ROLE_KEY is
+//     NOT injected; it is only a fallback alias if set manually.)
 // config.toml sets verify_jwt = false for this function: the auth action is
 // unauthenticated by design (the PIN is the credential), and set_pin
 // verifies the JWT in code below.
@@ -107,7 +108,11 @@ function randomTokenHex(bytes = 32): string {
 
 function createAdminClient() {
   const url = safeString(Deno.env.get('SUPABASE_URL'));
-  const key = safeString(Deno.env.get('SERVICE_ROLE_KEY'));
+  // Live fix (2026-11-15, P1-13): Supabase injects SUPABASE_SERVICE_ROLE_KEY,
+  // not SERVICE_ROLE_KEY. Read the injected name first; keep the alias as a
+  // fallback for self-hosted deploys that set SERVICE_ROLE_KEY directly.
+  const key = safeString(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))
+    || safeString(Deno.env.get('SERVICE_ROLE_KEY'));
   if (!url || !key) return null;
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },

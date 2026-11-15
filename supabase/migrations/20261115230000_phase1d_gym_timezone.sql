@@ -119,7 +119,7 @@ AS $function$
         WHERE f.user_id = p_client_id
           AND f.gym_id = p_gym_id
           AND f.status = 'active'
-          AND p_reference_date BETWEEN f.start_date AND f.end_date
+          AND COALESCE(p_reference_date, public.gym_today(p_gym_id)) BETWEEN f.start_date AND f.end_date
       )
   );
 $function$;
