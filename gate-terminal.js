@@ -6,7 +6,9 @@
   const params = new URLSearchParams(window.location.search);
   const gymId = params.get('gym_id') || '';
   const gymName = params.get('gym_name') || 'TRAINW';
-  const adminPin = params.get('pin') || '';
+  // FE-04: the PIN is NEVER in the URL any more. The terminal asks for it
+  // on screen (the admin modal) and verifies it server-side via
+  // gate-terminal-auth, which issues a short-lived session token.
   const deviceId = params.get('device_id') || 'gate-1';
 
   const MODE_LABELS = {
@@ -23,17 +25,25 @@
     membership_expired: 'Abonnement expiré',
     payment_unpaid: 'Paiement non validé',
     duplicate_recent_checkin: 'Passage déjà enregistré récemment',
+    duplicate_checkin_today: 'Passage déjà enregistré aujourd’hui',
+    already_inside: 'Déjà à l’intérieur',
     invalid_token: 'QR code invalide',
     token_used: 'QR code déjà utilisé',
     token_expired: 'QR code expiré',
     gym_mismatch: 'Terminal non autorisé pour cette salle',
     missing_token: 'QR code manquant',
     camera_error: 'Caméra indisponible',
+    network_error: 'Réseau indisponible — vérifiez la connexion',
     missing_gym_id: 'Gym ID manquant',
     missing_credential_data: 'Identifiant de badge manquant',
     invalid_type: 'Type de lecture invalide',
     server_not_configured: 'Configuration Supabase absente',
     method_not_allowed: 'Méthode non autorisée',
+    turnstiles_disabled: 'Tourniquets désactivés',
+    invalid_terminal_session: 'Session du terminal expirée — saisissez le PIN',
+    server_error: 'Erreur serveur — réessayez',
+    rate_limited: 'Trop de tentatives — réessayez dans une minute',
+    credential_locked: 'Badge verrouillé — réessayez dans 15 minutes',
   };
 
   const TYPE_LABELS = {
@@ -142,10 +152,21 @@
     setText('terminal-clock', formatClock());
   }
 
-  function setOnlineStatus(isOnline) {
+  // FE-29: the indicator used to reflect only the Realtime subscribe
+  // state, so an offline terminal still showed 'Realtime connectée'
+  // until the socket noticed. Online now means the browser has a
+  // network connection AND the Realtime channel is subscribed.
+  let realtimeSubscribed = false;
+  function renderOnlineStatus() {
+    const networkOnline = navigator.onLine !== false;
+    const isOnline = networkOnline && realtimeSubscribed;
     const status = document.getElementById('terminal-status');
     if (status) status.classList.toggle('online', Boolean(isOnline));
-    setText('status-text', isOnline ? 'Realtime connectée' : 'Realtime hors ligne');
+    setText('status-text', !networkOnline ? 'Hors ligne — pas de connexion' : isOnline ? 'Realtime connectée' : 'Realtime hors ligne');
+  }
+  function setOnlineStatus(isOnline) {
+    realtimeSubscribed = Boolean(isOnline);
+    renderOnlineStatus();
   }
 
   function scheduleIdleReset() {
@@ -219,6 +240,86 @@
     });
     recentFeed = recentFeed.slice(0, 8);
     renderFeed();
+  }
+
+  // FE-10: the terminal no longer trusts member details from the public
+  // broadcast — gate-checkin only sends an opaque `access_refresh` signal
+  // now. The entries come from the authenticated gate-feed function
+  // (terminal session token, device-bound). replaceFeed swaps the whole
+  // list (newest first, as the server returns it); refreshGateFeed also
+  // renders the newest entry on the result card when it is new to this
+  // terminal (own QR scans already rendered it via handleQrScan, and the
+  // dedupe in shouldHandleEvent keeps them from double-rendering).
+  let feedRefreshInFlight = false;
+  let feedRefreshPending = false;
+
+  function replaceFeed(payloads) {
+    recentFeed = (payloads || []).slice(0, 8).map(payload => ({
+      access: Boolean(payload.access),
+      client_name: payload.client_name || (payload.access ? 'Client' : 'Inconnu'),
+      reason: payload.reason || null,
+      credential_type: payload.credential_type || currentMode,
+      attempted_at: payload.attempted_at || new Date().toISOString(),
+      days_left: payload.days_left ?? null,
+    }));
+    renderFeed();
+  }
+
+  async function refreshGateFeed() {
+    if (feedRefreshInFlight) {
+      feedRefreshPending = true;
+      return;
+    }
+    const session = getStoredSession();
+    if (!session?.token) return;
+    feedRefreshInFlight = true;
+    try {
+      const response = await fetch(`${Trainw.SUPABASE_URL}/functions/v1/gate-feed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: Trainw.SUPABASE_ANON_KEY,
+          'x-terminal-token': session.token,
+        },
+        body: JSON.stringify({ gym_id: gymId, device_id: deviceId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 401 && body.error === 'invalid_terminal_session') {
+        clearStoredSession();
+        openAdminModal();
+        return;
+      }
+      if (!response.ok || !Array.isArray(body.entries)) return;
+      const entries = body.entries.map(entry => ({
+        gym_id: gymId,
+        device_id: entry.device_id || null,
+        access: Boolean(entry.access),
+        reason: entry.reason || null,
+        credential_type: entry.credential_type || currentMode,
+        client_id: entry.client_id || null,
+        client_name: entry.client_name || null,
+        days_left: entry.days_left ?? null,
+        attempted_at: entry.attempted_at || new Date().toISOString(),
+      }));
+      if (entries.length) {
+        // The result card shows this terminal's newest entry, not another
+        // terminal's — same device filter the old broadcast handler had.
+        const newestForThisDevice = entries.find(entry => !entry.device_id || entry.device_id === deviceId);
+        if (newestForThisDevice && shouldHandleEvent(newestForThisDevice)) {
+          renderResultState(newestForThisDevice);
+        }
+      }
+      replaceFeed(entries);
+    } catch (_error) {
+      // Feed fetch failed (network) — the terminal keeps its current
+      // feed and the next refresh signal retries. Never fatal.
+    } finally {
+      feedRefreshInFlight = false;
+      if (feedRefreshPending) {
+        feedRefreshPending = false;
+        void refreshGateFeed();
+      }
+    }
   }
 
   function renderFeed() {
@@ -306,6 +407,60 @@
     }
   }
 
+  // FE-04: the terminal session token issued by gate-terminal-auth after
+  // the PIN is verified. Kept in sessionStorage (cleared when the tab
+  // closes) and sent as the x-terminal-token header to gate-checkin.
+  const TERMINAL_SESSION_KEY = 'trainw_terminal_session';
+
+  function getStoredSession() {
+    try {
+      const raw = window.sessionStorage.getItem(TERMINAL_SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.token || parsed.gym_id !== gymId) return null;
+      if (!parsed.expires_at || new Date(parsed.expires_at).getTime() <= Date.now()) return null;
+      return parsed;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function storeTerminalSession(token, expiresAt) {
+    try {
+      window.sessionStorage.setItem(TERMINAL_SESSION_KEY, JSON.stringify({
+        token,
+        expires_at: expiresAt,
+        gym_id: gymId,
+      }));
+    } catch (_error) {
+      // sessionStorage unavailable — the terminal re-prompts for the PIN.
+    }
+  }
+
+  function clearStoredSession() {
+    try {
+      window.sessionStorage.removeItem(TERMINAL_SESSION_KEY);
+    } catch (_error) {
+      // Ignore.
+    }
+  }
+
+  async function authenticateTerminal(pin) {
+    const response = await fetch(`${Trainw.SUPABASE_URL}/functions/v1/gate-terminal-auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: Trainw.SUPABASE_ANON,
+      },
+      body: JSON.stringify({ action: 'auth', gym_id: gymId, pin, device_id: deviceId }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.ok || !body.token) {
+      return { ok: false, error: body.error || 'server_error' };
+    }
+    return { ok: true, token: body.token, expires_at: body.expires_at };
+  }
+
   async function handleQrScan(token) {
     try {
       const response = await fetch(`${Trainw.SUPABASE_URL}/functions/v1/gate-checkin`, {
@@ -313,6 +468,7 @@
         headers: {
           'Content-Type': 'application/json',
           apikey: Trainw.SUPABASE_ANON,
+          'x-terminal-token': getStoredSession()?.token || '',
         },
         body: JSON.stringify({
           token,
@@ -322,6 +478,21 @@
         }),
       });
       const body = await response.json();
+      // The session expired or was revoked server-side: clear it and
+      // re-prompt for the PIN instead of failing every scan.
+      if (response.status === 401 && body.reason === 'invalid_terminal_session') {
+        clearStoredSession();
+        renderResultState({
+          access: false,
+          reason: 'invalid_terminal_session',
+          credential_type: 'qr',
+          gym_id: gymId,
+          device_id: deviceId,
+          attempted_at: new Date().toISOString(),
+        });
+        openAdminModal();
+        return;
+      }
       const payload = {
         access: Boolean(body.access),
         reason: body.reason || null,
@@ -352,26 +523,60 @@
   function safeReason(message) {
     if (!message) return 'camera_error';
     const key = String(message).trim();
-    return REASON_LABELS[key] ? key : 'camera_error';
+    if (REASON_LABELS[key]) return key;
+    // FE-29: a fetch/network failure is not a camera failure. fetch()
+    // throws a TypeError whose message is 'Failed to fetch' (Chrome),
+    // 'NetworkError when attempting to fetch resource.' (Firefox) or
+    // 'Load failed' (Safari) — none of those is the camera.
+    if (/failed to fetch|networkerror|network request failed|load failed/i.test(key)) return 'network_error';
+    return 'camera_error';
   }
 
+  // FE-28: the admin modal traps keyboard focus while open (it is the
+  // PIN prompt, so Tab must not escape to the scanner behind it) and
+  // restores focus to the element that opened it.
+  let adminModalReturnFocus = null;
+  function adminModalKeydown(event) {
+    if (event.key === 'Escape') { closeAdminModal(); return; }
+    if (event.key !== 'Tab') return;
+    const modal = document.getElementById('admin-modal');
+    const focusables = Array.from(modal?.querySelectorAll('button:not([disabled])') || []);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
   function openAdminModal() {
     adminBuffer = '';
     setText('admin-error', '');
     refreshAdminDisplay();
-    document.getElementById('admin-modal')?.classList.remove('hidden');
+    const modal = document.getElementById('admin-modal');
+    if (!modal) return;
+    adminModalReturnFocus = document.activeElement;
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    modal.addEventListener('keydown', adminModalKeydown);
+    modal.querySelector('.admin-pad [data-key]')?.focus();
   }
 
   function closeAdminModal() {
-    document.getElementById('admin-modal')?.classList.add('hidden');
+    const modal = document.getElementById('admin-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+    modal.removeEventListener('keydown', adminModalKeydown);
+    adminModalReturnFocus?.focus?.();
+    adminModalReturnFocus = null;
   }
 
   function refreshAdminDisplay() {
-    const masked = adminBuffer.padEnd(Math.max(adminPin.length, 4), '•').slice(0, Math.max(adminPin.length, 4));
-    setText('admin-display', masked);
+    // Mask by the typed length only — the PIN itself is never held in the
+    // page (it is verified server-side by gate-terminal-auth).
+    setText('admin-display', '•'.repeat(Math.max(adminBuffer.length, 4)));
   }
 
-  function handleAdminKey(key) {
+  async function handleAdminKey(key) {
     if (key === 'clear') {
       adminBuffer = '';
       setText('admin-error', '');
@@ -380,19 +585,34 @@
     }
 
     if (key === 'enter') {
-      if (adminBuffer === adminPin) {
-        window.open('/dashboard/gym', '_blank', 'noopener');
-        closeAdminModal();
-      } else {
-        adminBuffer = '';
-        setText('admin-error', 'Code incorrect');
-        refreshAdminDisplay();
+      // FE-04: no local comparison any more (the old code compared against
+      // the PIN from the URL, and a blank PIN passed: '' === ''). The PIN
+      // is verified server-side; a wrong or empty PIN is rejected there.
+      if (!adminBuffer) {
+        setText('admin-error', 'Saisissez le PIN');
+        return;
       }
+      const pin = adminBuffer;
+      adminBuffer = '';
+      refreshAdminDisplay();
+      setText('admin-error', 'Vérification…');
+      const result = await authenticateTerminal(pin);
+      if (!result.ok) {
+        setText('admin-error', result.error === 'invalid_pin' ? 'Code incorrect' : reasonLabel(result.error));
+        refreshAdminDisplay();
+        return;
+      }
+      storeTerminalSession(result.token, result.expires_at);
+      closeAdminModal();
+      bindRealtime();
+      void refreshGateFeed();
+      renderIdleState();
+      await setMode('qr');
       return;
     }
 
     if (/^\d$/.test(key)) {
-      adminBuffer = (adminBuffer + key).slice(0, Math.max(adminPin.length || 4, 4));
+      adminBuffer = (adminBuffer + key).slice(0, 8);
       refreshAdminDisplay();
     }
   }
@@ -418,22 +638,29 @@
     renderIdleState();
   }
 
-  function handleRealtimeEvent(payload) {
-    if (!shouldHandleEvent(payload)) return;
-    renderResultState(payload);
-    pushFeed(payload);
-  }
-
   function bindRealtime() {
     if (!gymId) {
       setOnlineStatus(false);
       return;
     }
 
+    // Re-auth (Admin button) must not stack a second channel on the old one.
+    if (realtimeChannel) {
+      try {
+        sb.removeChannel(realtimeChannel);
+      } catch (_error) {
+        // Ignore.
+      }
+      realtimeChannel = null;
+    }
+
     realtimeChannel = sb.channel(`gate-terminal:${gymId}`);
     realtimeChannel
-      .on('broadcast', { event: 'access_result' }, payload => {
-        handleRealtimeEvent(payload?.payload || {});
+      // FE-10: the broadcast is only an opaque refresh signal now — no
+      // member details cross the public channel. The entries come from
+      // the authenticated gate-feed function.
+      .on('broadcast', { event: 'access_refresh' }, () => {
+        void refreshGateFeed();
       })
       .subscribe(status => {
         setOnlineStatus(status === 'SUBSCRIBED');
@@ -441,11 +668,22 @@
   }
 
   function bindUi() {
+    // FE-29: the RFID/fingerprint/face buttons have no local handler —
+    // setMode only stops the QR scanner for them, and those modes only
+    // work if external hardware pushes access events. Until a reader is
+    // configured they are disabled rather than implying they scan.
     document.querySelectorAll('[data-mode]').forEach(button => {
+      const mode = button.getAttribute('data-mode');
+      if (mode && mode !== 'qr' && mode !== 'admin') {
+        button.disabled = true;
+        button.title = 'Nécessite un lecteur externe — non configuré';
+      }
       button.addEventListener('click', () => {
         void setMode(button.getAttribute('data-mode'));
       });
     });
+    window.addEventListener('online', renderOnlineStatus);
+    window.addEventListener('offline', renderOnlineStatus);
 
     document.getElementById('admin-close')?.addEventListener('click', closeAdminModal);
     document.getElementById('admin-modal')?.addEventListener('click', event => {
@@ -461,12 +699,44 @@
   function init() {
     setText('terminal-gym-name', gymName);
     renderFeed();
-    renderIdleState();
     updateClock();
     window.setInterval(updateClock, 1000);
     bindUi();
-    bindRealtime();
-    void setMode('qr');
+
+    // Turnstile flag OFF: show the disabled screen and stop here — no
+    // scanner, no realtime, no PIN prompt.
+    if (Trainw.TURNSTILES_ENABLED !== true) {
+      document.getElementById('terminal-disabled')?.classList.remove('hidden');
+      document.querySelector('.terminal-layout')?.classList.add('hidden');
+      document.querySelector('.terminal-bottombar')?.classList.add('hidden');
+      setOnlineStatus(false);
+      return;
+    }
+
+    if (!gymId) {
+      renderResultState({
+        access: false,
+        reason: 'missing_gym_id',
+        credential_type: 'qr',
+      });
+      return;
+    }
+
+    if (getStoredSession()) {
+      // Already unlocked with a valid session token — start normally.
+      bindRealtime();
+      // FE-10: populate the feed from the authenticated endpoint; the
+      // broadcast only signals refreshes from here on.
+      void refreshGateFeed();
+      renderIdleState();
+      void setMode('qr');
+    } else {
+      // No terminal session yet — the admin modal doubles as the PIN
+      // prompt. The scanner starts only after the PIN is verified
+      // server-side (see handleAdminKey).
+      renderIdleState();
+      openAdminModal();
+    }
   }
 
   init();

@@ -3,6 +3,23 @@ const Trainw = window.TrainwCore;
 const sb = Trainw.createClient();
 Trainw.installGlobalErrorHandlers();
 
+// FE-27: explicit hook registry. The v17 add-on file used to monkey-patch
+// loadClients/loadAnalytics/loadCoaches/setLang/openCoachModal at runtime
+// (wrap()), which made behaviour order-dependent and unauditable. Add-on
+// code now registers extras here; each base loader runs its hooks at the
+// end of its own work. A loader that returns early (no gym, no element)
+// skips its hooks — there is nothing to refresh in that case.
+window.TrainwGymHooks = {
+  afterLoadAnalytics: [],
+  afterLoadClients: [],
+  afterLoadCoaches: [],
+  afterSetLang: []
+};
+async function runGymHooks(name) {
+  const hooks = (window.TrainwGymHooks && window.TrainwGymHooks[name]) || [];
+  for (const hook of hooks) await hook();
+}
+
 const GYM_LOGIN_HREF = '/login?role=gym_owner';
 
 let currentUser    = null;
@@ -15,11 +32,17 @@ let scheduleFilter = 'all';
 let scheduleTab = 'sessions';
 let clientFilter   = 'all';
 let checkInTab     = 'live';
+// Turnstile tab ids — the turnstile/gate hardware UI, hidden while the
+// TURNSTILES_ENABLED flag is off (see renderCheckInTabs).
+const TURNSTILE_CHECKIN_TABS = ['credentials', 'journal', 'terminal'];
 let allSessions    = [];
 let allClients     = [];
 let gymCoaches     = [];
 let gymClasses     = [];
 let accessDirectory = [];
+// FE-18: in-flight guard for per-row destructive actions (the delete
+// buttons are rendered per row, so the guard keys on action + row id).
+const inFlightActions = new Set();
 let roleMatrix = [];
 let permissionCatalog = [];
 let checkInsList   = [];
@@ -259,7 +282,7 @@ const T = {
     subDesc:'Passez au plan Pro pour débloquer toutes les fonctionnalités', upgradePro:'Passer au Pro →',
     langSettings:'Langue', support:'Support', contactSupport:'Contacter le Support',
     addCoachTitle:'Ajouter un Coach', coachName:'Nom Complet', coachEmail:'Email',
-    coachPhone:'Téléphone', coachSpecialty:'Spécialité', coachRate:'Tarif / Séance (DT)', submitCoach:'Ajouter le Coach',
+    coachPhone:'Téléphone', coachSpecialty:'Spécialité',tagSuggestions:'Suggestions',saveAsTag:'Enregistrer comme tag de la salle', coachRate:'Tarif / Séance (DT)', submitCoach:'Ajouter le Coach',
     noCoaches:'Aucun coach. Ajoutez votre premier coach !', noClients:'Aucun client. Ajoutez votre premier client !', noSessions:'Aucune séance trouvée.',
     savedOk:'Enregistré !', coachAdded:'Coach ajouté !', clientAdded:'Client ajouté !', sessionCreated:'Séance créée !', errorMsg:'Une erreur est survenue.',
     hourlyRate:'DT/séance', avgRating:'Note', employedLbl:'Ancienneté', totalReviews:'Avis',
@@ -273,9 +296,9 @@ const T = {
     noCheckIns:"Aucun check-in aujourd'hui.", checkedIn:'Présent à',
     selectClient:'Sélectionner un client…', confirmCheckIn:'Confirmer le Check-In',
     checkInDone:'Check-in enregistré !', alreadyCheckedIn:"Déjà enregistré aujourd'hui.",
-    messagesTitle:'Messages', messagesSub:'Conversations avec vos clients',
+    messagesTitle:'Messages', messagesSub:'Conversations avec vos clients', messageTooLong:'Message trop long (max 2000 caractères).',
     typeMessage:'Écrivez un message…', sendMsg:'Envoyer',
-    noMessages:'Aucune conversation. Sélectionnez un client pour commencer.', selectConv:'Sélectionnez une conversation',
+    noMessages:'Aucune conversation. Sélectionnez un client pour commencer.', deleteMessage:'Supprimer ce message', selectConv:'Sélectionnez une conversation',
     classesTitle:'Cours & Activités', classesSub:'Gérez les cours de votre salle',
     addClass:'+ Ajouter un Cours', addClassTitle:'Ajouter un Cours',
     className:'Nom du Cours', classDesc:'Description', classDay:'Jour', classTime:'Heure',
@@ -284,7 +307,7 @@ const T = {
     noClasses:'Aucun cours. Créez votre premier cours !', deleteClass:'Supprimer',
     membershipStart:'Début Abonnement', membershipEnd:'Fin Abonnement', pricePaid:'Montant Payé (DT)',
     expiresIn:'Expire dans', expiredSince:'Expiré depuis', daysLeft:'jours', renewalNeeded:'Renouvellement requis',
-    expiringLabel:'Expire bientôt', expiredLabel:'Expiré', activeLabel:'Actif',
+    expiringLabel:'Expire bientôt', expiredLabel:'Expiré', activeLabel:'Actif', expiringSoonStat:'Expirent bientôt', expiringDelta:'14 prochains jours', sessionsTab:'Séances', classTemplatesTab:'Modèles de cours', coachSearchHint:'Cherchez un nom ou une spécialité pour trouver un coach existant.', searchingInProgress:'Recherche en cours…', credentialSelectClient:'Sélectionnez un client pour gérer ses badges.', noBadgesForClient:'Aucun badge enregistré pour {name}.', thisClient:'ce client',
     membersExpiring:'Membres à Renouveler', noExpiring:'Tous les abonnements sont à jour.',
     revenueReal:'Revenus Réels', revenueMonth:'Ce Mois',
     editSession:'Modifier', deleteSession:'Supprimer', editSessionTitle:'Modifier la Séance',
@@ -322,7 +345,7 @@ const T = {
     subDesc:'Upgrade to Pro to unlock all features', upgradePro:'Upgrade to Pro →',
     langSettings:'Language', support:'Support', contactSupport:'Contact Support',
     addCoachTitle:'Add New Coach', coachName:'Full Name', coachEmail:'Email',
-    coachPhone:'Phone', coachSpecialty:'Specialty', coachRate:'Rate / Session (DT)', submitCoach:'Add Coach',
+    coachPhone:'Phone', coachSpecialty:'Specialty',tagSuggestions:'Suggestions',saveAsTag:'Save as a gym tag', coachRate:'Rate / Session (DT)', submitCoach:'Add Coach',
     noCoaches:'No coaches yet. Add your first coach!', noClients:'No clients yet. Add your first client!', noSessions:'No sessions found.',
     savedOk:'Saved!', coachAdded:'Coach added!', clientAdded:'Client added!', sessionCreated:'Session created!', errorMsg:'Something went wrong.',
     hourlyRate:'DT/session', avgRating:'Rating', employedLbl:'Employed', totalReviews:'Reviews',
@@ -336,9 +359,9 @@ const T = {
     noCheckIns:'No check-ins today.', checkedIn:'Checked in at',
     selectClient:'Select a client…', confirmCheckIn:'Confirm Check-In',
     checkInDone:'Check-in recorded!', alreadyCheckedIn:'Already checked in today.',
-    messagesTitle:'Messages', messagesSub:'Conversations with your clients',
+    messagesTitle:'Messages', messagesSub:'Conversations with your clients', messageTooLong:'Message too long (max 2000 characters).',
     typeMessage:'Write a message…', sendMsg:'Send',
-    noMessages:'No conversations. Select a client to start.', selectConv:'Select a conversation',
+    noMessages:'No conversations. Select a client to start.', deleteMessage:'Delete this message', selectConv:'Select a conversation',
     classesTitle:'Classes & Activities', classesSub:'Manage your gym classes',
     addClass:'+ Add Class', addClassTitle:'Add Class',
     className:'Class Name', classDesc:'Description', classDay:'Day', classTime:'Time',
@@ -347,7 +370,7 @@ const T = {
     noClasses:'No classes yet. Create your first class!', deleteClass:'Delete',
     membershipStart:'Membership Start', membershipEnd:'Membership End', pricePaid:'Amount Paid (DT)',
     expiresIn:'Expires in', expiredSince:'Expired', daysLeft:'days', renewalNeeded:'Renewal needed',
-    expiringLabel:'Expiring soon', expiredLabel:'Expired', activeLabel:'Active',
+    expiringLabel:'Expiring soon', expiredLabel:'Expired', activeLabel:'Active', expiringSoonStat:'Expiring soon', expiringDelta:'Next 14 days', sessionsTab:'Sessions', classTemplatesTab:'Class templates', coachSearchHint:'Search a name or specialty to find an existing coach.', searchingInProgress:'Searching…', credentialSelectClient:'Select a client to manage their badges.', noBadgesForClient:'No badge registered for {name}.', thisClient:'this client',
     membersExpiring:'Members to Renew', noExpiring:'All memberships are up to date.',
     revenueReal:'Real Revenue', revenueMonth:'This Month',
     editSession:'Edit', deleteSession:'Delete', editSessionTitle:'Edit Session',
@@ -385,7 +408,7 @@ const T = {
     subDesc:'ترقية إلى Pro لفتح جميع الميزات', upgradePro:'الترقية إلى Pro ←',
     langSettings:'اللغة', support:'الدعم', contactSupport:'تواصل مع الدعم',
     addCoachTitle:'إضافة مدرب', coachName:'الاسم الكامل', coachEmail:'البريد الإلكتروني',
-    coachPhone:'الهاتف', coachSpecialty:'التخصص', coachRate:'الأجر / جلسة (دت)', submitCoach:'إضافة المدرب',
+    coachPhone:'الهاتف', coachSpecialty:'التخصص',tagSuggestions:'اقتراحات',saveAsTag:'حفظ كوسم للصالة', coachRate:'الأجر / جلسة (دت)', submitCoach:'إضافة المدرب',
     noCoaches:'لا يوجد مدربون بعد.', noClients:'لا يوجد عملاء بعد.', noSessions:'لا توجد جلسات.',
     savedOk:'تم الحفظ!', coachAdded:'تمت إضافة المدرب!', clientAdded:'تمت إضافة العميل!', sessionCreated:'تم إنشاء الجلسة!', errorMsg:'حدث خطأ ما.',
     hourlyRate:'دت/جلسة', avgRating:'التقييم', employedLbl:'مدة العمل', totalReviews:'التقييمات',
@@ -399,9 +422,9 @@ const T = {
     noCheckIns:'لا يوجد حضور اليوم.', checkedIn:'تسجيل في',
     selectClient:'اختر عميلاً…', confirmCheckIn:'تأكيد الحضور',
     checkInDone:'تم تسجيل الحضور!', alreadyCheckedIn:'تم التسجيل مسبقاً اليوم.',
-    messagesTitle:'الرسائل', messagesSub:'المحادثات مع العملاء',
+    messagesTitle:'الرسائل', messagesSub:'المحادثات مع العملاء', messageTooLong:'الرسالة طويلة جداً (الحد الأقصى 2000 حرف).',
     typeMessage:'اكتب رسالة…', sendMsg:'إرسال',
-    noMessages:'لا توجد محادثات. اختر عميلاً للبدء.', selectConv:'اختر محادثة',
+    noMessages:'لا توجد محادثات. اختر عميلاً للبدء.', deleteMessage:'حذف هذه الرسالة', selectConv:'اختر محادثة',
     classesTitle:'الدروس والأنشطة', classesSub:'إدارة دروس صالتك',
     addClass:'+ إضافة درس', addClassTitle:'إضافة درس',
     className:'اسم الدرس', classDesc:'الوصف', classDay:'اليوم', classTime:'الوقت',
@@ -410,7 +433,7 @@ const T = {
     noClasses:'لا توجد دروس بعد. أنشئ أول درس!', deleteClass:'حذف',
     membershipStart:'بداية الاشتراك', membershipEnd:'نهاية الاشتراك', pricePaid:'المبلغ المدفوع (دت)',
     expiresIn:'ينتهي في', expiredSince:'منتهي منذ', daysLeft:'أيام', renewalNeeded:'يحتاج تجديد',
-    expiringLabel:'ينتهي قريباً', expiredLabel:'منتهي', activeLabel:'نشط',
+    expiringLabel:'ينتهي قريباً', expiredLabel:'منتهي', activeLabel:'نشط', expiringSoonStat:'تنتهي قريباً', expiringDelta:'الأيام الـ 14 القادمة', sessionsTab:'حصص', classTemplatesTab:'قوالب الحصص', coachSearchHint:'ابحث بالاسم أو التخصص للعثور على مدرب موجود.', searchingInProgress:'جارٍ البحث…', credentialSelectClient:'اختر عميلاً لإدارة شاراته.', noBadgesForClient:'لا توجد شارة مسجلة لـ {name}.', thisClient:'هذا العميل',
     membersExpiring:'أعضاء للتجديد', noExpiring:'جميع الاشتراكات سارية.',
     revenueReal:'الإيرادات الفعلية', revenueMonth:'هذا الشهر',
     editSession:'تعديل', deleteSession:'حذف', editSessionTitle:'تعديل الجلسة',
@@ -422,7 +445,7 @@ Object.assign(T.fr, {
   teamTab:'Équipe',
   rolesTab:'Rôles & Permissions',
   inviteMemberTitle:'Inviter un membre',
-  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.",
+  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.", inviteAccountFirst:"L'invité doit déjà avoir un compte Trainw — l'invitation échoue sinon.",
   fullNameLbl:'Nom complet',
   emailLbl:'Email',
   roleLbl:'Rôle',
@@ -437,8 +460,8 @@ Object.assign(T.fr, {
   sendInviteBtn:"Envoyer l'invitation",
   staffDirectoryTitle:"Annuaire de l'équipe",
   staffDirectorySub:"Visualisez les profils, rôles et statuts de toute l'équipe de votre salle.",
-  pendingInvitesTitle:'Invitations en attente',
-  pendingInvitesSub:"Suivez les invitations non acceptées et relancez-les si besoin.",
+  pendingInvitesTitle:'Invitations et demandes en attente',
+  pendingInvitesSub:'Suivez les invitations non acceptées et les demandes d’adhésion à valider.',
   rolesLibraryTitle:'Bibliothèque des rôles',
   rolesLibrarySub:'Rôles système verrouillés et rôles personnalisés du tenant actif.',
   createRoleBtn:'Créer un rôle',
@@ -468,8 +491,8 @@ Object.assign(T.fr, {
   teamEmptyTitle:'Aucun membre trouvé',
   teamEmptyBody:"Invitez votre premier membre pour démarrer l'organisation de l'équipe.",
   teamEmptyAction:'Inviter un membre',
-  pendingEmptyTitle:"Aucune invitation en attente",
-  pendingEmptyBody:'Toutes les invitations ont été traitées.',
+  pendingEmptyTitle:'Aucune invitation ni demande en attente',
+  pendingEmptyBody:'Toutes les invitations et demandes ont été traitées.',
   roleEmptyTitle:'Aucun rôle disponible',
   roleEmptyBody:'Créez un rôle personnalisé ou rechargez la matrice.',
   roleEmptyAction:'Créer un rôle',
@@ -484,6 +507,11 @@ Object.assign(T.fr, {
   editProfile:'Modifier le profil',
   resendInvite:"Renvoyer l'invitation",
   cancelInvite:'Annuler',
+  joinRequestLabel:'Demande d’adhésion',
+  joinApprove:'Approuver',
+  joinReject:'Refuser',
+  joinRequestApproved:'Demande acceptée.',
+  joinRequestRejected:'Demande refusée.',
   inviteSentTo:'Invitation envoyée à {email}.',
   inviteResentTo:'Invitation renvoyée à {email}.',
   inviteMissingRole:'Veuillez sélectionner un rôle.',
@@ -542,7 +570,7 @@ Object.assign(T.en, {
   teamTab:'Team',
   rolesTab:'Roles & Permissions',
   inviteMemberTitle:'Invite a member',
-  inviteMemberSub:'Add a member to your team and prepare their staff profile during the invite flow.',
+  inviteMemberSub:'Add a member to your team and prepare their staff profile during the invite flow.', inviteAccountFirst:'The invitee must already have a Trainw account — otherwise the invite fails.',
   fullNameLbl:'Full name',
   emailLbl:'Email',
   roleLbl:'Role',
@@ -557,8 +585,8 @@ Object.assign(T.en, {
   sendInviteBtn:'Send invitation',
   staffDirectoryTitle:'Team directory',
   staffDirectorySub:'Review profiles, roles, and statuses across your gym team.',
-  pendingInvitesTitle:'Pending invitations',
-  pendingInvitesSub:'Track invitations that have not been accepted yet and resend them when needed.',
+  pendingInvitesTitle:'Pending invitations & requests',
+  pendingInvitesSub:'Track unaccepted invitations and join requests waiting for review.',
   rolesLibraryTitle:'Role library',
   rolesLibrarySub:'Locked system roles and custom roles for the active tenant.',
   createRoleBtn:'Create role',
@@ -588,8 +616,8 @@ Object.assign(T.en, {
   teamEmptyTitle:'No members found',
   teamEmptyBody:'Invite your first member to start organizing the team.',
   teamEmptyAction:'Invite member',
-  pendingEmptyTitle:'No pending invitations',
-  pendingEmptyBody:'All invitations have already been handled.',
+  pendingEmptyTitle:'No pending invitations or requests',
+  pendingEmptyBody:'All invitations and requests have been handled.',
   roleEmptyTitle:'No roles available',
   roleEmptyBody:'Create a custom role or refresh the matrix.',
   roleEmptyAction:'Create role',
@@ -604,6 +632,11 @@ Object.assign(T.en, {
   editProfile:'Edit profile',
   resendInvite:'Resend invitation',
   cancelInvite:'Cancel',
+  joinRequestLabel:'Join request',
+  joinApprove:'Approve',
+  joinReject:'Decline',
+  joinRequestApproved:'Request approved.',
+  joinRequestRejected:'Request declined.',
   inviteSentTo:'Invitation sent to {email}.',
   inviteResentTo:'Invitation resent to {email}.',
   inviteMissingRole:'Please select a role.',
@@ -662,7 +695,7 @@ Object.assign(T.ar, Object.assign({}, T.fr, {
   teamTab:'Équipe',
   rolesTab:'Rôles & Permissions',
   inviteMemberTitle:'Inviter un membre',
-  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.",
+  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.", inviteAccountFirst:'يجب أن يكون لدى المدعو حساب Trainw مسبقاً — وإلا فستفشل الدعوة.',
 }));
 T.ar.staffTableStatus = T.fr.staffTableStatus;
 const t = k => T[currentLang]?.[k] || T.fr[k] || k;
@@ -810,6 +843,8 @@ function syncPermissionVisibility() {
   const manageRolesAllowed = canManageRolesUi();
 
   document.querySelector('.nav-item[data-page="settings"]')?.classList.toggle('hidden', !settingsAllowed);
+  // FE-19: the payments page is for managers (manage_payments) only.
+  document.querySelector('.nav-item[data-page="payments"]')?.classList.toggle('hidden', !paymentsAllowed);
   document.getElementById('btn-save-settings')?.closest('.settings-section')?.classList.toggle('hidden', !brandingAllowed);
   document.getElementById('gym-logo-file')?.closest('.settings-section')?.classList.toggle('hidden', !brandingAllowed);
   document.getElementById('btn-save-pricing')?.closest('.settings-section')?.classList.toggle('hidden', !paymentsAllowed);
@@ -891,49 +926,6 @@ function skeletonRows(n=4) {
 }
 
 // ── Init ──────────────────────────────────────────────────
-async function legacyInitDisabled() {
-  try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) { window.location.href = GYM_LOGIN_HREF; return; }
-    currentUser = session.user;
-    const emailEl = document.getElementById('account-email');
-    if (emailEl) emailEl.value = currentUser.email || '';
-
-    const { data: profile } = await sb.from('users').select('gym_id, name').eq('id', currentUser.id).single();
-    if (profile?.gym_id) {
-      currentGymId = profile.gym_id;
-      const { data: gym } = await sb.from('gyms').select('name, address, phone, description, subscription_tier, price_monthly, price_quarterly, price_annual').eq('id', currentGymId).single();
-      if (gym) {
-        document.getElementById('sidebar-gym-name').textContent = gym.name || '—';
-        const f = id => document.getElementById(id);
-        if (f('gym-name-input'))    f('gym-name-input').value    = gym.name        || '';
-        if (f('gym-address-input')) f('gym-address-input').value = gym.address     || '';
-        if (f('gym-phone-input'))   f('gym-phone-input').value   = gym.phone       || '';
-        if (f('gym-desc-input'))    f('gym-desc-input').value    = gym.description || '';
-        if (f('gym-price-monthly'))   f('gym-price-monthly').value   = gym.price_monthly   || 150;
-        if (f('gym-price-quarterly')) f('gym-price-quarterly').value = gym.price_quarterly || 400;
-        if (f('gym-price-annual'))    f('gym-price-annual').value    = gym.price_annual    || 1400;
-        const tier = (gym.subscription_tier || 'free').toUpperCase();
-        const badge = document.getElementById('sub-tier-badge');
-        const name  = document.getElementById('sub-tier-name');
-        if (badge) { badge.textContent = tier; badge.className = 'sub-tier-badge tier-' + tier.toLowerCase(); }
-        if (name)  name.textContent = tier === 'PRO' ? 'Plan Pro' : t('freeTier');
-      }
-    } else {
-      document.getElementById('sidebar-gym-name').textContent = profile?.name || '—';
-    }
-
-    await loadGymCoaches();
-    updateSessionCategory();
-    await Promise.all([loadDashboardStats(), loadSchedule(), loadCoaches(), loadClients(), loadCheckIns()]);
-    await loadAnalytics();
-    applyTranslations();
-    animateCounters();
-  } catch(err) {
-    console.error('Init error:', err);
-    toast(t('errorMsg') + ': ' + err.message, 'err');
-  }
-}
 
 function animateCounters() {
   document.querySelectorAll('.stat-value').forEach(el => {
@@ -1371,7 +1363,28 @@ function renderPendingInvites() {
     syncPermissionVisibility();
     return;
   }
-  target.innerHTML = rows.map(member => `
+  // Round 9 — join requests vs owner invites. Only owner invites set
+  // invited_at, so a pending row without one is a self-serve join
+  // request (invite_token NULL): it gets Approve / Decline, never
+  // Resend / Cancel — an invite is accepted by the invitee, a request
+  // is decided by the gym.
+  const requests = rows.filter(member => !member.invited_at);
+  const invites = rows.filter(member => member.invited_at);
+  target.innerHTML = [
+    requests.map(member => `
+    <div class="staff-pending-row">
+      <div>
+        <div class="staff-member-name">${Trainw.escapeHtml(member.name || member.invited_name || member.invite_email || '')}</div>
+        <div class="staff-pending-meta">${Trainw.escapeHtml(member.invite_email || member.email || '')}</div>
+        <div class="staff-pending-meta">${Trainw.escapeHtml(member.role_name || t('noRoleAssigned'))} · ${Trainw.escapeHtml(t('joinRequestLabel'))}</div>
+      </div>
+      <div class="staff-pending-actions">
+        <button class="btn-primary" type="button" data-join-approve="${Trainw.escapeHtml(member.membership_id || '')}">${Trainw.escapeHtml(t('joinApprove'))}</button>
+        <button class="btn-danger" type="button" data-join-reject="${Trainw.escapeHtml(member.membership_id || '')}">${Trainw.escapeHtml(t('joinReject'))}</button>
+      </div>
+    </div>
+  `).join(''),
+    invites.map(member => `
     <div class="staff-pending-row">
       <div>
         <div class="staff-member-name">${Trainw.escapeHtml(member.invited_name || member.invite_email || '')}</div>
@@ -1383,8 +1396,31 @@ function renderPendingInvites() {
         <button class="btn-danger" type="button" data-pending-cancel="${Trainw.escapeHtml(member.membership_id || '')}">${Trainw.escapeHtml(t('cancelInvite'))}</button>
       </div>
     </div>
-  `).join('');
+  `).join(''),
+  ].join('');
   syncPermissionVisibility();
+}
+
+async function approveJoinRequest(membershipId) {
+  if (!membershipId) return;
+  const result = await Trainw.api.run(sb.rpc('approve_gym_membership', { p_membership_id: membershipId }), { context: 'approve join request', fallback: null });
+  if (result.error) {
+    Trainw.ui.showToast(result.error.message || t('errorMsg'), 'error');
+    return;
+  }
+  Trainw.ui.showToast(t('joinRequestApproved'), 'success');
+  await loadStaffDirectory();
+}
+
+async function rejectJoinRequest(membershipId) {
+  if (!membershipId) return;
+  const result = await Trainw.api.run(sb.rpc('reject_gym_membership', { p_membership_id: membershipId }), { context: 'reject join request', fallback: null });
+  if (result.error) {
+    Trainw.ui.showToast(result.error.message || t('errorMsg'), 'error');
+    return;
+  }
+  Trainw.ui.showToast(t('joinRequestRejected'), 'success');
+  await loadStaffDirectory();
 }
 
 async function openStaffPanel(userId) {
@@ -1696,7 +1732,12 @@ async function saveStaffProfile(userId) {
     if (userResult.error) throw userResult.error;
 
     if (pendingStaffAvatarFile) {
-      const safeExt = (String(pendingStaffAvatarFile.name || '').split('.').pop() || 'png').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'png';
+      // FE-21: validate type/size before uploading (the bucket only
+      // accepts PNG/JPEG/WebP up to 5 MB — see DB-60). The extension comes
+      // from the validated MIME type, never from the filename.
+      const avatarCheck = Trainw.media.validateImageFile(pendingStaffAvatarFile);
+      if (!avatarCheck.ok) throw new Error(avatarCheck.error);
+      const safeExt = pendingStaffAvatarFile.type === 'image/jpeg' ? 'jpg' : (pendingStaffAvatarFile.type === 'image/webp' ? 'webp' : 'png');
       const path = `profiles/${currentGymId}/${userId}/avatar-${Date.now()}.${safeExt}`;
       const uploadResult = await Trainw.api.run(sb.storage.from('trainw-media').upload(path, pendingStaffAvatarFile, { upsert: true }), { context: 'upload staff avatar', fallback: null });
       if (uploadResult.error) throw uploadResult.error;
@@ -1779,6 +1820,12 @@ async function uploadGymLogo() {
     Trainw.ui.showToast('Selectionnez un logo avant de continuer.', 'info');
     return;
   }
+  // FE-21: validate type/size before uploading (PNG/JPEG/WebP, max 5 MB).
+  const logoCheck = Trainw.media.validateImageFile(file);
+  if (!logoCheck.ok) {
+    Trainw.ui.showToast(logoCheck.error, 'error');
+    return;
+  }
   const safeName = String(file.name || 'logo').replace(/[^a-zA-Z0-9._-]+/g, '-');
   const path = `gyms/${currentGymId}/logos/${Date.now()}-${safeName}`;
   const uploadResult = await Trainw.api.run(
@@ -1829,11 +1876,241 @@ function ensureExpiringDashboardStatCard() {
   card = document.createElement('div');
   card.className = 'stat-card hidden';
   card.id = 'stat-expiring';
-  card.innerHTML = '<div class="stat-label" id="stat-expiring-label">Expirent bient&ocirc;t</div><div class="stat-value" id="stat-expiring-value">&mdash;</div><div class="stat-change" id="stat-expiring-delta">14 prochains jours</div><div class="stat-glow"></div>';
+  card.innerHTML = '<div class="stat-label" id="stat-expiring-label">' + Trainw.escapeHtml(t('expiringSoonStat')) + '</div><div class="stat-value" id="stat-expiring-value">&mdash;</div><div class="stat-change" id="stat-expiring-delta">' + Trainw.escapeHtml(t('expiringDelta')) + '</div><div class="stat-glow"></div>';
   const checkinsCard = document.getElementById('stat-checkins')?.closest('.stat-card');
   if (checkinsCard?.parentElement === grid) grid.insertBefore(card, checkinsCard);
   else grid.appendChild(card);
   return card;
+}
+
+// ── LEDGER REVENUE (FE-19 / FE-15) ─────────────────────────────────────────
+// Single source of truth for revenue: cash actually collected, from the
+// payments ledger — never from client_profiles.price_paid sums and never
+// from tier list prices (the old v17 revenueFor estimate). Sets
+// #stat-revenue, #stat-revenue-delta and #pred-monthly. Used by the
+// dashboard, analytics, and the v17 refreshRevenue wrapper.
+async function loadLedgerRevenue(){
+  if(!currentGymId) return;
+  const now=new Date();
+  const curStart=Trainw.dateOnly(new Date(now.getFullYear(),now.getMonth(),1));
+  const prevStart=Trainw.dateOnly(new Date(now.getFullYear(),now.getMonth()-1,1));
+  const result=await Trainw.api.run(
+    sb.from('payments').select('amount_paid,paid_at,created_at')
+      .eq('gym_id',currentGymId).eq('status','paid')
+      .gte('created_at',prevStart),
+    {context:'load ledger revenue',fallback:[]});
+  const rows=Array.isArray(result.data)?result.data:[];
+  let cur=0,prev=0;
+  for(const row of rows){
+    const paidDate=String(row.paid_at||row.created_at||'').slice(0,10);
+    const amount=Number(row.amount_paid)||0;
+    if(paidDate>=curStart) cur+=amount;
+    else if(paidDate>=prevStart) prev+=amount;
+  }
+  const re=document.getElementById('stat-revenue');
+  if(re) re.textContent=cur>0?Trainw.formatCurrencyDT(cur):'—';
+  const de=document.getElementById('stat-revenue-delta');
+  if(de){
+    const delta=cur-prev;
+    de.classList.remove('up','down');
+    if(delta>0){de.classList.add('up');de.textContent=t('up').replace('{amount}',Trainw.formatCurrencyDT(delta));}
+    else if(delta<0){de.classList.add('down');de.textContent=t('down').replace('{amount}',Trainw.formatCurrencyDT(Math.abs(delta)));}
+    else de.textContent=t('flat');
+  }
+  Trainw.ui.setText('pred-monthly',cur>0?Trainw.formatCurrencyDT(cur):'-','-');
+}
+
+// ── PAYMENTS LEDGER VIEW (FE-19 / DB-36) ────────────────────────────────────
+let paymentsList = [];
+let freezesList = [];
+
+function fillPaymentClientSelects(){
+  const options=(allClients||[]).map(c=>`<option value="${c.id}">${Trainw.escapeHtml(c.name||'Client')}</option>`).join('');
+  const paySel=document.getElementById('pay-client-select');
+  if(paySel) paySel.innerHTML=options;
+  const freezeSel=document.getElementById('freeze-client-select');
+  if(freezeSel) freezeSel.innerHTML=options;
+}
+
+function openPaymentsFor(userId){
+  showPage('payments');
+  const sel=document.getElementById('pay-client-select');
+  if(sel && userId) sel.value=userId;
+  refreshPayCreditBalance();
+}
+
+// DB-66: show the selected member's available credit on the payments
+// page (manager view). Silent on failure — the line just stays empty.
+// A staff user without the manager role sees nothing: the RPC only
+// returns a balance to the member themself or a gym manager.
+async function refreshPayCreditBalance(){
+  const el=document.getElementById('pay-credit-balance');
+  if(!el) return;
+  const clientId=document.getElementById('pay-client-select')?.value||'';
+  if(!clientId||!currentGymId){el.textContent='';return;}
+  const res=await Trainw.api.run(sb.rpc('get_member_credit_balance',{p_client_id:clientId,p_gym_id:currentGymId}),{context:'load member credit balance',fallback:0,toastOnError:false,silent:true});
+  const balance=Number(res.data)||0;
+  el.textContent=balance>0?`Crédit disponible : ${Trainw.formatCurrencyDT(balance)}`:'';
+}
+
+async function loadPayments(){
+  if(!currentGymId) return;
+  fillPaymentClientSelects();
+  refreshPayCreditBalance();
+  const result=await Trainw.api.run(
+    sb.from('payments').select('id,client_id,amount_total,amount_paid,amount_refunded,method,status,payment_type,period_months,period_start,period_end,paid_at,created_at,invoice_number,void_reason')
+      .eq('gym_id',currentGymId).order('created_at',{ascending:false}).limit(50),
+    {context:'load payments',fallback:[]});
+  paymentsList=Array.isArray(result.data)?result.data:[];
+  renderPaymentsList();
+  renderDayTotals();
+  await loadFreezes();
+}
+
+function paymentMemberName(clientId){
+  const c=(allClients||[]).find(x=>x.id===clientId);
+  return c?(c.name||'Client'):'Client';
+}
+
+function renderPaymentsList(){
+  const el=document.getElementById('payments-list');
+  if(!el) return;
+  if(!paymentsList.length){el.innerHTML='<p class="empty-state">Aucun paiement enregistré.</p>';return;}
+  const methodLabel={cash:'Espèces',card:'Carte',bank_transfer:'Virement'};
+  el.innerHTML=paymentsList.map(p=>{
+    const name=Trainw.escapeHtml(paymentMemberName(p.client_id));
+    const amount=Trainw.formatCurrencyDT(Number(p.amount_paid)||0);
+    const date=Trainw.formatDate(p.paid_at||p.created_at);
+    const period=p.period_months>0?` · ${p.period_months} mois`:'';
+    const inv=p.invoice_number?` · Fact. ${Trainw.escapeHtml(p.invoice_number)}`:'';
+    const st=String(p.status||'');
+    const voidBtn=st==='paid'?`<button class="assignment-btn danger" type="button" data-void-payment="${p.id}">Annuler</button>`:'';
+    const reason=st==='voided'&&p.void_reason?` · Motif : ${Trainw.escapeHtml(p.void_reason)}`:'';
+    return `<div class="panel-row"><div><div class="panel-row-title">${name} — ${amount}</div><div class="panel-row-sub">${Trainw.escapeHtml(methodLabel[p.method]||p.method||'')} · ${date}${period}${inv}${reason}</div></div><div style="display:flex;gap:8px;align-items:center;"><span class="client-pill ${st==='paid'?'paid':'pending'}">${Trainw.escapeHtml(st)}</span>${voidBtn}</div></div>`;
+  }).join('');
+}
+
+function renderDayTotals(){
+  const today=Trainw.dateOnly(new Date());
+  const dayEl=document.getElementById('pay-day-date');
+  if(dayEl) dayEl.textContent=new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
+  let cash=0,card=0,transfer=0;
+  for(const p of paymentsList){
+    if(String(p.status||'')!=='paid') continue;
+    const d=String(p.paid_at||p.created_at||'').slice(0,10);
+    if(d!==today) continue;
+    const amt=Number(p.amount_paid)||0;
+    if(p.method==='card') card+=amt;
+    else if(p.method==='bank_transfer') transfer+=amt;
+    else cash+=amt;
+  }
+  Trainw.ui.setText('pay-total-cash',Trainw.formatCurrencyDT(cash),'-');
+  Trainw.ui.setText('pay-total-card',Trainw.formatCurrencyDT(card),'-');
+  Trainw.ui.setText('pay-total-transfer',Trainw.formatCurrencyDT(transfer),'-');
+  Trainw.ui.setText('pay-total-day',Trainw.formatCurrencyDT(cash+card+transfer),'-');
+}
+
+async function recordPayment(){
+  const errEl=document.getElementById('pay-err');
+  clearInlineError(errEl);
+  const clientId=document.getElementById('pay-client-select')?.value||'';
+  const parsed=parseMoneyInput(document.getElementById('pay-amount')?.value);
+  if(!clientId){showInlineError(errEl,'Choisissez un membre.');return;}
+  if(!parsed.valid||parsed.value<=0){showInlineError(errEl,'Montant invalide — utilisez un nombre positif (ex. 150).');return;}
+  const periodMonths=parseInt(document.getElementById('pay-period')?.value,10)||0;
+  const method=document.getElementById('pay-method')?.value||'cash';
+  const paidDate=document.getElementById('pay-date')?.value||Trainw.dateOnly(new Date());
+  const invoiceNumber=document.getElementById('pay-invoice-number')?.value.trim()||null;
+  const buyerTaxId=document.getElementById('pay-buyer-tax-id')?.value.trim()||null;
+  const vatRaw=(document.getElementById('pay-vat-rate')?.value||'').trim();
+  const vatRate=vatRaw===''?null:Number(vatRaw);
+  if(vatRate!==null&&(!Number.isFinite(vatRate)||vatRate<0||vatRate>1)){showInlineError(errEl,'Taux TVA invalide — entre 0 et 1 (ex. 0.19).');return;}
+  const notes=document.getElementById('pay-notes')?.value.trim()||null;
+  const btn=document.getElementById('btn-record-payment');
+  Trainw.ui.setBusy(btn,true);
+  const result=await Trainw.api.run(sb.from('payments').insert({
+    gym_id:currentGymId, client_id:clientId,
+    payment_type:periodMonths>0?'membership':'session',
+    status:'paid', provider:'manual', method, currency_code:'TND',
+    amount_total:parsed.value, amount_paid:parsed.value,
+    period_months:periodMonths, period_start:paidDate,
+    paid_at:paidDate, created_by:currentUser?.id||null,
+    invoice_number:invoiceNumber, buyer_tax_id:buyerTaxId, vat_rate:vatRate,
+    notes,
+  }),{context:'record payment'});
+  Trainw.ui.setBusy(btn,false);
+  if(result.error){showInlineError(errEl,result.error.message||'Erreur lors de l\'enregistrement.');return;}
+  document.getElementById('pay-amount').value='';
+  document.getElementById('pay-invoice-number').value='';
+  document.getElementById('pay-buyer-tax-id').value='';
+  document.getElementById('pay-vat-rate').value='';
+  document.getElementById('pay-notes').value='';
+  await loadPayments();
+  await loadLedgerRevenue();
+  toast('Paiement enregistré');
+}
+
+async function voidPayment(paymentId){
+  // P2 polish: replace window.prompt with the app's confirm modal.
+  const reason=window.prompt('Motif de l\'annulation (obligatoire) :');
+  if(!reason||!reason.trim()) return;
+  const result=await Trainw.api.run(sb.from('payments').update({
+    status:'voided', void_reason:reason.trim(),
+    voided_by:currentUser?.id||null, voided_at:new Date().toISOString(),
+  }).eq('id',paymentId).eq('gym_id',currentGymId),
+  {context:'void payment'});
+  if(result.error){toast(result.error.message||'Erreur lors de l\'annulation.');return;}
+  await loadPayments();
+  await loadLedgerRevenue();
+  await loadClients();
+  toast('Paiement annulé');
+}
+
+async function loadFreezes(){
+  if(!currentGymId) return;
+  const result=await Trainw.api.run(
+    sb.from('membership_freezes').select('id,user_id,freeze_start_date,freeze_end_date,reason,status,created_at')
+      .eq('gym_id',currentGymId).eq('status','active').order('freeze_start_date',{ascending:false}).limit(20),
+    {context:'load freezes',fallback:[]});
+  freezesList=Array.isArray(result.data)?result.data:[];
+  renderFreezesList();
+}
+
+function renderFreezesList(){
+  const el=document.getElementById('freezes-list');
+  if(!el) return;
+  if(!freezesList.length){el.innerHTML='<p class="empty-state">Aucun gel actif.</p>';return;}
+  el.innerHTML=freezesList.map(f=>{
+    const name=Trainw.escapeHtml(paymentMemberName(f.user_id));
+    const range=`${Trainw.formatDate(f.freeze_start_date)} → ${Trainw.formatDate(f.freeze_end_date)}`;
+    const reason=f.reason?` · ${Trainw.escapeHtml(f.reason)}`:'';
+    return `<div class="panel-row"><div><div class="panel-row-title">${name}</div><div class="panel-row-sub">${range}${reason}</div></div><button class="assignment-btn" type="button" data-cancel-freeze="${f.id}">Annuler le gel</button></div>`;
+  }).join('');
+}
+
+async function requestFreeze(){
+  const errEl=document.getElementById('freeze-err');
+  clearInlineError(errEl);
+  const userId=document.getElementById('freeze-client-select')?.value||'';
+  const start=document.getElementById('freeze-start')?.value||'';
+  const end=document.getElementById('freeze-end')?.value||'';
+  const reason=document.getElementById('freeze-reason')?.value.trim()||null;
+  if(!userId){showInlineError(errEl,'Choisissez un membre.');return;}
+  if(!start||!end||end<start){showInlineError(errEl,'Dates invalides — la fin doit suivre le début.');return;}
+  const result=await Trainw.api.run(sb.rpc('request_membership_freeze',{p_user_id:userId,p_start_date:start,p_end_date:end,p_reason:reason}),{context:'request freeze'});
+  if(result.error){showInlineError(errEl,result.error.message||'Erreur lors du gel.');return;}
+  await loadFreezes();
+  await loadClients();
+  toast('Abonnement gelé');
+}
+
+async function cancelFreeze(freezeId){
+  if(!confirm('Annuler ce gel ? La date de fin de l\'abonnement sera raccourcie des jours restants.')) return;
+  const result=await Trainw.api.run(sb.rpc('cancel_membership_freeze',{p_freeze_id:freezeId}),{context:'cancel freeze'});
+  if(result.error){toast(result.error.message||'Erreur lors de l\'annulation du gel.');return;}
+  await loadFreezes();
+  await loadClients();
+  toast('Gel annulé');
 }
 
 async function loadDashboardStats() {
@@ -1868,15 +2145,10 @@ async function loadDashboardStats() {
   const { count: ciCount } = await sb.from('check_ins').select('id',{count:'exact',head:true})
     .eq('gym_id', currentGymId).gte('checked_in_at', todayStr+'T00:00:00').lte('checked_in_at', todayStr+'T23:59:59');
   set('stat-checkins', ciCount);
-  const monthStart = Trainw.dateOnly(new Date(now.getFullYear(), now.getMonth(), 1));
-  const { data: revenueRows } = await sb.from('client_profiles')
-    .select('price_paid')
-    .eq('gym_id', currentGymId)
-    .eq('payment_status', 'paid')
-    .gte('membership_start_date', monthStart);
-  const totalRevenue = (revenueRows || []).reduce((sum, row) => sum + (Number(row?.price_paid) || 0), 0);
-  set('stat-revenue', totalRevenue > 0 ? totalRevenue + ' DT' : '—');
-  set('stat-revenue-delta', 'ce mois');
+  // FE-19 / FE-15: revenue comes from the payments ledger (cash actually
+  // collected), never from a price_paid sum. loadLedgerRevenue sets
+  // #stat-revenue, #stat-revenue-delta and #pred-monthly.
+  await loadLedgerRevenue();
   const expiringEnd = Trainw.dateOnly(Trainw.addDays(now, 14));
   const expiringResult = await Trainw.api.run(
     sb.from('client_profiles')
@@ -1893,7 +2165,7 @@ async function loadDashboardStats() {
     const valueEl = document.getElementById('stat-expiring-value');
     if (valueEl) valueEl.textContent = String(expiringCount);
     const labelEl = document.getElementById('stat-expiring-label');
-    if (labelEl) labelEl.textContent = 'Expirent bient\u00f4t';
+    if (labelEl) labelEl.textContent = t('expiringSoonStat');
     const deltaEl = document.getElementById('stat-expiring-delta');
     if (deltaEl) deltaEl.textContent = '14 prochains jours';
   }
@@ -1902,13 +2174,13 @@ async function loadDashboardStats() {
   const topEl = document.getElementById('top-coaches-list');
   if (topEl) topEl.innerHTML = !coaches?.length ? `<p class="empty-state">${t('noCoaches')}</p>` :
     coaches.map(c => { const nm=c.users?.name||'Coach'; const ini=nm.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
-      return `<div class="person-card" onclick="openCoachModal('${c.id}')" style="cursor:pointer;margin-bottom:12px;"><div class="person-header"><div class="person-avatar">${ini}</div><div><div class="person-name">${nm}</div><div class="person-role">${c.specialty||'—'}</div></div></div><div class="person-stats"><div class="person-stat-item"><div class="person-stat-value">${c.hourly_rate??'—'}<span style="font-size:11px;color:var(--mt)"> DT</span></div><div class="person-stat-label">${t('hourlyRate')}</div></div><div class="person-stat-item"><div class="person-stat-value">\u2605 ${c.rating??'—'}</div><div class="person-stat-label">${t('avgRating')}</div></div></div></div>`; }).join('');
+      return `<div class="person-card" data-coach-modal="${c.id}" style="cursor:pointer;margin-bottom:12px;"><div class="person-header"><div class="person-avatar">${Trainw.escapeHtml(ini)}</div><div><div class="person-name">${Trainw.escapeHtml(nm)}</div><div class="person-role">${Trainw.escapeHtml(c.specialty||'—')}</div></div></div><div class="person-stats"><div class="person-stat-item"><div class="person-stat-value">${c.hourly_rate??'—'}<span style="font-size:11px;color:var(--mt)"> DT</span></div><div class="person-stat-label">${t('hourlyRate')}</div></div><div class="person-stat-item"><div class="person-stat-value">\u2605 ${c.rating??'—'}</div><div class="person-stat-label">${t('avgRating')}</div></div></div></div>`; }).join('');
 
   const { data: sessions } = await sb.from('sessions').select('id, session_date, start_time, type, status, session_name, users!sessions_coach_id_fkey(name)').eq('gym_id', currentGymId).order('session_date',{ascending:false}).limit(4);
   const recentEl = document.getElementById('recent-sessions-list');
   if (recentEl) recentEl.innerHTML = !sessions?.length ? `<p class="empty-state">${t('noSessions')}</p>` :
     sessions.map(s => { const time=s.start_time?.slice(0,5)||'—'; const date=new Date(s.session_date).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'}); const label=s.session_name||(s.type||'Séance').replace(/_/g,' ');
-      return `<div class="schedule-item"><div class="schedule-time-col"><div class="schedule-time">${time}</div></div><div><div class="schedule-title">${label}</div><div class="schedule-meta">${s.users?.name||'—'} · ${date}</div></div><div class="schedule-status status-${s.status||'pending'}">${s.status||'pending'}</div></div>`; }).join('');
+      return `<div class="schedule-item"><div class="schedule-time-col"><div class="schedule-time">${time}</div></div><div><div class="schedule-title">${Trainw.escapeHtml(label)}</div><div class="schedule-meta">${Trainw.escapeHtml(s.users?.name||'—')} · ${date}</div></div><div class="schedule-status status-${s.status||'pending'}">${s.status||'pending'}</div></div>`; }).join('');
 }
 
 // ── Schedule ──────────────────────────────────────────────
@@ -1996,7 +2268,7 @@ function renderSchedule() {
     const editLbl  = t('editSession')  || (currentLang==='ar'?'تعديل':'Modifier');
     const delLbl   = t('deleteSession')|| (currentLang==='ar'?'حذف':'Supprimer');
 
-    return `<div class="session-card${isPast ? ' session-past' : ''}" onclick="openSessionDetail('${s.id}')">
+    return `<div class="session-card${isPast ? ' session-past' : ''}" data-session-detail="${s.id}">
       <div class="sc-header">
         <div class="sc-datetime">
           <div class="sc-date">${dateStr}</div>
@@ -2004,18 +2276,18 @@ function renderSchedule() {
         </div>
         <span class="sc-status ${sl.cls}">${sl[currentLang] || sl.fr}</span>
       </div>
-      <div class="sc-title">${label}</div>
+      <div class="sc-title">${Trainw.escapeHtml(label)}</div>
       <div class="sc-meta">
-        <span class="sc-coach">🏋️ ${coach}</span>
+        <span class="sc-coach">🏋️ ${Trainw.escapeHtml(coach)}</span>
         <span class="sc-type">${(s.type||'').replace(/_/g,' ')}</span>
       </div>
       <div class="sc-capacity">
         <div class="sc-cap-bar"><div class="sc-cap-fill" style="width:${fillPct}%;background:${fillPct>=80?'#c8f135':fillPct>=50?'#fac775':'#888'};"></div></div>
         <span class="sc-cap-label">${attended}/${cap} participants</span>
       </div>
-      <div class="sc-actions" onclick="event.stopPropagation()">
-        <button class="sc-btn-edit" onclick="openEditSessionModal('${s.id}')">✏ ${editLbl}</button>
-        <button class="sc-btn-del"  onclick="deleteSession('${s.id}')">✕ ${delLbl}</button>
+      <div class="sc-actions">
+        <button class="sc-btn-edit" data-session-edit="${s.id}">✏ ${editLbl}</button>
+        <button class="sc-btn-del"  data-session-delete="${s.id}">✕ ${delLbl}</button>
       </div>
     </div>`;
   }).join('');
@@ -2070,8 +2342,8 @@ function populateGymClassCoachSelector() {
 function renderScheduleTabs() {
   const sessionsButton = document.querySelector('[data-schedule-tab="sessions"]');
   const classesButton = document.querySelector('[data-schedule-tab="classes"]');
-  if (sessionsButton) sessionsButton.textContent = 'Seances';
-  if (classesButton) classesButton.textContent = 'Modeles de Cours';
+  if (sessionsButton) sessionsButton.textContent = t('sessionsTab');
+  if (classesButton) classesButton.textContent = t('classTemplatesTab');
 
   document.querySelectorAll('[data-schedule-tab]').forEach(button => {
     button.classList.toggle('active', button.dataset.scheduleTab === scheduleTab);
@@ -2266,7 +2538,7 @@ async function saveGymClass() {
     };
 
     const result = classId
-      ? await Trainw.api.run(sb.from('gym_classes').update(payload).eq('id', classId), { context: 'update gym class', fallback: null })
+      ? await Trainw.api.run(sb.from('gym_classes').update(payload).eq('id', classId).eq('gym_id', currentGymId), { context: 'update gym class', fallback: null })
       : await Trainw.api.run(sb.from('gym_classes').insert({ ...payload, created_by: currentUser?.id || null }), { context: 'create gym class', fallback: null });
     if (result.error) throw result.error;
 
@@ -2285,7 +2557,7 @@ async function deleteGymClass(classId) {
 
   try {
     const result = await Trainw.api.run(
-      sb.from('gym_classes').update({ is_active: false }).eq('id', classId),
+      sb.from('gym_classes').update({ is_active: false }).eq('id', classId).eq('gym_id', currentGymId),
       { context: 'delete gym class', fallback: null }
     );
     if (result.error) throw result.error;
@@ -2350,8 +2622,8 @@ async function openSessionDetail(sessionId) {
   body.innerHTML = `
     <div class="sess-detail-top">
       <div>
-        <div class="sess-detail-title">${label}</div>
-        <div class="sess-detail-meta">🏋️ ${coach} &nbsp;·&nbsp; 📅 ${dateStr}</div>
+        <div class="sess-detail-title">${Trainw.escapeHtml(label)}</div>
+        <div class="sess-detail-meta">🏋️ ${Trainw.escapeHtml(coach)} &nbsp;·&nbsp; 📅 ${dateStr}</div>
       </div>
       <span class="sc-status ${sl.cls}" style="font-size:12px;padding:5px 14px;">${sl[currentLang]||sl.fr}</span>
     </div>
@@ -2367,8 +2639,8 @@ async function openSessionDetail(sessionId) {
     </div>
     <div id="session-detail-enrollments" style="margin-top:16px;"></div>
     <div class="sess-detail-actions">
-      <button class="btn-primary" style="flex:1;" onclick="document.getElementById('session-detail-modal').classList.remove('show');openEditSessionModal('${s.id}')">✏ ${editLbl}</button>
-      <button class="btn-danger" onclick="document.getElementById('session-detail-modal').classList.remove('show');deleteSession('${s.id}')">✕ ${delLbl}</button>
+      <button class="btn-primary" style="flex:1;" data-session-edit="${s.id}">✏ ${editLbl}</button>
+      <button class="btn-danger" data-session-delete="${s.id}">✕ ${delLbl}</button>
     </div>`;
   document.getElementById('session-detail-modal')?.classList.add('show');
 
@@ -2474,7 +2746,7 @@ async function openEditSessionModal(sessionId) {
   const coachSel = document.getElementById('edit-sess-coach');
   if (coachSel) {
     coachSel.innerHTML = `<option value="">— Aucun coach —</option>` +
-      gymCoaches.map(c => `<option value="${c.user_id}"${c.user_id===s.coach_id?' selected':''}>${c.users?.name||'Coach'}</option>`).join('');
+      gymCoaches.map(c => `<option value="${c.user_id}"${c.user_id===s.coach_id?' selected':''}>${Trainw.escapeHtml(c.users?.name||'Coach')}</option>`).join('');
   }
 
   if (!allClients.length && currentGymId) {
@@ -2516,7 +2788,7 @@ async function saveEditSession() {
       start_time: time ? time + ':00' : undefined,
       duration_minutes: duration, capacity, status,
       coach_id: coachId || null,
-    }).eq('id', id);
+    }).eq('id', id).eq('gym_id', currentGymId);
     if (error) throw error;
 
     const nextSelectedIds = Array.from(new Set(getChecklistSelectedIds('edit-sess-clients-list')));
@@ -2533,6 +2805,7 @@ async function saveEditSession() {
       const { error: deleteEnrollmentsError } = await sb.from('session_enrollments')
         .delete()
         .eq('session_id', id)
+        .eq('gym_id', currentGymId)
         .in('client_id', removedIds);
       if (deleteEnrollmentsError) throw deleteEnrollmentsError;
     }
@@ -2554,14 +2827,18 @@ async function saveEditSession() {
 
 async function deleteSession(sessionId) {
   if (!confirm('Supprimer cette séance ? Action irréversible.')) return;
+  const key = `delete-session:${sessionId}`;
+  if (inFlightActions.has(key)) return;
+  inFlightActions.add(key);
   try {
-    const { error } = await sb.from('sessions').delete().eq('id', sessionId);
+    const { error } = await sb.from('sessions').delete().eq('id', sessionId).eq('gym_id', currentGymId);
     if (error) throw error;
     allSessions = allSessions.filter(s => s.id !== sessionId);
     renderSchedule();
     await loadDashboardStats(); animateCounters();
     toast('Séance supprimée');
   } catch(err) { toast(t('errorMsg') + ': ' + err.message, 'err'); }
+  finally { inFlightActions.delete(key); }
 }
 async function submitNewSession() {
   const name=document.getElementById('sess-name').value.trim(), typeVal=document.getElementById('sess-type').value;
@@ -2663,14 +2940,14 @@ async function loadCoaches() {
     const stars = c.rating ? '\u2605'.repeat(Math.round(c.rating)) + '\u2606'.repeat(5-Math.round(c.rating)) : '—';
     const bg = cardColor(c.specialty);
     return `<div class="coach-carousel-card" data-index="${i}" style="background:${bg};">
-      <div class="ccc-avatar">${ini}</div>
-      <div class="ccc-name">${nm}</div>
-      <div class="ccc-specialty">${c.specialty || '—'}</div>
+      <div class="ccc-avatar">${Trainw.escapeHtml(ini)}</div>
+      <div class="ccc-name">${Trainw.escapeHtml(nm)}</div>
+      <div class="ccc-specialty">${Trainw.escapeHtml(c.specialty || '—')}</div>
       <div class="ccc-stars">${stars}</div>
       <div class="ccc-rate">${c.hourly_rate ? c.hourly_rate + ' DT/séance' : '—'}</div>
       <div class="ccc-actions">
-        <button class="ccc-btn ccc-btn-view" onclick="openCoachModal('${c.id}')">Voir Profil</button>
-        <button class="ccc-btn ccc-btn-book" onclick="openBookSessionForCoach('${c.id}','${nm.replace(/'/g,"&#39;")}')">Réserver</button>
+        <button class="ccc-btn ccc-btn-view" data-coach-modal="${c.id}">Voir Profil</button>
+        <button class="ccc-btn ccc-btn-book" data-book-coach="${c.id}">Réserver</button>
       </div>
     </div>`;
   }).join('');
@@ -2689,6 +2966,7 @@ async function loadCoaches() {
   const outer = document.getElementById('carousel-track-outer');
   if (outer) outer.scrollLeft = 0;
   startCarouselAutoplay();
+  await runGymHooks('afterLoadCoaches');
 }
 
 function getCarouselCardWidth() {
@@ -2744,7 +3022,7 @@ function resetCarouselAutoplay() {
   stopCarouselAutoplay(); startCarouselAutoplay();
 }
 
-function openBookSessionForCoach(coachId, coachName) {
+function openBookSessionForCoach(coachId) {
   // Pre-fill session modal with this coach selected and open it
   const match = gymCoaches.find(c => c.id === coachId || c.user_id === coachId);
   openCreateSessionModal({ coachId: match?.user_id || match?.id || coachId });
@@ -2830,6 +3108,47 @@ function openEditCoachModal(profileId,name,specialty,rate,bio){
   document.getElementById('edit-coach-rate2').value=rate||'';
   document.getElementById('edit-coach-bio2').value=bio;
   document.getElementById('coach-modal').classList.remove('show'); m.classList.add('show');
+  loadCoachTagSuggestions();
+  // Refresh the "save as tag" affordance as the manager types.
+  const specialtyInput=document.getElementById('edit-coach-specialty2');
+  if(specialtyInput&&!specialtyInput.dataset.tagWatch){
+    specialtyInput.dataset.tagWatch='1';
+    specialtyInput.addEventListener('input',()=>loadCoachTagSuggestions());
+  }
+}
+// DB-57 (round 5): per-gym tag suggestions for the coach specialty
+// field — global tags + this gym's tags as chips (click fills the
+// input), plus a dashed chip to save the typed specialty as a tag of
+// this gym via the create_gym_specialty_tag RPC.
+async function loadCoachTagSuggestions(){
+  const wrap=document.getElementById('edit-coach-tag-suggestions'); if(!wrap) return;
+  wrap.innerHTML='';
+  if(!currentGymId) return;
+  const {data,error}=await sb.from('specialty_tags').select('id, name, gym_id').or(`gym_id.is.null,gym_id.eq.${currentGymId}`).order('name');
+  if(error||!data) return;
+  const input=document.getElementById('edit-coach-specialty2');
+  const current=(input?.value||'').trim().toLowerCase();
+  if(data.length){
+    const label=document.createElement('span');
+    label.className='tag-suggestions-label'; label.textContent=t('tagSuggestions')+':';
+    wrap.appendChild(label);
+  }
+  data.forEach(tag=>{
+    const chip=document.createElement('button');
+    chip.type='button'; chip.className='tag-chip'; chip.textContent=tag.name;
+    chip.addEventListener('click',()=>{ if(input) input.value=tag.name; loadCoachTagSuggestions(); });
+    wrap.appendChild(chip);
+  });
+  if(current&&!data.some(tag=>tag.name.toLowerCase()===current)){
+    const add=document.createElement('button');
+    add.type='button'; add.className='tag-chip is-new'; add.textContent='+ '+t('saveAsTag');
+    add.addEventListener('click',async()=>{
+      const r=await Trainw.api.run(sb.rpc('create_gym_specialty_tag',{p_gym_id:currentGymId,p_name:input.value.trim()}),{context:'save tag',fallback:null});
+      if(r.error) return;
+      toast(t('savedOk')); loadCoachTagSuggestions();
+    });
+    wrap.appendChild(add);
+  }
 }
 async function saveEditCoach(){
   const profileId=document.getElementById('edit-coach-profile-id').value;
@@ -2842,8 +3161,12 @@ async function saveEditCoach(){
 }
 async function deleteCoach(userId,profileId){
   if(!confirm('Supprimer ce coach ?')) return;
+  const key=`delete-coach:${userId}`;
+  if(inFlightActions.has(key)) return;
+  inFlightActions.add(key);
   try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('coach_profiles').delete().eq('id',profileId).eq('gym_id', currentGymId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;document.getElementById('coach-modal').classList.remove('show');await loadCoaches();await loadDashboardStats();animateCounters();toast('Coach supprimé');}
   catch(e){toast(`${t('errorMsg')}: ${e?.message||'Erreur'}`,'err');}
+  finally{inFlightActions.delete(key);}
 }
 
 // ── Clients ───────────────────────────────────────────────
@@ -2894,6 +3217,7 @@ async function loadClients() {
   renderClients(); populateCheckInSelector(); populateMessagesList(); populateSessionClientSelector(); renderCredentialClientList(); renderGateAccessLog(); renderGateSettingsCredentialsTable(); renderGateSettingsAccessLogTable(); updateGateTerminalPreview();
   if (selectedCredentialClientId) void loadClientCredentials();
   if (directoryResult.error) toast(t('errorMsg'), 'err');
+  await runGymHooks('afterLoadClients');
 }
 function renderClients(){
   const el=document.getElementById('clients-grid'); if(!el) return;
@@ -2920,20 +3244,32 @@ function renderClients(){
     // Expiry logic
     let expiryBadge='',expiryClass='';
     if(c.profile?.membership_end_date){const endD=new Date(c.profile.membership_end_date);const daysLeft=Math.ceil((endD-new Date())/(1000*60*60*24));if(daysLeft<0){expiryBadge=`${t('expiredLabel')} (${Math.abs(daysLeft)}j)`;expiryClass='badge-expired';}else if(daysLeft<=7){expiryBadge=`${t('expiresIn')} ${daysLeft}j`;expiryClass='badge-expiring';}else{expiryBadge=`${t('activeLabel')} —${daysLeft}j`;expiryClass='badge-active-days';}}
-    return `<div class="client-card-v2${expiryClass==='badge-expired'?' card-expired':expiryClass==='badge-expiring'?' card-expiring':''}"><div class="cc-top"><div class="cc-avatar">${ini}</div><div class="cc-badges"><span class="cc-badge ${payBadgeClass}">${payLabel}</span><span class="cc-badge ${tierClass}">${tier.toUpperCase()}</span>${expiryBadge?`<span class="cc-badge ${expiryClass}">${expiryBadge}</span>`:''}</div></div><div class="cc-body"><div class="cc-name">${c.name||'Client'}</div><div class="cc-meta"><span class="cc-meta-item">📱 ${c.phone||'—'}</span><span class="cc-meta-item">🎯 ${goal}</span><span class="cc-meta-item">📅 ${since}</span></div></div><div class="cc-actions"><button class="cc-btn cc-btn-msg" onclick="openMessageModal('${c.id}','${(c.name||'Client').replace(/'/g,"&#39;")}')">💬</button><button class="cc-btn cc-btn-edit" onclick="openEditClientModal('${c.id}')">✏ ${t('editClient')}</button><button class="cc-btn cc-btn-del" onclick="deleteClient('${c.id}')">✕ ${t('deleteClient')}</button></div></div>`; }).join('');
+    return `<div class="client-card-v2${expiryClass==='badge-expired'?' card-expired':expiryClass==='badge-expiring'?' card-expiring':''}"><div class="cc-top"><div class="cc-avatar">${Trainw.escapeHtml(ini)}</div><div class="cc-badges"><span class="cc-badge ${payBadgeClass}">${payLabel}</span><span class="cc-badge ${tierClass}">${tier.toUpperCase()}</span>${expiryBadge?`<span class="cc-badge ${expiryClass}">${expiryBadge}</span>`:''}</div></div><div class="cc-body"><div class="cc-name">${Trainw.escapeHtml(c.name||'Client')}</div><div class="cc-meta"><span class="cc-meta-item">📱 ${Trainw.escapeHtml(c.phone||'—')}</span><span class="cc-meta-item">🎯 ${Trainw.escapeHtml(goal)}</span><span class="cc-meta-item">📅 ${since}</span></div></div><div class="cc-actions"><button class="cc-btn cc-btn-msg" data-client-msg="${c.id}">💬</button><button class="cc-btn cc-btn-edit" data-client-edit="${c.id}">✏ ${t('editClient')}</button><button class="cc-btn cc-btn-del" data-client-del="${c.id}">✕ ${t('deleteClient')}</button></div></div>`; }).join('');
   el.querySelectorAll('.cc-btn-del').forEach(element => {
     element.classList.toggle('hidden', !hasPermission('delete_clients'));
   });
   syncPermissionVisibility();
 }
+// FE-17: month-end clamping in UTC. The old setMonth() overflowed Jan 31
+// + 1 month to Mar 2/3, and mixed local getters with toISOString() (UTC),
+// shifting the date around midnight in Africa/Tunis. All math here is in
+// UTC on the date-only value, and the day is clamped to the target month's
+// last day (Jan 31 + 1 month = Feb 28/29).
 function calcEndDate(startStr, tier) {
   if(!startStr) return null;
-  const d = new Date(startStr);
-  if(tier==='monthly'||tier==='mensuel') d.setMonth(d.getMonth()+1);
-  else if(tier==='quarterly'||tier==='trimestriel') d.setMonth(d.getMonth()+3);
-  else if(tier==='annual'||tier==='annuel') d.setFullYear(d.getFullYear()+1);
+  let months = 0;
+  if(tier==='monthly'||tier==='mensuel') months=1;
+  else if(tier==='quarterly'||tier==='trimestriel') months=3;
+  else if(tier==='annual'||tier==='annuel') months=12;
   else return null; // basic / per-session = no expiry
-  return d.toISOString().split('T')[0];
+  const d = new Date(startStr);
+  if(Number.isNaN(d.getTime())) return null;
+  const targetMonth = d.getUTCMonth() + months;
+  const targetYear = d.getUTCFullYear() + Math.floor(targetMonth / 12);
+  const targetMonthInYear = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonthInYear + 1, 0)).getUTCDate();
+  const day = Math.min(d.getUTCDate(), lastDay);
+  return new Date(Date.UTC(targetYear, targetMonthInYear, day)).toISOString().split('T')[0];
 }
 
 function clearInlineError(element) {
@@ -3024,13 +3360,13 @@ function renderCoachSearchResults() {
   if (!statusEl || !resultsEl) return;
 
   if (!coachSearchTerm.trim()) {
-    statusEl.textContent = 'Cherchez un nom ou une specialite pour trouver un coach existant.';
+    statusEl.textContent = t('coachSearchHint');
     resultsEl.innerHTML = '';
     return;
   }
 
   if (coachSearchLoading) {
-    statusEl.textContent = 'Recherche en cours...';
+    statusEl.textContent = t('searchingInProgress');
     resultsEl.innerHTML = skeletonCards(2);
     return;
   }
@@ -3051,7 +3387,7 @@ function renderCoachSearchResults() {
         </div>
         <div class="coach-search-card-rating">Note ${Trainw.escapeHtml(String(coach.rating ?? '-'))}</div>
       </div>
-      <div class="coach-search-card-meta">${Trainw.escapeHtml(coach.email || '')}</div>
+      <div class="coach-search-card-meta">Email masqué — il sera visible une fois le coach ajouté.</div>
       <button class="btn-primary" type="button" data-add-existing-coach="${Trainw.escapeHtml(coach.user_id || '')}" data-coach-email="${Trainw.escapeHtml(coach.email || '')}" data-coach-name="${Trainw.escapeHtml(coach.name || 'Coach')}">Ajouter a la salle</button>
     </article>
   `).join('');
@@ -3113,10 +3449,24 @@ async function searchExistingCoaches(term) {
     if (membershipResult.error) throw membershipResult.error;
 
     const excludedUserIds = new Set((membershipResult.data || []).map(item => item.user_id).filter(Boolean));
+    // FE-08: the old search ran a bare global `users` query (ilike on name,
+    // returning every matching user's name + email, coach or not). The
+    // search now runs against coach_profiles only — a coach is findable
+    // only if they have a coach_profiles row. Name matching goes through
+    // the embedded users relation (PostgREST embedded filter
+    // `users.name=ilike.*term*`); verify on staging that the live API
+    // honours it — if it does not, name search returns nothing and only
+    // specialty matches appear.
     const [nameResult, specialtyResult] = await Promise.all([
       Trainw.api.run(
-        sb.from('users').select('id, name, email').ilike('name', `%${normalizedTerm}%`).limit(20),
-        { context: 'search users for coaches', fallback: [] }
+        sb.from('coach_profiles')
+          .select('user_id, specialty, rating, users:users!coach_profiles_user_id_fkey(id, name, email)')
+          .eq('is_active', true)
+          .neq('approval_status', 'rejected')
+          .ilike('users.name', `%${normalizedTerm}%`)
+          .order('rating', { ascending: false })
+          .limit(20),
+        { context: 'search coaches by name', fallback: [] }
       ),
       Trainw.api.run(
         sb.from('coach_profiles')
@@ -3132,23 +3482,8 @@ async function searchExistingCoaches(term) {
     if (nameResult.error) throw nameResult.error;
     if (specialtyResult.error) throw specialtyResult.error;
 
-    const userIdsFromName = (nameResult.data || []).map(user => user.id).filter(Boolean);
-    const profilesByNameResult = userIdsFromName.length
-      ? await Trainw.api.run(
-          sb.from('coach_profiles')
-            .select('user_id, specialty, rating, users:users!coach_profiles_user_id_fkey(id, name, email)')
-            .eq('is_active', true)
-            .neq('approval_status', 'rejected')
-            .in('user_id', userIdsFromName)
-            .order('rating', { ascending: false })
-            .limit(20),
-          { context: 'load named coaches', fallback: [] }
-        )
-      : { data: [], error: null };
-    if (profilesByNameResult.error) throw profilesByNameResult.error;
-
     const resultMap = new Map();
-    [...(specialtyResult.data || []), ...(profilesByNameResult.data || [])].forEach(row => {
+    [...(specialtyResult.data || []), ...(nameResult.data || [])].forEach(row => {
       const user = row.users || {};
       const userId = row.user_id || user.id;
       if (!userId || excludedUserIds.has(userId)) return;
@@ -3211,8 +3546,10 @@ async function loadGymCoaches() {
   if (!currentGymId) {
     gymCoaches = [];
     const emptyOption = `<option value="">${t('noCoachOpt') || 'No coach'}</option>`;
-    Trainw.ui.setHtml('sess-coach', emptyOption);
-    Trainw.ui.setHtml('edit-sess-coach', emptyOption);
+    // FE-31: setHtmlUnsafe — this is static markup (a translated label),
+    // not user data. setHtml escapes by default.
+    Trainw.ui.setHtmlUnsafe('sess-coach', emptyOption);
+    Trainw.ui.setHtmlUnsafe('edit-sess-coach', emptyOption);
     populateGymClassCoachSelector();
     return;
   }
@@ -3238,8 +3575,10 @@ async function loadGymCoaches() {
     })
   ).join('');
 
-  Trainw.ui.setHtml('sess-coach', options);
-  Trainw.ui.setHtml('edit-sess-coach', options);
+  // FE-31: setHtmlUnsafe — every value in `options` was escaped with
+  // Trainw.escapeHtml at build time above. setHtml escapes by default.
+  Trainw.ui.setHtmlUnsafe('sess-coach', options);
+  Trainw.ui.setHtmlUnsafe('edit-sess-coach', options);
   populateGymClassCoachSelector();
   renderGymClasses();
 }
@@ -3345,39 +3684,58 @@ function openEditClientModal(userId){
   document.getElementById('edit-client-age').value=profile.age||'';
   document.getElementById('edit-client-membership').value=profile.membership_tier||'basic';
   document.getElementById('edit-client-training').value=profile.training_type||profile.fitness_goal||'';
-  document.getElementById('edit-client-payment').value=profile.payment_status||'paid';
+  // FE-19: payment status + amount are DERIVED from the payments ledger and
+  // shown read-only here. To change them, record a payment (or void one)
+  // from the Paiements page — the ledger settlement updates the profile.
+  const paySummary=document.getElementById('edit-client-payment-summary');
+  if(paySummary){
+    const st=String(profile.payment_status||'pending');
+    const amt=Number(profile.price_paid)||0;
+    paySummary.textContent=(st==='paid'?t('paid'):t('filterPending'))+' · '+Trainw.formatCurrencyDT(amt);
+  }
   const esd=document.getElementById('edit-client-start-date'); if(esd) esd.value=profile.membership_start_date||'';
-  const epr=document.getElementById('edit-client-price');      if(epr) epr.value=profile.price_paid||'';
   modal.classList.add('show');
 }
 async function saveEditClient(){
   const userId=document.getElementById('edit-client-id').value, name=document.getElementById('edit-client-name').value.trim();
   const phone=document.getElementById('edit-client-phone').value.trim(), age=parseInt(document.getElementById('edit-client-age').value)||null;
   const membership=document.getElementById('edit-client-membership').value, training=document.getElementById('edit-client-training').value;
-  const payment=document.getElementById('edit-client-payment').value;
   const errEl=document.getElementById('edit-client-err'); errEl.classList.remove('show'); errEl.textContent='';
   if(!name){errEl.textContent=t('nameMissing');errEl.classList.add('show');return;}
   const btn=document.getElementById('btn-save-edit-client'); btn.textContent='…'; btn.disabled=true;
   try{
-    await sb.from('users').update({name,phone:phone||null}).eq('id',userId);
+    // FE-20: both updates go through Trainw.api.run and abort on error —
+    // the old code awaited them raw and never checked the result, so a
+    // failed save looked successful. FE-07: the profile update is scoped
+    // to this gym (client_profiles.gym_id was backfilled in migration
+    // 20261115080000). The users row is shared across gyms, so it is NOT
+    // scoped by gym_id — RLS (is_same_gym_user) is the backstop there.
+    const userResult = await Trainw.api.run(sb.from('users').update({name,phone:phone||null}).eq('id',userId), { context: 'update client user', fallback: null });
+    if (userResult.error) throw userResult.error;
     const editStart=document.getElementById('edit-client-start-date')?.value||null;
-    const editPrice=parseFloat(document.getElementById('edit-client-price')?.value)||null;
     const editEnd=editStart?calcEndDate(editStart,membership):null;
-    const profUpdate={membership_tier:membership,training_type:training,fitness_goal:training,payment_status:payment,age};
+    // FE-19: payment_status / price_paid are ledger-derived and are NOT
+    // written here. The profile update below covers identity + tier +
+    // dates only; money moves only through the payments ledger.
+    const profUpdate={membership_tier:membership,training_type:training,fitness_goal:training,age};
     if(editStart) profUpdate.membership_start_date=editStart;
     if(editEnd)   profUpdate.membership_end_date=editEnd;
-    if(editPrice!==null) profUpdate.price_paid=editPrice;
-    await sb.from('client_profiles').update(profUpdate).eq('user_id',userId);
+    const profileResult = await Trainw.api.run(sb.from('client_profiles').update(profUpdate).eq('user_id',userId).eq('gym_id', currentGymId), { context: 'update client profile', fallback: null });
+    if (profileResult.error) throw profileResult.error;
     const idx=allClients.findIndex(c=>c.id===userId);
-    if(idx!==-1){allClients[idx].name=name;allClients[idx].phone=phone;const esd2=document.getElementById('edit-client-start-date')?.value;const epr2=parseFloat(document.getElementById('edit-client-price')?.value)||null;allClients[idx].profile={...allClients[idx].profile,membership_tier:membership,training_type:training,fitness_goal:training,payment_status:payment,age,membership_start_date:esd2||allClients[idx].profile.membership_start_date,membership_end_date:esd2?calcEndDate(esd2,membership):allClients[idx].profile.membership_end_date,price_paid:epr2??allClients[idx].profile.price_paid};}
+    if(idx!==-1){allClients[idx].name=name;allClients[idx].phone=phone;const esd2=document.getElementById('edit-client-start-date')?.value;allClients[idx].profile={...allClients[idx].profile,membership_tier:membership,training_type:training,fitness_goal:training,age,membership_start_date:esd2||allClients[idx].profile.membership_start_date,membership_end_date:esd2?calcEndDate(esd2,membership):allClients[idx].profile.membership_end_date};}
     toast(t('savedOk')); document.getElementById('edit-client-modal').classList.remove('show'); renderClients();
   }catch(err){errEl.textContent=err.message;errEl.classList.add('show');}
   finally{btn.textContent=t('saveChanges');btn.disabled=false;}
 }
 async function deleteClient(userId){
   if(!confirm('Supprimer ce client ? Action irréversible.')) return;
-  try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('client_profiles').delete().eq('user_id',userId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;allClients=allClients.filter(c=>c.id!==userId);renderClients();await loadDashboardStats();animateCounters();toast('Client supprimé');}
+  const key=`delete-client:${userId}`;
+  if(inFlightActions.has(key)) return;
+  inFlightActions.add(key);
+  try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('client_profiles').delete().eq('user_id',userId).eq('gym_id', currentGymId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;allClients=allClients.filter(c=>c.id!==userId);renderClients();await loadDashboardStats();animateCounters();toast('Client supprimé');}
   catch(e){toast(t('errorMsg')+': '+e.message,'err');}
+  finally{inFlightActions.delete(key);}
 }
 
 // ── CHECK-IN ──────────────────────────────────────────────
@@ -3390,12 +3748,12 @@ function setDefaultDates() {
 function populateSessionClientSelector() {
   const sel = document.getElementById('sess-client'); if(!sel) return;
   sel.innerHTML = '<option value="">— Aucun client spécifique —</option>' +
-    allClients.map(c => `<option value="${c.id}">${c.name||'Client'}</option>`).join('');
+    allClients.map(c => `<option value="${c.id}">${Trainw.escapeHtml(c.name||'Client')}</option>`).join('');
 }
 
 function populateCheckInSelector(){
   const sel=document.getElementById('checkin-client-select'); if(!sel) return;
-  sel.innerHTML=`<option value="">${t('selectClient')}</option>`+allClients.map(c=>`<option value="${c.id}">${c.name||'Client'}</option>`).join('');
+  sel.innerHTML=`<option value="">${t('selectClient')}</option>`+allClients.map(c=>`<option value="${c.id}">${Trainw.escapeHtml(c.name||'Client')}</option>`).join('');
 }
 async function submitNewClient() {
   const name = document.getElementById('new-client-name')?.value.trim() || '';
@@ -3404,7 +3762,6 @@ async function submitNewClient() {
   const age = Number.isFinite(ageValue) ? ageValue : null;
   const membership = document.getElementById('new-client-membership')?.value || 'basic';
   const training = document.getElementById('new-client-training')?.value || '';
-  const payment = document.getElementById('new-client-payment-status')?.value || 'paid';
   const errEl = document.getElementById('add-client-err');
   const btn = document.getElementById('btn-submit-client');
 
@@ -3475,19 +3832,30 @@ async function submitNewClient() {
     if (userInsert.error) throw userInsert.error;
 
     const startDate = document.getElementById('new-client-start-date')?.value || Trainw.dateOnly(new Date());
-    const priceValue = parseFloat(document.getElementById('new-client-price')?.value);
-    const pricePaid = Number.isFinite(priceValue) ? priceValue : 0;
+    // FE-19 / FE-16: strict money parse — no negatives, no "12abc".
+    const priceParsed = parseMoneyInput(document.getElementById('new-client-price')?.value);
+    if (!priceParsed.valid) {
+      showInlineError(errEl, 'Montant invalide — utilisez un nombre positif (ex. 150).');
+      Trainw.ui.setBusy(btn, false);
+      if (btn) btn.textContent = t('submitClient');
+      return;
+    }
+    const pricePaid = priceParsed.value || 0;
+    // FE-19: the profile starts 'pending' with price_paid 0. Money only
+    // enters through the payments ledger below — the settlement trigger
+    // derives payment_status / price_paid / end date from the payment row.
     const profileInsert = await Trainw.api.run(
       sb.from('client_profiles').insert({
         user_id: newUserId,
+        gym_id: currentGymId,
         membership_tier: membership,
         fitness_goal: training,
         training_type: training,
-        payment_status: payment,
+        payment_status: 'pending',
         age,
         membership_start_date: startDate,
         membership_end_date: calcEndDate(startDate, membership),
-        price_paid: pricePaid,
+        price_paid: 0,
       }),
       { context: 'create client profile' }
     );
@@ -3517,6 +3885,39 @@ async function submitNewClient() {
         silent: true,
       });
       throw membershipInsert.error;
+    }
+
+    // FE-19: the first payment goes through the ledger, never as a flag on
+    // the profile. The settlement trigger derives payment_status,
+    // price_paid and the end date from this row. A per-session client
+    // pays per session, so its payment carries no membership period.
+    if (pricePaid > 0) {
+      const tierMonths = { monthly: 1, quarterly: 3, annual: 12 }[membership] || 0;
+      const method = document.getElementById('new-client-payment-method')?.value || 'cash';
+      const paymentInsert = await Trainw.api.run(
+        sb.from('payments').insert({
+          gym_id: currentGymId,
+          client_id: newUserId,
+          payment_type: tierMonths > 0 ? 'membership' : 'session',
+          status: 'paid',
+          provider: 'manual',
+          method,
+          currency_code: 'TND',
+          amount_total: pricePaid,
+          amount_paid: pricePaid,
+          period_months: tierMonths,
+          period_start: startDate,
+          created_by: currentUser?.id || null,
+        }),
+        { context: 'record initial payment' }
+      );
+      if (paymentInsert.error) {
+        await Trainw.api.run(sb.from('users').delete().eq('id', newUserId), {
+          context: 'rollback managed client',
+          silent: true,
+        });
+        throw paymentInsert.error;
+      }
     }
 
     toast(t('clientAdded'));
@@ -3568,7 +3969,7 @@ function populateMessagesList(filter = '') {
     const time = lastMessage
       ? new Date(lastMessage.created_at).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })
       : '';
-    return `<div class="msg-contact-item${activeConvId === client.id ? ' active' : ''}" onclick="openConversation('${client.id}')" data-client-id="${client.id}">
+    return `<div class="msg-contact-item${activeConvId === client.id ? ' active' : ''}" data-conversation="${client.id}" data-client-id="${client.id}">
       <div class="mci-avatar">${initials}</div>
       <div class="mci-body">
         <div class="mci-top">
@@ -3872,9 +4273,13 @@ function renderGateSettingsCredentialsTable() {
   body.innerHTML = allClients.map(client => {
     const credential = rfidMap.get(client.id) || null;
     const status = getGateSettingsStatusMeta('rfid', credential);
+    // Phase 1b (DB-07): the full credential value is never returned from
+    // the server any more — only credential_ref (first 4 chars + '...').
+    // The input shows the masked ref for an enrolled card, or the draft
+    // the manager is currently typing.
     const draftValue = gateSettingsCredentialDrafts.has(client.id)
       ? gateSettingsCredentialDrafts.get(client.id)
-      : (credential?.credential_data || '');
+      : (credential?.credential_ref || '');
     const safeValue = Trainw.escapeHtml(draftValue || '');
     const memberSince = client.created_at
       ? new Date(client.created_at).toLocaleDateString(locale(), { month: 'short', year: 'numeric' })
@@ -3962,7 +4367,7 @@ async function loadGateSettingsCredentials() {
   body.innerHTML = `<tr><td class="gate-empty-cell" colspan="5">Loading...</td></tr>`;
   const result = await Trainw.api.run(
     sb.from('member_credentials')
-      .select('id, client_id, type, credential_data, is_active, created_at, updated_at')
+      .select('id, client_id, type, credential_ref, is_active, created_at, updated_at')
       .eq('gym_id', currentGymId)
       .eq('type', 'rfid_card')
       .order('created_at', { ascending: false }),
@@ -3986,10 +4391,16 @@ async function issueGateRfidCredential(clientId, button) {
   }
 
   gateSettingsCredentialDrafts.set(clientId, credentialValue);
+  // Phase 1b (DB-07): the full credential value is never returned, so the
+  // duplicate check cannot compare plaintext any more. Re-activation of a
+  // revoked card matches on credential_ref (first 4 chars + '...'); a
+  // genuinely new duplicate is caught by the DB unique index instead
+  // (23505 -> friendly message in the catch below).
+  const credentialRef = credentialValue.length <= 4 ? '****' : `${credentialValue.slice(0, 4)}...`;
   const existingCredential = gateSettingsCredentialsList.find(item =>
     item.client_id === clientId &&
     item.type === 'rfid_card' &&
-    String(item.credential_data || '').trim() === credentialValue
+    item.credential_ref === credentialRef
   ) || null;
 
   if (button) {
@@ -4162,9 +4573,19 @@ function ensureSelectedCredentialClient() {
 }
 
 function renderCheckInTabs() {
+  // Turnstile tabs (credentials, journal, terminal) are the turnstile/gate
+  // hardware UI. While the TURNSTILES_ENABLED flag is off they stay hidden
+  // and the tab falls back to 'live' — the flag is one change in
+  // trainw-config.js / the build environment (see trainw-core.js).
+  const turnstilesOn = Trainw.TURNSTILES_ENABLED === true;
   document.querySelectorAll('[data-checkin-tab]').forEach(button => {
+    const isTurnstileTab = TURNSTILE_CHECKIN_TABS.includes(button.dataset.checkinTab);
+    button.classList.toggle('hidden', isTurnstileTab && !turnstilesOn);
     button.classList.toggle('active', button.dataset.checkinTab === checkInTab);
   });
+  if (!turnstilesOn && TURNSTILE_CHECKIN_TABS.includes(checkInTab)) {
+    checkInTab = 'live';
+  }
   document.querySelectorAll('.checkin-tab-panel').forEach(panel => {
     panel.classList.toggle('hidden', panel.id !== `checkin-tab-${checkInTab}`);
   });
@@ -4172,6 +4593,10 @@ function renderCheckInTabs() {
 
 function setCheckInTab(tab) {
   checkInTab = tab || 'live';
+  // While turnstiles are off, the turnstile tabs cannot be opened at all.
+  if (Trainw.TURNSTILES_ENABLED !== true && TURNSTILE_CHECKIN_TABS.includes(checkInTab)) {
+    checkInTab = 'live';
+  }
   renderCheckInTabs();
   if (checkInTab === 'credentials') {
     renderCredentialClientList();
@@ -4240,7 +4665,7 @@ async function loadClientCredentials() {
   listEl.innerHTML = skeletonRows(3);
   const result = await Trainw.api.run(
     sb.from('member_credentials')
-      .select('id, type, credential_data, label, is_active, enrolled_at, last_used_at, created_at')
+      .select('id, type, credential_ref, label, is_active, enrolled_at, last_used_at, created_at')
       .eq('gym_id', currentGymId)
       .eq('client_id', selectedClient.id)
       .order('created_at', { ascending: false }),
@@ -4257,12 +4682,12 @@ function renderCredentialList() {
   if (!listEl) return;
 
   if (!selectedClient) {
-    listEl.innerHTML = `<p class="empty-state">Sélectionnez un client pour gérer ses badges.</p>`;
+    listEl.innerHTML = `<p class="empty-state">${Trainw.escapeHtml(t('credentialSelectClient'))}</p>`;
     return;
   }
 
   if (!memberCredentialsList.length) {
-    listEl.innerHTML = `<p class="empty-state">Aucun badge enregistré pour ${Trainw.escapeHtml(selectedClient.name || 'ce client')}.</p>`;
+    listEl.innerHTML = `<p class="empty-state">${Trainw.escapeHtml(t('noBadgesForClient').replace('{name}', selectedClient.name || t('thisClient')))}</p>`;
     return;
   }
 
@@ -4280,7 +4705,7 @@ function renderCredentialList() {
           <div class="credential-meta">${Trainw.escapeHtml(credential.is_active ? 'Actif' : 'Inactif')}</div>
         </div>
         <div>
-          <div class="credential-label">${Trainw.escapeHtml(credential.label || credential.credential_data)}</div>
+          <div class="credential-label">${Trainw.escapeHtml(credential.label || credential.credential_ref)}</div>
           <div class="credential-meta">${Trainw.escapeHtml(lastUsed)}</div>
         </div>
         <div class="credential-actions">
@@ -4433,10 +4858,12 @@ function renderGateAccessLog() {
 }
 
 function buildGateTerminalUrl() {
+  // FE-04: the PIN is NEVER in the URL any more. The terminal unlocks by
+  // proving the PIN to gate-terminal-auth, which issues a short-lived
+  // session token; the manager sets the PIN with saveTerminalPin() below.
   const url = new URL('/gate', window.location.origin);
   url.searchParams.set('gym_id', currentGymId || '');
   url.searchParams.set('gym_name', currentGymName || document.getElementById('sidebar-gym-name')?.textContent || 'TRAINW');
-  url.searchParams.set('pin', document.getElementById('terminal-admin-pin')?.value.trim() || '');
   url.searchParams.set('device_id', document.getElementById('terminal-device-id')?.value.trim() || 'gate-1');
   return url.toString();
 }
@@ -4447,7 +4874,74 @@ function updateGateTerminalPreview() {
   preview.textContent = buildGateTerminalUrl();
 }
 
+// FE-04: the PIN is set server-side (gate-terminal-auth set_pin) and stored
+// as HMAC-SHA256(PIN, GATE_TERMINAL_PEPPER) in gyms.gate_terminal_pin_hash.
+// The terminal never sees the PIN — it proves it once and gets a session
+// token. The open/copy buttons stay disabled until a PIN is set.
+let terminalPinSet = false;
+
+function updateTerminalButtons() {
+  const copyBtn = document.getElementById('btn-copy-terminal-url');
+  const openBtn = document.getElementById('btn-open-terminal');
+  if (copyBtn) copyBtn.disabled = !terminalPinSet;
+  if (openBtn) openBtn.disabled = !terminalPinSet;
+  const status = document.getElementById('terminal-pin-status');
+  if (status) {
+    status.textContent = terminalPinSet
+      ? 'PIN défini — le terminal peut être ouvert.'
+      : 'Définissez un PIN (4 à 8 chiffres) pour activer le terminal.';
+  }
+}
+
+async function saveTerminalPin() {
+  const input = document.getElementById('terminal-admin-pin');
+  const pin = input?.value.trim() || '';
+  const status = document.getElementById('terminal-pin-status');
+  if (!currentGymId) return;
+  if (!/^\d{4,8}$/.test(pin)) {
+    if (status) status.textContent = 'Le PIN doit contenir 4 à 8 chiffres.';
+    input?.focus();
+    return;
+  }
+  const btn = document.getElementById('btn-set-terminal-pin');
+  Trainw.ui.setBusy(btn, true);
+  try {
+    const session = await sb.auth.getSession();
+    const token = session?.data?.session?.access_token || '';
+    if (!token) throw new Error('Session expirée — reconnectez-vous.');
+    const response = await fetch(`${Trainw.SUPABASE_URL}/functions/v1/gate-terminal-auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'apikey': Trainw.SUPABASE_ANON,
+      },
+      body: JSON.stringify({ action: 'set_pin', gym_id: currentGymId, pin }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error === 'turnstiles_disabled'
+        ? 'Tourniquets désactivés — activez TURNSTILES_ENABLED pour utiliser le terminal.'
+        : (result.error || 'Impossible de définir le PIN.'));
+    }
+    terminalPinSet = true;
+    if (input) input.value = '';
+    updateTerminalButtons();
+    updateGateTerminalPreview();
+    toast('PIN du terminal défini.');
+  } catch (error) {
+    if (status) status.textContent = error.message || t('errorMsg');
+    else toast(error.message || t('errorMsg'), 'err');
+  } finally {
+    Trainw.ui.setBusy(btn, false);
+  }
+}
+
 async function copyGateTerminalUrl() {
+  if (!terminalPinSet) {
+    toast('Définissez d’abord le PIN du terminal.', 'err');
+    return;
+  }
   const url = buildGateTerminalUrl();
   try {
     await navigator.clipboard.writeText(url);
@@ -4458,6 +4952,10 @@ async function copyGateTerminalUrl() {
 }
 
 function openGateTerminal() {
+  if (!terminalPinSet) {
+    toast('Définissez d’abord le PIN du terminal.', 'err');
+    return;
+  }
   window.open(buildGateTerminalUrl(), '_blank', 'noopener');
 }
 
@@ -4537,7 +5035,7 @@ function renderConversation(clientId) {
       lastDate = dateStr;
     }
     if (isOwner) {
-      return separator + `<div class="msg-row msg-row-out message"><div class="msg-bubble msg-bubble-out"><div class="msg-content">${content}${autoTag}</div><div class="msg-ts">${Trainw.escapeHtml(time)}</div></div></div>`;
+      return separator + `<div class="msg-row msg-row-out message"><div class="msg-bubble msg-bubble-out"><div class="msg-content">${content}${autoTag}</div><div class="msg-ts">${Trainw.escapeHtml(time)}</div><button class="msg-delete" type="button" data-delete-message="${message.id}" title="${Trainw.escapeHtml(t('deleteMessage'))}" aria-label="${Trainw.escapeHtml(t('deleteMessage'))}">×</button></div></div>`;
     }
     return separator + `<div class="msg-row msg-row-in message"><div class="msg-av msg-av-sm">${clientIni}</div><div class="msg-bubble msg-bubble-in"><div class="msg-content">${content}</div><div class="msg-ts">${Trainw.escapeHtml(time)}</div></div></div>`;
   }).join('');
@@ -4551,6 +5049,8 @@ async function sendMessage() {
   const content = input?.value.trim();
   const btn = document.getElementById('btn-send-message');
   if (!content) return;
+  // FE-26: chat cap (the DB CHECK is the backstop).
+  if (content.length > 2000) { Trainw.ui.showToast(t('messageTooLong'), 'error'); return; }
 
   Trainw.ui.setBusy(btn, true);
   try {
@@ -4583,6 +5083,25 @@ async function sendMessage() {
   } finally {
     Trainw.ui.setBusy(btn, false);
   }
+}
+
+// DB-38 (round 5): retracting a message soft-deletes it via RPC — the row
+// is hidden for both parties but never hard-deleted. Only the sender's
+// own messages carry the button (renderConversation), and the RPC enforces
+// sender-only server-side.
+async function deleteOwnMessage(messageId) {
+  if (!messageId || !activeConvId) return;
+  const result = await Trainw.api.run(
+    sb.rpc('soft_delete_message', { p_message_id: messageId }),
+    { context: 'delete message', fallback: null }
+  );
+  if (result.error) {
+    toast(result.error.message || t('errorMsg'), 'err');
+    return;
+  }
+  conversationMap[activeConvId] = (conversationMap[activeConvId] || []).filter(message => message.id !== messageId);
+  renderConversation(activeConvId);
+  await updateMessageBadge();
 }
 
 async function loadCheckIns() {
@@ -4683,7 +5202,6 @@ async function loadAnalytics() {
   }).length;
   set('an-sessions', weekSessions);
 
-  const monthStart = Trainw.dateOnly(new Date(now.getFullYear(), now.getMonth(), 1));
   const clientIds = activeClients.map(client => client.user_id);
   const profileResult = clientIds.length
     ? await Trainw.api.run(
@@ -4696,11 +5214,10 @@ async function loadAnalytics() {
     : { data: [], error: null };
   const clientProfiles = Array.isArray(profileResult.data) ? profileResult.data : [];
   const profileMap = new Map(clientProfiles.map(profile => [profile.user_id, profile]));
-  const realRevenue = clientProfiles
-    .filter(profile => profile.payment_status === 'paid' && profile.membership_start_date >= monthStart)
-    .reduce((sum, row) => sum + (Number(row.price_paid) || 0), 0);
+  // FE-19 / FE-15: revenue comes from the payments ledger (loadLedgerRevenue
+  // sets #pred-monthly); the old price_paid sum is gone.
+  await loadLedgerRevenue();
   const retention = totalClients > 0 ? `${Math.min(100, Math.round((weekSessions / Math.max(1, totalClients)) * 100))}%` : '-';
-  Trainw.ui.setText('pred-monthly', realRevenue > 0 ? `${realRevenue} DT` : '-', '-');
   Trainw.ui.setText('pred-sessions', String(weekSessions), '0');
   Trainw.ui.setText('pred-retention', retention, '-');
 
@@ -4768,6 +5285,7 @@ async function loadAnalytics() {
 
   animateCounters();
   if (clientCountResult.error || coachCountResult.error || sessionsResult.error || paidThisMonth.error) toast(t('errorMsg'), 'err');
+  await runGymHooks('afterLoadAnalytics');
 }
 
 async function saveSettings() {
@@ -4801,25 +5319,54 @@ async function saveSettings() {
   }
 }
 
+// FE-16/FE-33: strict money parse. parseFloat accepts garbage ("12abc" ->
+// 12) and the old code silently fell back to hardcoded 150/400/1400 when
+// the input was empty or invalid — a blank field could overwrite a real
+// price with a made-up one. Returns { empty, value, valid }.
+function parseMoneyInput(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) return { empty: true, value: null, valid: true };
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return { empty: false, value: null, valid: false };
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0) return { empty: false, value: null, valid: false };
+  return { empty: false, value, valid: true };
+}
+
 async function savePricing() {
   if (!currentGymId) return;
-  const monthly = parseFloat(document.getElementById('gym-price-monthly')?.value);
-  const quarterly = parseFloat(document.getElementById('gym-price-quarterly')?.value);
-  const annual = parseFloat(document.getElementById('gym-price-annual')?.value);
+  const monthly = parseMoneyInput(document.getElementById('gym-price-monthly')?.value);
+  const quarterly = parseMoneyInput(document.getElementById('gym-price-quarterly')?.value);
+  const annual = parseMoneyInput(document.getElementById('gym-price-annual')?.value);
+  const status = document.getElementById('pricing-status');
+  // An invalid or negative price aborts the save; an empty field keeps the
+  // current server value (fetched below). No hardcoded defaults any more.
+  for (const parsed of [monthly, quarterly, annual]) {
+    if (!parsed.valid) {
+      if (status) {
+        status.textContent = 'Montant invalide — utilisez un nombre positif (ex. 150).';
+        status.style.color = 'var(--err, #e5484d)';
+      }
+      return;
+    }
+  }
   const btn = document.getElementById('btn-save-pricing');
   Trainw.ui.setBusy(btn, true);
   if (btn) btn.textContent = '...';
   try {
+    const current = await Trainw.api.run(
+      sb.from('gyms').select('price_monthly, price_quarterly, price_annual').eq('id', currentGymId).single(),
+      { context: 'load current gym pricing', fallback: null }
+    );
+    if (current.error) throw current.error;
     const result = await Trainw.api.run(
       sb.from('gyms').update({
-        price_monthly: Number.isFinite(monthly) ? monthly : 150,
-        price_quarterly: Number.isFinite(quarterly) ? quarterly : 400,
-        price_annual: Number.isFinite(annual) ? annual : 1400,
+        price_monthly: monthly.empty ? (current.data?.price_monthly ?? null) : monthly.value,
+        price_quarterly: quarterly.empty ? (current.data?.price_quarterly ?? null) : quarterly.value,
+        price_annual: annual.empty ? (current.data?.price_annual ?? null) : annual.value,
       }).eq('id', currentGymId),
       { context: 'save gym pricing' }
     );
     if (result.error) throw result.error;
-    const status = document.getElementById('pricing-status');
     if (status) {
       status.textContent = t('savedOk');
       status.style.color = 'var(--ac)';
@@ -4841,11 +5388,12 @@ async function changePassword() {
   Trainw.ui.setBusy(btn, true);
   if (btn) btn.textContent = '...';
   try {
-    const result = await Trainw.api.run(sb.auth.resetPasswordForEmail(email), { context: 'send password reset' });
+    const result = await Trainw.api.run(sb.auth.resetPasswordForEmail(email, { emailRedirectTo: window.location.origin + '/tw-login.html' }), { context: 'send password reset', toastOnError: false });
     if (result.error) throw result.error;
     toast(t('pwReset'));
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    // FE-25: never surface the raw auth error (it can name the account state).
+    toast(t('errorMsg'), 'err');
   } finally {
     if (btn) btn.textContent = t('changePassword');
     Trainw.ui.setBusy(btn, false);
@@ -4932,6 +5480,7 @@ function showPage(page) {
   syncPermissionVisibility();
 
   if (nextPage === 'analytics') loadAnalytics();
+  if (nextPage === 'payments') loadPayments();
   if (nextPage === 'messages') updateMessageBadge();
   if (nextPage === 'schedule') {
     renderScheduleTabs();
@@ -5009,6 +5558,43 @@ function bindUi() {
   if (window.__trainwGymUiBound) return;
   window.__trainwGymUiBound = true;
   syncPermissionVisibility();
+
+  // P1-5 (FE-01/FE-02/FE-03): single delegated click handler replacing the
+  // inline onclick="..." handlers removed from the templates above. Cards
+  // and buttons carry data-* attributes with ids only — no user-controlled
+  // text is ever executed as code. The most specific action is checked
+  // first, so a click on a button inside a card does not also trigger the
+  // card's action; a click inside .sc-actions that hits no button does
+  // nothing (the old inline event.stopPropagation() behaviour).
+  document.addEventListener('click', event => {
+    const coachModal = event.target.closest('[data-coach-modal]');
+    if (coachModal) { (window.openCoachPanel || openCoachModal)(coachModal.dataset.coachModal); return; }
+    const bookCoach = event.target.closest('[data-book-coach]');
+    if (bookCoach) { openBookSessionForCoach(bookCoach.dataset.bookCoach); return; }
+    const sessionEdit = event.target.closest('[data-session-edit]');
+    if (sessionEdit) {
+      document.getElementById('session-detail-modal')?.classList.remove('show');
+      openEditSessionModal(sessionEdit.dataset.sessionEdit);
+      return;
+    }
+    const sessionDelete = event.target.closest('[data-session-delete]');
+    if (sessionDelete) {
+      document.getElementById('session-detail-modal')?.classList.remove('show');
+      deleteSession(sessionDelete.dataset.sessionDelete);
+      return;
+    }
+    if (event.target.closest('.sc-actions')) return;
+    const sessionDetail = event.target.closest('[data-session-detail]');
+    if (sessionDetail) { openSessionDetail(sessionDetail.dataset.sessionDetail); return; }
+    const clientMsg = event.target.closest('[data-client-msg]');
+    if (clientMsg) { openMessageModal(clientMsg.dataset.clientMsg); return; }
+    const clientEdit = event.target.closest('[data-client-edit]');
+    if (clientEdit) { openEditClientModal(clientEdit.dataset.clientEdit); return; }
+    const clientDel = event.target.closest('[data-client-del]');
+    if (clientDel) { deleteClient(clientDel.dataset.clientDel); return; }
+    const conversation = event.target.closest('[data-conversation]');
+    if (conversation) { openConversation(conversation.dataset.conversation); }
+  });
 
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => showPage(item.dataset.page));
@@ -5103,8 +5689,8 @@ function bindUi() {
   document.getElementById('btn-refresh-gate-access-log')?.addEventListener('click', () => {
     void loadGateSettingsAccessLog();
   });
-  document.getElementById('terminal-admin-pin')?.addEventListener('input', updateGateTerminalPreview);
   document.getElementById('terminal-device-id')?.addEventListener('input', updateGateTerminalPreview);
+  document.getElementById('btn-set-terminal-pin')?.addEventListener('click', () => { void saveTerminalPin(); });
   document.getElementById('btn-copy-terminal-url')?.addEventListener('click', copyGateTerminalUrl);
   document.getElementById('btn-open-terminal')?.addEventListener('click', openGateTerminal);
   document.getElementById('btn-open-credential-modal')?.addEventListener('click', () => {
@@ -5127,6 +5713,22 @@ function bindUi() {
   document.getElementById('btn-submit-coach')?.addEventListener('click', submitNewCoach);
   document.getElementById('btn-save-gym-class')?.addEventListener('click', saveGymClass);
   document.getElementById('btn-submit-client')?.addEventListener('click', submitNewClient);
+  document.getElementById('btn-record-payment')?.addEventListener('click', recordPayment);
+  document.getElementById('pay-client-select')?.addEventListener('change', refreshPayCreditBalance);
+  document.getElementById('btn-request-freeze')?.addEventListener('click', requestFreeze);
+  document.getElementById('btn-edit-client-record-payment')?.addEventListener('click', () => {
+    const id=document.getElementById('edit-client-id')?.value;
+    document.getElementById('edit-client-modal')?.classList.remove('show');
+    openPaymentsFor(id);
+  });
+  document.getElementById('payments-list')?.addEventListener('click', event => {
+    const btn=event.target.closest('[data-void-payment]');
+    if(btn) voidPayment(btn.dataset.voidPayment);
+  });
+  document.getElementById('freezes-list')?.addEventListener('click', event => {
+    const btn=event.target.closest('[data-cancel-freeze]');
+    if(btn) cancelFreeze(btn.dataset.cancelFreeze);
+  });
   document.getElementById('btn-submit-checkin')?.addEventListener('click', submitManualCheckIn);
   document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
   document.getElementById('btn-upload-logo')?.addEventListener('click', uploadGymLogo);
@@ -5137,6 +5739,11 @@ function bindUi() {
   document.getElementById('btn-save-edit-coach')?.addEventListener('click', saveEditCoach);
   document.getElementById('btn-save-edit-client')?.addEventListener('click', saveEditClient);
   document.getElementById('btn-send-message')?.addEventListener('click', sendMessage);
+  document.getElementById('conv-messages')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-delete-message]');
+    if (!button) return;
+    void deleteOwnMessage(button.dataset.deleteMessage);
+  });
   document.getElementById('btn-send-member-invite')?.addEventListener('click', submitMemberInvite);
   document.getElementById('btn-new-role')?.addEventListener('click', () => {
     resetRoleBuilderForm();
@@ -5248,6 +5855,16 @@ function bindUi() {
     }
   });
   document.getElementById('staff-pending-list')?.addEventListener('click', event => {
+    const approveButton = event.target.closest('[data-join-approve]');
+    if (approveButton) {
+      void approveJoinRequest(approveButton.dataset.joinApprove || '');
+      return;
+    }
+    const rejectButton = event.target.closest('[data-join-reject]');
+    if (rejectButton) {
+      void rejectJoinRequest(rejectButton.dataset.joinReject || '');
+      return;
+    }
     const resendButton = event.target.closest('[data-pending-resend]');
     if (resendButton) {
       void resendInvitation(resendButton.dataset.pendingResend || '', resendButton.dataset.pendingEmail || '');
@@ -5308,6 +5925,7 @@ function setLang(lang) {
   activeSettingsStaffTab = previousStaffTab;
   switchSettingsStaffTab(previousStaffTab);
   syncPermissionVisibility();
+  void runGymHooks('afterSetLang');
 }
 
 async function initPage() {
@@ -5341,10 +5959,13 @@ async function initPage() {
   Trainw.ui.setValue('terminal-device-id', document.getElementById('terminal-device-id')?.value || 'gate-1', 'gate-1');
 
   if (currentGymId) {
-    const gymResult = await Trainw.api.run(sb.from('gyms').select('name, address, phone, description, subscription_tier, price_monthly, price_quarterly, price_annual, logo_storage_bucket, logo_storage_path').eq('id', currentGymId).maybeSingle(), { context: 'load gym profile', fallback: null });
+    const gymResult = await Trainw.api.run(sb.from('gyms').select('name, address, phone, description, subscription_tier, price_monthly, price_quarterly, price_annual, logo_storage_bucket, logo_storage_path, gate_terminal_pin_hash').eq('id', currentGymId).maybeSingle(), { context: 'load gym profile', fallback: null });
     const gym = gymResult.data;
     if (gym) {
       currentGymName = gym.name || '';
+      // FE-04: the terminal stays disabled until a PIN is set server-side.
+      terminalPinSet = !!gym.gate_terminal_pin_hash;
+      updateTerminalButtons();
       Trainw.ui.setText('sidebar-gym-name', gym.name || '-', '-');
       // ── Sidebar gym logo ─────────────────────────────────────────────────
       if (gym.logo_storage_bucket && gym.logo_storage_path) {
@@ -5364,9 +5985,9 @@ async function initPage() {
       Trainw.ui.setValue('gym-address-input', gym.address || '', '');
       Trainw.ui.setValue('gym-phone-input', gym.phone || '', '');
       Trainw.ui.setValue('gym-desc-input', gym.description || '', '');
-      Trainw.ui.setValue('gym-price-monthly', gym.price_monthly || 150, '150');
-      Trainw.ui.setValue('gym-price-quarterly', gym.price_quarterly || 400, '400');
-      Trainw.ui.setValue('gym-price-annual', gym.price_annual || 1400, '1400');
+      Trainw.ui.setValue('gym-price-monthly', gym.price_monthly ?? '', '');
+      Trainw.ui.setValue('gym-price-quarterly', gym.price_quarterly ?? '', '');
+      Trainw.ui.setValue('gym-price-annual', gym.price_annual ?? '', '');
       const tier = String(gym.subscription_tier || 'free').toUpperCase();
       const badge = document.getElementById('sub-tier-badge');
       const name = document.getElementById('sub-tier-name');

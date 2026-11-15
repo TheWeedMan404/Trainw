@@ -2,6 +2,7 @@ const Trainw = window.TrainwCore;
 Trainw.installGlobalErrorHandlers();
 let cachedSupabaseClient = null;
 let currentContext = null;
+let joinRole = 'client';
 let lang = localStorage.getItem('trainw_lang') || 'fr';
 
 function getSupabaseClient() {
@@ -42,6 +43,15 @@ const T = {
     signedInAs: 'Connecte en tant que',
     pendingBadge: 'En attente',
     activeBadge: 'Actif',
+    joinTitle: 'Rejoindre une salle',
+    joinSub: 'Aucun espace actif pour le moment. Choisissez une salle et demandez à la rejoindre.',
+    joinAsClient: 'En tant que client',
+    joinAsCoach: 'En tant que coach',
+    joinRequest: 'Demander à rejoindre',
+    joinRequested: 'Demande envoyée',
+    joinRequestSent: 'Demande envoyée. La salle va l’examiner.',
+    joinLoadError: 'Impossible de charger la liste des salles.',
+    joinEmpty: 'Aucune salle disponible pour le moment.',
   },
   en: {
     backBtn: 'Back to home',
@@ -74,6 +84,15 @@ const T = {
     signedInAs: 'Signed in as',
     pendingBadge: 'Pending',
     activeBadge: 'Active',
+    joinTitle: 'Join a gym',
+    joinSub: 'No active workspace yet. Pick a gym and request to join it.',
+    joinAsClient: 'As a client',
+    joinAsCoach: 'As a coach',
+    joinRequest: 'Request to join',
+    joinRequested: 'Request sent',
+    joinRequestSent: 'Request sent. The gym will review it.',
+    joinLoadError: 'Could not load the gym list.',
+    joinEmpty: 'No gyms available right now.',
   },
   ar: {
     backBtn: 'العودة للرئيسية',
@@ -106,6 +125,15 @@ const T = {
     signedInAs: 'تم تسجيل الدخول باسم',
     pendingBadge: 'معلق',
     activeBadge: 'نشط',
+    joinTitle: 'الانضمام إلى صالة',
+    joinSub: 'لا توجد مساحة نشطة بعد. اختر صالة واطلب الانضمام إليها.',
+    joinAsClient: 'كعميل',
+    joinAsCoach: 'كمدرب',
+    joinRequest: 'اطلب الانضمام',
+    joinRequested: 'تم إرسال الطلب',
+    joinRequestSent: 'تم إرسال الطلب. ستقوم الصالة بمراجعته.',
+    joinLoadError: 'تعذر تحميل قائمة الصالات.',
+    joinEmpty: 'لا توجد صالات متاحة حالياً.',
   },
 };
 
@@ -240,15 +268,93 @@ function renderWorkspaceState(context) {
 
   if (!memberships.length) {
     grid.innerHTML = '<div class="role-card workspace-empty"><div class="role-body"><div class="role-title">' + Trainw.escapeHTML(t('workspaceTitle')) + '</div><div class="role-desc">' + Trainw.escapeHTML(t('noMemberships')) + '</div></div></div>';
+  } else {
+    grid.innerHTML = memberships.map(getWorkspaceCard).join('');
+
+    if (!inviteToken && actionableMemberships.length === 1) {
+      const nextMembership = actionableMemberships[0];
+      void openWorkspace(nextMembership.gym_id);
+    }
+  }
+
+  // Round 9: no usable workspace yet — the user is at a dead end unless
+  // they can join a gym. Show the public gym directory with a join
+  // request per gym (client or coach). Pending requests already render
+  // as cards above; the directory stays until one is approved.
+  if (!actionableMemberships.length) {
+    void loadJoinDirectory();
+  }
+}
+
+function syncJoinRoleButtons() {
+  document.querySelectorAll('[data-join-role]').forEach(function (button) {
+    button.classList.toggle('active', button.dataset.joinRole === joinRole);
+  });
+}
+
+async function loadJoinDirectory() {
+  const card = document.querySelector('.card');
+  if (!card || document.getElementById('role-join-directory')) return;
+
+  const section = document.createElement('div');
+  section.id = 'role-join-directory';
+  section.className = 'role-join-directory';
+  section.innerHTML =
+    '<div class="role-join-title">' + Trainw.escapeHTML(t('joinTitle')) + '</div>' +
+    '<div class="role-join-sub">' + Trainw.escapeHTML(t('joinSub')) + '</div>' +
+    '<div class="role-join-roles">' +
+      '<button class="btn-secondary role-join-role" type="button" data-join-role="client">' + Trainw.escapeHTML(t('joinAsClient')) + '</button>' +
+      '<button class="btn-secondary role-join-role" type="button" data-join-role="coach">' + Trainw.escapeHTML(t('joinAsCoach')) + '</button>' +
+    '</div>' +
+    '<div class="role-join-list"><p class="empty-state">Chargement...</p></div>';
+  card.appendChild(section);
+
+  joinRole = currentContext?.profile?.role === 'coach' ? 'coach' : 'client';
+  syncJoinRoleButtons();
+
+  const sb = getSupabaseClient();
+  const list = section.querySelector('.role-join-list');
+  if (!list) return;
+  let result;
+  try {
+    result = await sb.rpc('list_public_gyms');
+  } catch (error) {
+    result = { error };
+  }
+  if (result.error) {
+    list.innerHTML = '<p class="empty-state">' + Trainw.escapeHTML(t('joinLoadError')) + '</p>';
     return;
   }
-
-  grid.innerHTML = memberships.map(getWorkspaceCard).join('');
-
-  if (!inviteToken && actionableMemberships.length === 1) {
-    const nextMembership = actionableMemberships[0];
-    void openWorkspace(nextMembership.gym_id);
+  const gyms = Array.isArray(result.data) ? result.data : [];
+  if (!gyms.length) {
+    list.innerHTML = '<p class="empty-state">' + Trainw.escapeHTML(t('joinEmpty')) + '</p>';
+    return;
   }
+  list.innerHTML = gyms.map(function (gym) {
+    const place = [gym.address, gym.location].filter(Boolean).join(' · ');
+    return (
+      '<div class="role-card role-join-card">' +
+        '<div class="role-icon workspace-icon">' + Trainw.escapeHTML(initials(gym.name || 'TW')) + '</div>' +
+        '<div class="role-body">' +
+          '<div class="role-title">' + Trainw.escapeHTML(gym.name || 'Trainw Gym') + '</div>' +
+          (place ? '<div class="role-desc">' + Trainw.escapeHTML(place) + '</div>' : '') +
+        '</div>' +
+        '<button class="btn-primary role-join-btn" type="button" data-join-gym="' + Trainw.escapeHTML(gym.gym_id || '') + '">' + Trainw.escapeHTML(t('joinRequest')) + '</button>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+async function requestJoin(gymId) {
+  if (!gymId) return;
+  const sb = getSupabaseClient();
+  const response = await sb.rpc('request_gym_membership', { p_gym_id: gymId, p_role_code: joinRole });
+  if (response.error) {
+    Trainw.ui.showToast(response.error.message || t('joinLoadError'), 'error');
+    return;
+  }
+  Trainw.ui.showToast(t('joinRequestSent'), 'success');
+  await bootstrap();
 }
 
 async function openWorkspace(gymId) {
@@ -343,6 +449,19 @@ document.addEventListener('click', function (event) {
   const workspaceButton = event.target.closest('[data-membership-gym]');
   if (workspaceButton && !workspaceButton.disabled) {
     void openWorkspace(workspaceButton.dataset.membershipGym || '');
+    return;
+  }
+
+  const joinRoleButton = event.target.closest('[data-join-role]');
+  if (joinRoleButton) {
+    joinRole = joinRoleButton.dataset.joinRole === 'coach' ? 'coach' : 'client';
+    syncJoinRoleButtons();
+    return;
+  }
+
+  const joinGymButton = event.target.closest('[data-join-gym]');
+  if (joinGymButton && !joinGymButton.disabled) {
+    void requestJoin(joinGymButton.dataset.joinGym || '');
     return;
   }
 

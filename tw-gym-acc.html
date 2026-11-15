@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js" integrity="sha384-gnyZit14c5lnGcarmA166QQjjJXpucw25ogZXuwH3HxxY904zHkBqmxVpelsPorb" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/lucide@1.73.0/dist/umd/lucide.min.js" integrity="sha384-DdDSdhkTpRzHOpRXj0iG8b2rBu5xPWN5SFqnCEZ0YKb/Yh1Ymmc9PVsYEZZOq40r" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="tw-gym-acc.css?v=20260420-3">
   <link rel="stylesheet" href="trainw-enhancements.css">
     <link rel="stylesheet" href="trainw-v17.css">
@@ -121,6 +121,7 @@
       <div class="nav-item" data-page="coaches"><span class="nav-icon"><i data-lucide="users"></i></span><span class="nav-label" data-i18n="navCoaches">Coachs</span></div>
       <div class="nav-item" data-page="clients"><span class="nav-icon"><i data-lucide="user-check"></i></span><span class="nav-label" data-i18n="navClients">Clients</span></div>
       <div class="nav-item" data-page="analytics"><span class="nav-icon"><i data-lucide="bar-chart-2"></i></span><span class="nav-label" data-i18n="navAnalytics">Analytiques</span></div>
+      <div class="nav-item" data-page="payments"><span class="nav-icon"><i data-lucide="banknote"></i></span><span class="nav-label">Paiements</span></div>
       <div class="nav-item" data-page="checkin"><span class="nav-icon"><i data-lucide="scan-line"></i></span><span class="nav-label" data-i18n="navCheckIn">Check-In</span></div>
       <div class="nav-item" data-page="messages"><span class="nav-icon"><i data-lucide="message-square"></i></span><span class="nav-label" data-i18n="navMessages">Messages</span></div>
       <div class="nav-item" data-page="classes"><span class="nav-icon"><i data-lucide="dumbbell"></i></span><span class="nav-label" data-i18n="navClasses">Classes</span></div>
@@ -298,6 +299,59 @@
       <div class="analytics-grid">
         <div class="card"><div class="card-header"><h2 class="card-title" data-i18n="popularClasses">Cours Populaires</h2></div><div id="popular-classes-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
         <div class="card"><div class="card-header"><h2 class="card-title" data-i18n="coachUtil">Utilisation des Coachs</h2></div><div id="coach-util-list"><p class="empty-state" data-i18n="loading">Chargement…</p></div></div>
+      </div>
+    </div>
+    <!-- PAYMENTS (FE-19 / DB-36) -->
+    <div id="payments-page" class="page hidden">
+      <div class="page-header">
+        <h1 class="page-title">Paiements</h1>
+        <p class="page-subtitle">Registre des paiements — les statuts et les revenus sont calculés à partir de ce registre, jamais saisis à la main.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Enregistrer un paiement</h2></div>
+        <div class="form-row">
+          <div class="form-group" style="flex:2;"><label class="form-label">Membre</label><select class="form-input" id="pay-client-select"></select></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Montant (DT)</label><input type="number" class="form-input" id="pay-amount" min="0" step="0.01" placeholder="150.00"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Moyen de paiement</label><select class="form-input" id="pay-method"><option value="cash" selected>Espèces</option><option value="card">Carte bancaire</option><option value="bank_transfer">Virement bancaire</option></select></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Période</label><select class="form-input" id="pay-period"><option value="1" selected>1 mois</option><option value="3">3 mois</option><option value="12">12 mois</option><option value="0">Séance / sans période</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;"><label class="form-label">Date de paiement</label><input type="date" class="form-input" id="pay-date"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">N° facture (optionnel)</label><input type="text" class="form-input" id="pay-invoice-number" placeholder="Ex. 2026-001"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Matricule fiscal du client (optionnel)</label><input type="text" class="form-input" id="pay-buyer-tax-id" placeholder="Ex. 1234567/A/M/000"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Taux TVA (optionnel, ex. 0.19)</label><input type="number" class="form-input" id="pay-vat-rate" min="0" max="1" step="0.01" placeholder="0.19"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-input" id="pay-notes" placeholder="Ex. Règlement en espèces à l'accueil"></div>
+        <div class="panel-row-sub" id="pay-credit-balance"></div>
+        <div class="alert aerr" id="pay-err"></div>
+        <button class="btn-primary" id="btn-record-payment">Enregistrer le paiement</button>
+      </div>
+
+      <div class="analytics-section-title">Totaux du jour — <span id="pay-day-date"></span></div>
+      <div class="analytics-wow-grid">
+        <div class="wow-card"><div class="wow-card-header"><div class="wow-card-title">Espèces</div></div><div class="wow-card-value" id="pay-total-cash">—</div></div>
+        <div class="wow-card"><div class="wow-card-header"><div class="wow-card-title">Carte</div></div><div class="wow-card-value" id="pay-total-card">—</div></div>
+        <div class="wow-card"><div class="wow-card-header"><div class="wow-card-title">Virement</div></div><div class="wow-card-value" id="pay-total-transfer">—</div></div>
+        <div class="wow-card"><div class="wow-card-header"><div class="wow-card-title">Total du jour</div></div><div class="wow-card-value" id="pay-total-day">—</div></div>
+      </div>
+
+      <div class="analytics-section-title">Paiements récents</div>
+      <div class="card"><div id="payments-list"><p class="empty-state">Chargement…</p></div></div>
+
+      <div class="analytics-section-title">Gels d'abonnement</div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Geler un abonnement</h2></div>
+        <p class="empty-state" style="text-align:left;">Un abonnement gelé est inactif à la porte : la date de fin est prolongée du nombre de jours gelés.</p>
+        <div class="form-row">
+          <div class="form-group" style="flex:2;"><label class="form-label">Membre</label><select class="form-input" id="freeze-client-select"></select></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Du</label><input type="date" class="form-input" id="freeze-start"></div>
+          <div class="form-group" style="flex:1;"><label class="form-label">Au</label><input type="date" class="form-input" id="freeze-end"></div>
+          <div class="form-group" style="flex:2;"><label class="form-label">Motif</label><input type="text" class="form-input" id="freeze-reason" placeholder="Ex. Vacances"></div>
+        </div>
+        <div class="alert aerr" id="freeze-err"></div>
+        <button class="btn-primary" id="btn-request-freeze">Geler l'abonnement</button>
+        <div id="freezes-list" style="margin-top:16px;"><p class="empty-state">Aucun gel actif.</p></div>
       </div>
     </div>
     <!-- CLASSES -->
@@ -482,6 +536,7 @@
                 <div>
                   <div class="staff-team-card-title" data-i18n="inviteMemberTitle">Inviter un membre</div>
                   <div class="staff-team-card-sub" data-i18n="inviteMemberSub">Ajoutez un membre à votre équipe et préparez sa fiche staff dès l’invitation.</div>
+                <div class="staff-team-card-sub" data-i18n="inviteAccountFirst">L'invité doit déjà avoir un compte Trainw — l'invitation échoue sinon.</div>
                 </div>
               </div>
               <div class="invite-grid">
@@ -513,8 +568,8 @@
             <section class="staff-team-card">
               <div class="staff-team-card-header">
                 <div>
-                  <div class="staff-team-card-title" data-i18n="pendingInvitesTitle">Invitations en attente</div>
-                  <div class="staff-team-card-sub" data-i18n="pendingInvitesSub">Suivez les invitations non acceptées et relancez-les si besoin.</div>
+                  <div class="staff-team-card-title" data-i18n="pendingInvitesTitle">Invitations et demandes en attente</div>
+                  <div class="staff-team-card-sub" data-i18n="pendingInvitesSub">Suivez les invitations non acceptées et les demandes d’adhésion à valider.</div>
                 </div>
               </div>
               <div id="staff-pending-list" class="staff-pending-list"><p class="empty-state">Chargement...</p></div>
@@ -735,8 +790,10 @@
           </div>
           <div class="form-row terminal-config-row">
             <div class="form-group" style="flex:1;">
-              <label class="form-label">PIN administrateur</label>
-              <input class="form-input" id="terminal-admin-pin" type="text" placeholder="1234">
+              <label class="form-label">PIN administrateur (4–8 chiffres)</label>
+              <!-- FE-04: the PIN is set server-side (gate-terminal-auth) and
+                   never appears in the terminal URL. -->
+              <input class="form-input" id="terminal-admin-pin" type="password" inputmode="numeric" autocomplete="off" placeholder="1234">
             </div>
             <div class="form-group" style="flex:1;">
               <label class="form-label">Device ID</label>
@@ -747,7 +804,9 @@
             <label class="form-label">URL du terminal</label>
             <div class="terminal-url-preview" id="terminal-url-preview"></div>
           </div>
+          <p class="terminal-pin-status" id="terminal-pin-status"></p>
           <div class="terminal-config-actions">
+            <button class="btn-secondary" id="btn-set-terminal-pin" type="button">Définir le PIN</button>
             <button class="btn-secondary" id="btn-copy-terminal-url" type="button">Copier l'URL</button>
             <button class="btn-primary" id="btn-open-terminal" type="button">Ouvrir le terminal</button>
           </div>
@@ -796,7 +855,7 @@
             <div class="msg-conv-header" id="conv-header"></div>
             <div class="msg-conv-body" id="conv-messages"></div>
             <div class="msg-conv-footer" id="conv-input-area">
-              <textarea class="msg-textarea" id="msg-input" placeholder="Écrivez un message…" rows="1"></textarea>
+              <textarea class="msg-textarea" id="msg-input" placeholder="Écrivez un message…" rows="1" maxlength="2000"></textarea>
               <button class="msg-send-btn" id="btn-send-message" aria-label="Envoyer">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               </button>
@@ -915,7 +974,7 @@
     <h2 class="form-modal-title">Modifier le Coach</h2>
     <input type="hidden" id="edit-coach-profile-id">
     <div class="form-group"><label class="form-label">Nom</label><input type="text" class="form-input" id="edit-coach-name2" disabled style="opacity:.5;"></div>
-    <div class="form-group"><label class="form-label" data-i18n="coachSpecialty">Spécialité</label><input type="text" class="form-input" id="edit-coach-specialty2" placeholder="CrossFit, Yoga, Natation…"></div>
+    <div class="form-group"><label class="form-label" data-i18n="coachSpecialty">Spécialité</label><input type="text" class="form-input" id="edit-coach-specialty2" placeholder="CrossFit, Yoga, Natation…"><div class="tag-suggestions" id="edit-coach-tag-suggestions"></div></div>
     <div class="form-group"><label class="form-label" data-i18n="coachRate">Tarif par Séance (DT)</label><input type="number" class="form-input" id="edit-coach-rate2" min="0" step="5"></div>
     <div class="form-group"><label class="form-label">Bio</label><textarea class="form-input" id="edit-coach-bio2" rows="3" placeholder="Expérience, certifications…"></textarea></div>
     <button class="btn-primary" id="btn-save-edit-coach" data-i18n="saveChanges">Enregistrer</button>
@@ -949,10 +1008,11 @@
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label" data-i18n="paymentStatus">Statut Paiement</label>
-      <select class="form-input" id="new-client-payment-status">
-        <option value="paid" data-i18n="paid">Payé ?</option>
-        <option value="pending" data-i18n="filterPending">En attente ?</option>
+      <label class="form-label">Moyen de paiement</label>
+      <select class="form-input" id="new-client-payment-method">
+        <option value="cash" selected>Espèces</option>
+        <option value="card">Carte bancaire</option>
+        <option value="bank_transfer">Virement bancaire</option>
       </select>
     </div>
     <div class="form-row">
@@ -985,15 +1045,12 @@
     </div>
     <div class="form-group"><label class="form-label">Type d'Entraînement</label><input type="text" class="form-input" id="edit-client-training" placeholder="CrossFit, Musculation, Yoga…"></div>
     <div class="form-group">
-      <label class="form-label">Statut Paiement</label>
-      <select class="form-input" id="edit-client-payment">
-        <option value="paid">Payé ?</option>
-        <option value="pending">En attente ?</option>
-      </select>
+      <label class="form-label">Paiement (registre)</label>
+      <p id="edit-client-payment-summary" style="margin:4px 0 8px;">—</p>
+      <button type="button" class="btn ghost" id="btn-edit-client-record-payment">Enregistrer un paiement</button>
     </div>
     <div class="form-row">
       <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="membershipStart">Début Abonnement</label><input type="date" class="form-input" id="edit-client-start-date"></div>
-      <div class="form-group" style="flex:1;"><label class="form-label" data-i18n="pricePaid">Montant Payé (DT)</label><input type="number" class="form-input" id="edit-client-price" placeholder="150" min="0" step="5"></div>
     </div>
     <div class="alert aerr" id="edit-client-err"></div>
     <button class="btn-primary" id="btn-save-edit-client">Enregistrer les modifications</button>
@@ -1249,11 +1306,8 @@
 <!-- TOAST -->
 <div class="toast" id="toast"><div class="toast-message" id="toast-msg"></div></div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
-  window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
-</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js" integrity="sha384-Emf5ZVIUiarAdhkgtqK+5/Z5qIvM6QoVrS+qAVtfyZVuD5lIHrac0me485+Antp0" crossorigin="anonymous"></script>
+<script src="trainw-config.js"></script>
 <script src="trainw-tenant-utils.js?v=20260412-1"></script>
 <script src="trainw-core.js?v=20260403-1"></script>
 <script src="tw-gym-acc.js?v=20260420-3"></script>

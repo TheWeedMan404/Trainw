@@ -12,8 +12,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js" integrity="sha384-gnyZit14c5lnGcarmA166QQjjJXpucw25ogZXuwH3HxxY904zHkBqmxVpelsPorb" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/lucide@1.73.0/dist/umd/lucide.min.js" integrity="sha384-DdDSdhkTpRzHOpRXj0iG8b2rBu5xPWN5SFqnCEZ0YKb/Yh1Ymmc9PVsYEZZOq40r" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="tw-client-acc.css?v=20260420-2">
   <link rel="stylesheet" href="trainw-enhancements.css">
     <link rel="stylesheet" href="trainw-v17.css">
@@ -580,7 +580,7 @@
             <div class="msg-conv-header" id="client-conv-header"></div>
             <div class="msg-conv-body" id="client-conv-messages"></div>
             <div class="msg-conv-footer">
-              <textarea class="msg-textarea" id="client-msg-input" rows="1" data-i18n-ph="typeMessage"></textarea>
+              <textarea class="msg-textarea" id="client-msg-input" rows="1" maxlength="2000" data-i18n-ph="typeMessage"></textarea>
               <button class="msg-send-btn" id="btn-send-client-message" type="button">Send</button>
             </div>
           </div>
@@ -765,12 +765,9 @@
   </div>
 </section>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script>
-  window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
-  window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
-</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js" integrity="sha384-Emf5ZVIUiarAdhkgtqK+5/Z5qIvM6QoVrS+qAVtfyZVuD5lIHrac0me485+Antp0" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
+<script src="trainw-config.js"></script>
 <script src="trainw-tenant-utils.js?v=20260412-1"></script>
 <script src="trainw-core.js?v=20260403-1"></script>
 <script src="trainw-translations.js"></script>

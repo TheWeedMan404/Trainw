@@ -25,6 +25,14 @@
       <div class="terminal-clock" id="terminal-clock">00:00</div>
     </header>
 
+    <!-- Turnstile flag OFF: shown instead of the scanner while
+         TURNSTILES_ENABLED is false. Hidden by default. -->
+    <div class="terminal-disabled hidden" id="terminal-disabled">
+      <div class="terminal-disabled-icon">STOP</div>
+      <h2 class="terminal-disabled-title">Tourniquets désactivés</h2>
+      <p class="terminal-disabled-text">Ce terminal est désactivé pour le moment. L’accès par tourniquet reprendra quand la salle le réactivera.</p>
+    </div>
+
     <main class="terminal-layout">
       <section class="terminal-main">
         <div class="result-card state-idle" id="result-card">
@@ -58,9 +66,9 @@
     </footer>
   </div>
 
-  <div class="admin-modal hidden" id="admin-modal" aria-hidden="true">
+  <div class="admin-modal hidden" id="admin-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="admin-title">
     <div class="admin-dialog">
-      <div class="admin-title">Code administrateur</div>
+      <div class="admin-title" id="admin-title">Code administrateur</div>
       <div class="admin-display" id="admin-display">••••</div>
       <div class="admin-error" id="admin-error"></div>
       <div class="admin-pad">
@@ -73,20 +81,17 @@
         <button type="button" data-key="7">7</button>
         <button type="button" data-key="8">8</button>
         <button type="button" data-key="9">9</button>
-        <button type="button" data-key="clear">C</button>
+        <button type="button" data-key="clear" aria-label="Effacer">C</button>
         <button type="button" data-key="0">0</button>
-        <button type="button" data-key="enter">OK</button>
+        <button type="button" data-key="enter" aria-label="Valider">OK</button>
       </div>
       <button class="admin-close" type="button" id="admin-close">Fermer</button>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://unpkg.com/html5-qrcode" defer></script>
-  <script>
-    window.__TRAINW_URL__ = 'https://bibqumevndfykmkssslb.supabase.co';
-    window.__TRAINW_KEY__ = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpYnF1bWV2bmRmeWtta3Nzc2xiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNjM1NzAsImV4cCI6MjA4ODkzOTU3MH0.X51EBM0ERPiMmGE2kP18JRrqrF4O6ebA_c2oCdP6wEM';
-  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js" integrity="sha384-gnyZit14c5lnGcarmA166QQjjJXpucw25ogZXuwH3HxxY904zHkBqmxVpelsPorb" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" defer></script>
+  <script src="trainw-config.js"></script>
   <script src="trainw-core.js"></script>
   <script src="gate-terminal.js"></script>
 </body>

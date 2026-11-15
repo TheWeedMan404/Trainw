@@ -534,3 +534,53 @@ canvas { transition: opacity 0.3s; }
   flex-direction: column;
   gap: 8px;
 }
+
+/* DB-38 (round 5): retract-your-own-message button. Small and quiet —
+   it only appears on the sender's own bubbles, next to the timestamp. */
+.msg-delete {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.45;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 0 0 6px;
+  float: right;
+}
+.msg-delete:hover,
+.msg-delete:focus-visible {
+  opacity: 1;
+}
+
+/* DB-57 (round 5): specialty tag suggestions in the coach-edit modal. */
+.tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.tag-suggestions:empty {
+  display: none;
+}
+.tag-suggestions-label {
+  font-size: 12px;
+  color: var(--mt);
+  align-self: center;
+}
+.tag-chip {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  color: inherit;
+}
+.tag-chip:hover {
+  border-color: var(--mt);
+}
+.tag-chip.is-new {
+  border-style: dashed;
+}

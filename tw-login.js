@@ -55,6 +55,8 @@ const T = {
     ePwMatch: 'Les mots de passe ne correspondent pas.',
     eNameReq: 'Le nom complet est requis.',
     eGymNameReq: 'Le nom de la salle est requis.',
+    eConsentReq: 'Vous devez accepter les conditions de confidentialité pour créer un compte.',
+    consentText: "J'accepte les conditions de confidentialité de Trainw.",
     eGeneric: "Une erreur s'est produite. Reessayez.",
     eBadCreds: 'Email ou mot de passe incorrect.',
     eEmailTaken: 'Un compte avec cet email existe deja.',
@@ -102,6 +104,8 @@ const T = {
     ePwMatch: 'Passwords do not match.',
     eNameReq: 'Full name is required.',
     eGymNameReq: 'Gym name is required.',
+    eConsentReq: 'You must accept the Trainw privacy terms to create an account.',
+    consentText: 'I accept the Trainw privacy terms.',
     eGeneric: 'Something went wrong. Please try again.',
     eBadCreds: 'Incorrect email or password.',
     eEmailTaken: 'An account with this email already exists.',
@@ -149,6 +153,8 @@ const T = {
     ePwMatch: 'كلمتا المرور غير متطابقتين.',
     eNameReq: 'الاسم الكامل مطلوب.',
     eGymNameReq: 'اسم الصالة مطلوب.',
+    eConsentReq: 'يجب أن توافق على شروط الخصوصية الخاصة بـ Trainw لإنشاء حساب.',
+    consentText: 'أوافق على شروط الخصوصية الخاصة بـ Trainw.',
     eGeneric: 'حدث خطأ. حاول مرة اخرى.',
     eBadCreds: 'البريد الالكتروني او كلمة المرور غير صحيحة.',
     eEmailTaken: 'يوجد حساب بهذا البريد مسبقا.',
@@ -487,6 +493,11 @@ async function doSignup() {
     showFerr('s-gym-name', t('eGymNameReq'));
     valid = false;
   }
+  // P2-9: no account without privacy consent.
+  if (!field('s-consent')?.checked) {
+    showFerr('s-consent', t('eConsentReq'));
+    valid = false;
+  }
   if (!valid) return;
 
   busy('btn-signup', true);
@@ -501,6 +512,9 @@ async function doSignup() {
           role,
           gym_name: gymName || null,
           language_preference: lang,
+          // P2-9: consent timestamp — handle_new_user() stores it on the
+          // client profile (migration 20261115290000).
+          consent_given_at: new Date().toISOString(),
         },
       },
     });
@@ -575,7 +589,7 @@ async function forgotPassword() {
   try {
     getSupabaseClient();
     const result = await Trainw.api.run(
-      sb.auth.resetPasswordForEmail(email),
+      sb.auth.resetPasswordForEmail(email, { emailRedirectTo: window.location.origin + '/tw-login.html' }),
       { context: 'reset password email', toastOnError: false, fallback: null }
     );
     if (result.error) {

@@ -5,6 +5,7 @@
   const LOGIN_HREF='/login?role=gym_owner';
   let currentGymId=null;
   let currentLang=localStorage.getItem('trainw_lang')||'fr';
+  const inFlightApprovals=new Set();
 
   const COPY={
     fr:{pending:'En attente',confirmed:'Confirmee',completed:'Terminee',cancelled:'Annulee',pendingShort:'en attente',approved:'Approuve',approve:'Approuver',hold:'Mettre en attente',saved:'Mise a jour enregistree.',noBookings:'Aucune reservation a afficher.',noApprovals:'Aucun coach en attente.',queueEmpty:'Toutes les validations coach sont traitees.',nextSessions:'Prochaines reservations',pendingCount:'En attente',confirmedCount:'Confirmees',completedCount:'Terminees',cancelledCount:'Annulees'},
@@ -75,20 +76,28 @@
     renderCoachApproval(coaches);
   }
 
-  async function updateCoachApproval(profileId,status){
-    const payload={approval_status:status,approved_at:status==='approved'?new Date().toISOString():null};
-    const result=await Trainw.api.run(sb.from('coach_profiles').update(payload).eq('id',profileId),{context:'gym pilot coach approval',fallback:null});
-    if(result.error)return;
-    Trainw.ui.showToast(copy('saved'),'success');
-    if(typeof loadCoaches==='function')await Promise.allSettled([loadCoaches(),typeof loadDashboardStats==='function'?loadDashboardStats():Promise.resolve(),typeof loadSchedule==='function'?loadSchedule():Promise.resolve()]);
-    await refresh();
+  async function updateCoachApproval(profileId,status,button){
+    if(inFlightApprovals.has(profileId))return;
+    inFlightApprovals.add(profileId);
+    if(button)Trainw.ui.setBusy(button,true);
+    try{
+      const payload={approval_status:status,approved_at:status==='approved'?new Date().toISOString():null};
+      const result=await Trainw.api.run(sb.from('coach_profiles').update(payload).eq('id',profileId).eq('gym_id',currentGymId),{context:'gym pilot coach approval',fallback:null});
+      if(result.error)return;
+      Trainw.ui.showToast(copy('saved'),'success');
+      if(typeof loadCoaches==='function')await Promise.allSettled([loadCoaches(),typeof loadDashboardStats==='function'?loadDashboardStats():Promise.resolve(),typeof loadSchedule==='function'?loadSchedule():Promise.resolve()]);
+      await refresh();
+    }finally{
+      inFlightApprovals.delete(profileId);
+      if(button)Trainw.ui.setBusy(button,false);
+    }
   }
 
   function bindApproval(targetId){
     document.getElementById(targetId)?.addEventListener('click',event=>{
       const button=event.target.closest('[data-approve-profile]');
       if(!button)return;
-      updateCoachApproval(button.dataset.approveProfile,button.dataset.approvalStatus);
+      updateCoachApproval(button.dataset.approveProfile,button.dataset.approvalStatus,button);
     });
   }
 

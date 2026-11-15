@@ -5,6 +5,13 @@
 --   - Attach them to the existing gym owner hierarchy for gymtest1@gmail.com
 --   - Seed realistic coach/client profile data for production-style testing
 -- Safe to re-run.
+--
+-- PASSWORD (P1-8): no password is stored in this file. Before running it, set
+-- a strong, unique password for this seed run in the same session:
+--   SET trainw.seed_password = '<strong random password>';
+-- The script refuses to run without it. Use the Supabase Dashboard
+-- (Authentication > Users) to reset the password afterwards, and rotate it
+-- whenever the seed is re-run on a shared environment.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -19,8 +26,15 @@ DECLARE
   v_coach_auth_id uuid;
   v_client_auth_id uuid;
   v_coach_profile_id uuid;
-  v_password_hash text := crypt('Hamdi2463', gen_salt('bf', 10));
+  v_seed_password text;
+  v_password_hash text;
 BEGIN
+  -- P1-8: the seed password comes from the session, never from this file.
+  v_seed_password := NULLIF(current_setting('trainw.seed_password', true), '');
+  IF v_seed_password IS NULL THEN
+    RAISE EXCEPTION 'Set the seed password first: SET trainw.seed_password = ''<strong random password>''; — never commit a password in this file.';
+  END IF;
+  v_password_hash := crypt(v_seed_password, gen_salt('bf', 10));
   SELECT g.id, g.manager_id
   INTO v_gym_id, v_owner_id
   FROM public.gyms g

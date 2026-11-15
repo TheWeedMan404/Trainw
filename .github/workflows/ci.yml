@@ -1,0 +1,24 @@
+# CI for the static Trainw app. The Next.js app was deleted 2026-11-15
+# (P2-10: DELETE src/, ship vanilla only) — there is no next-app job
+# anymore. The static app keeps its own check (npm run verify), which
+# needs no dependencies: plain node + the dev server.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  static-app:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Verify static app
+        run: npm run verify
