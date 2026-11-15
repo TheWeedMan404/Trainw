@@ -3776,3 +3776,197 @@ signup confirmation is therefore AT RISK until custom SMTP is configured
    (pre-existing; the approve path uses UPDATE-first instead); the /role
    join directory only shows when the user has no usable workspace
    (multi-gym joining from /role is a possible follow-up).
+
+## Round 10 — production dashboard observations (2026-11-15)
+
+Four observations from the production browser verification (2026-11-15
+~11:53–11:55, https://trainw.vercel.app, all three TEST accounts signed in
+fine — owner@test.com / coach@test.com / client@test.com, all active members
+of TEST Gym `8a07bf89-ff6e-40f9-8feb-c384d6b47e5c`). User said "Fix them".
+No RLS policy changes, no caller-check weakening, no new secrets, no SQL
+migrations. 7 files changed, frontend only.
+
+### Issue 1 — transient "Unexpected error. Please try again." toast on /admin load
+
+**Root cause (proven, not guessed).** `tw-gym-acc.js:5287`, the last line of
+`loadAnalytics()`:
+
+```js
+if (clientCountResult.error || coachCountResult.error || sessionsResult.error || paidThisMonth.error) toast(t('errorMsg'), 'err');
+```
+
+`clientCountResult` and `paidThisMonth` occur NOWHERE else in the codebase
+(grep across all JS/HTML excluding dist: no other occurrences) — stale names
+left from an earlier shape of the function. Node reproduces the exact
+`ReferenceError: clientCountResult is not defined`. `loadAnalytics()` is
+awaited in `initPage()`, which is called bare at the file's end, so the throw
+is an unhandled rejection; the global `unhandledrejection` handler in
+`trainw-core.js:1212` toasts exactly "Unexpected error. Please try again."
+The dashboard stats still render because the throw happens after they are
+set — matching the browser report (toast + otherwise fine dashboard).
+`t('errorMsg')` is 'Une erreur est survenue.' / 'Something went wrong.' —
+NOT the observed text, which rules out the other toast paths.
+
+**Fix.** The line now checks the four results actually in scope in
+`loadAnalytics()`:
+
+```js
+if (directoryResult.error || coachCountResult.error || sessionsResult.error || profileResult.error) toast(t('errorMsg'), 'err');
+```
+
+`directoryResult`/`coachCountResult`/`sessionsResult` are destructured from
+the `Promise.all` at the top of the function; `profileResult` is declared
+before the line as `{data: [], error: null}` when there are no client ids.
+Preserves the author's intent (error toast if an analytics data call
+failed). Verified by a node scope check over the extracted function:
+all four names declared in `loadAnalytics`, stale names gone.
+
+**Live check.** All ten admin load-path calls re-run as the owner with a
+per-user JWT: `get_auth_context`, `list_gym_member_directory` (3 rows),
+`get_staff_directory` (3), `list_role_matrix` (5), users coach count (1),
+sessions select (0), `client_profiles` (1), payments ledger (0), messages
+count (0), `gate_access_log` (0) — all HTTP 200. No other load failure
+lurks behind the fixed ReferenceError. (Two runs died mid-flight on
+`IncompleteRead` / `RemoteDisconnected` — the known VM↔Supabase transport
+flakiness; `list_role_matrix` re-probed via curl returned HTTP 200, 2095
+bytes, 5 roles. The failures were transport, not the RPC.)
+
+### Issue 2 — sign-out delayed ("Déconnexion" needed two clicks)
+
+**Root cause.** All three portals awaited `sb.auth.signOut({scope:
+'global'})` (a server round-trip) and only navigated on success. On a
+flaky network the call hangs or fails; the gym handler then threw into a
+catch that toasted and never navigated, and the coach/client handlers had
+no error handling at all, so a failure was an unhandled rejection with no
+navigation. Matches the browser report exactly (two clicks, no navigation,
+login page only on re-observation).
+
+**Fix (all three portals).** Navigate immediately without waiting on the
+server revocation; ignore double clicks with a `window.__trainwSigningOut`
+guard; fire the global revocation in the background (`.catch` logs only);
+then `await sb.auth.signOut({scope: 'local'})` — local-only, no network,
+resolves at once — so the local session is certainly gone before the login
+page loads. `tw-gym-acc.js:5603` (replaced the `Trainw.api.run` + throw +
+catch handler), `tw-coach-acc.js:544`, `tw-client-acc.js:365` (both were
+`await sb.auth.signOut({scope:'global'}); localStorage.removeItem(...);
+window.location.href=LOGIN_HREF` with no error handling). Cleanup
+(realtime unsubscribe, timers, `trainw_active_gym` removal) still runs
+first in each handler.
+
+Residual caveat: if the background global call reads the token lazily it
+may find the session already cleared and skip server-side revocation.
+Acceptable — the token only ever lived in this browser's cleared storage;
+the UX (prompt sign-out) is what matters.
+
+### Issue 3 — gym name missing in coach and client portals
+
+Two separate causes, both fixed.
+
+**Coach — the name was never loaded.** `renderCoachGymSwitcher()`
+(`tw-coach-acc.js:106`) hides the switcher when there is ≤1 membership,
+so with one gym it never showed. Worse, `loadCoachGymMemberships()`
+(`tw-coach-acc.js:104`) queried
+`gym_memberships … .eq('status','active').eq('portal','coach')` — but
+`gym_memberships` has NO `portal` column (portal lives on `roles`, via
+`role_id`); PostgREST rejects the query with 42703
+("column gym_memberships.portal does not exist", proven live via curl),
+so `coachGymMemberships` was always `[]` — the switcher could never show,
+and the failing query also toasted (`Trainw.api.run` defaults
+`toastOnError: true`) on every coach load.
+
+**Coach fix.** `loadCoachGymMemberships(memberships)` now builds the list
+from the auth context the bootstrap already loads (`ctx.memberships` —
+normalized by `loadAuthContext`/`normalizeMembership`, which spreads the
+record so `gym_name` survives; `portal`, `status`, `gym_id` included),
+filtering to portal `coach` + status `accepted`/`active`, deduped by gym,
+sorted by name. The broken query is gone; bootstrap calls it as
+`loadCoachGymMemberships(ctx.memberships)`. `renderCoachGymSwitcher()`:
+0 memberships → hidden (unchanged, freelance); exactly 1 → static label
+("Salle active" / "Active gym" / "الصالة الحالية") + name, using the
+membership matching `currentGymId` else the first; 2+ → existing select
+(unchanged). New `.coach-gym-switcher-name` CSS rule in
+`tw-coach-acc-v17.css` (Bebas Neue 20px `var(--ac)`, mirroring
+`.coach-name`).
+
+**Client — no gym element existed.** The sidebar (`.client-info`) had no
+gym-name element, and bootstrap never retained the gym name even though
+`get_auth_context` returns it (`memberships[].gym_name`, proven live:
+`'TEST Gym'` for both coach and client; note the RPC's own
+`active_membership` object does NOT carry `gym_name` — `getContext`
+overwrites it with the pick from `memberships`, which does).
+
+**Client fix.** Added `<div class="gym-name hidden" id="sidebar-gym-name">`
+to `.client-info` in `tw-client-acc.html` (after `.client-label`); added
+the `.gym-name` rule to `tw-client-acc.css` (same Bebas 20px accent rule
+as the admin sidebar); `tw-client-acc.js` gains module-level
+`currentGymName`, set in bootstrap from
+`ctx.activeMembership?.gym_name`, rendered in `renderAll()` (hidden when
+there is no gym name, i.e. solo mode).
+
+**Verification.** Node simulation of the rewritten
+`loadCoachGymMemberships` against the live coach membership payload
+returns `[{gym_id: '8a07bf89-…', name: 'TEST Gym'}]`; mixed input
+(coach+client, pending, duplicate, null name) filters/sorts/dedupes
+correctly; empty/undefined → `[]`. Node DOM-stub simulation of
+`renderCoachGymSwitcher`: 1 gym → `<span …>Salle active</span><span
+…>TEST Gym</span>`; 2 gyms → the existing select; 0 gyms → hidden + empty.
+Live: `gyms` row readable by both coach and client JWTs
+(`[{"id":"8a07bf89-…","name":"TEST Gym"}]`), and the auth-context
+`memberships[0].gym_name` is `'TEST Gym'` for both.
+
+### Issue 4 — client "abonnement expiré" banner with no plan
+
+**Root cause (proven).** The test client's `client_profiles` row (live DB):
+`membership_end_date: null`, `membership_tier: basic`, `payment_status:
+pending`. `membershipDaysRemaining()` (`tw-client-acc.js:37`) calls
+`Trainw.dateOnly(clientProfile?.membership_end_date)`; `dateOnly`
+(`trainw-core.js:200-207`) did `new Date(value)` with no null guard —
+**`new Date(null)` is the epoch, so `dateOnly(null)` returned
+`"1970-01-01"`** (proven in node; 20,772 days ago). `renderMembershipBanner`
+already returns early when daysRemaining is null — it never got null. The
+dashboard hero/stat-expiry paths already null-guard the raw value, which
+is why they showed neutral '—' / 'No membership data available' while the
+banner wrongly showed expired. Call-site audit: 28 `dateOnly` call sites;
+all others pass `new Date()`, `now`, or `addDays(...)` results — only the
+two client ones pass a nullable DB value.
+
+**Fix (two parts).** (a) Core: `dateOnly` now returns `''` for
+null/undefined/'' before `new Date(value)` — no caller depends on
+`dateOnly(null) === '1970-01-01'`. (b) Belt-and-braces in
+`membershipDaysRemaining()`: returns null early when
+`!clientProfile?.membership_end_date`, so the banner logic is explicitly
+correct and doesn't rely on `dateOnly`'s behaviour. Result: null end date
+→ no banner, hero keeps its neutral copy; a genuinely expired plan (past
+end date) still shows the expired banner. No subscription row invented for
+the test client.
+
+**Verification.** Node test of the actual fixed `dateOnly` (extracted from
+`trainw-core.js`): null → `""`, undefined → `""`, `""` → `""`,
+`"2026-12-31"` → `"2026-12-31"`, `new Date()` → `"2026-11-15"`.
+Simulated `membershipDaysRemaining(null)` → null (no banner); past end
+date → banner shows (expired).
+
+### Round-10 verification summary
+
+- `node --check` clean on all four touched JS files
+  (`tw-gym-acc.js`, `tw-coach-acc.js`, `tw-client-acc.js`,
+  `trainw-core.js`).
+- Static build: `node env-config.js` + `npm run verify` — "all checks
+  passed" (env vars fetched from the Supabase Management API into the
+  build process env only, never printed; `dist/` rebuilt).
+- Live (per-user JWTs, TEST accounts): the 10 admin load-path calls all
+  200; auth-context `memberships[0].gym_name === 'TEST Gym'` for coach and
+  client; `gyms` name readable by coach and client; the old coach
+  `gym_memberships … portal` query proven to fail live (42703).
+- Files changed: `tw-gym-acc.js` (issues 1, 2), `tw-coach-acc.js`
+  (issues 2, 3), `tw-client-acc.js` (issues 2, 3, 4),
+  `tw-client-acc.html` + `tw-client-acc.css` (issue 3),
+  `tw-coach-acc-v17.css` (issue 3), `trainw-core.js` (issue 4).
+- **Not verified in this session (no live-browser access):** the actual
+  browser render of all four fixes — no more toast on /admin load,
+  one-click sign-out landing on the login page, "TEST Gym" visible in the
+  coach/client sidebars, no expired banner for the plan-less client.
+  Browser re-check happens after the parent deploys. Also not re-tested
+  in a browser: the coach multi-gym select path (code unchanged, only its
+  data source changed) and the genuinely-expired banner path (logic
+  unchanged, only the null path fixed).
