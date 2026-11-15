@@ -6069,3 +6069,708 @@ visible in the client's thread, and the client's reply to the coach worked.
   then a real-browser check that the owner thread renders in the client
   Messages page (API-level verification only here — no live-browser
   access in this round).
+
+## UI/UX — U9: refresh / collapse / drawer / dead-button batch + stale toast after unfreeze (2026-11-15)
+
+Test-pass items: Owner — functional bugs 6–11, Coach — functional bugs
+3–6, Client — functional bugs 4, plus item 12 (stale "Abonnement gelé"
+toast after "Annuler le gel", from the batch-2 browser re-check on
+production main 3e58e41f). All 12 fixed; none needs a product decision,
+none deferred. The refresh items follow the U6 pattern: re-render /
+re-fetch after the mutation instead of trusting a stale render.
+
+### 1. Client card collapses after filters/search (loses "Voir le profil", "Message", "Assigner un coach")
+
+- Cause: the owner portal has two competing `#clients-grid` renderers —
+  v2 `renderClients()` (`tw-gym-acc.js`) and v11 `renderClientsV11()`
+  (`tw-gym-acc-v17.js`, rich cards with the profile/message/assign
+  sections). The filter buttons and search input call v2
+  `renderClients()`, which overwrote v17's v11 cards; v17 only re-rendered
+  v11 on page load and after `loadClients()`.
+- Fix: v17 now exports `renderClientsV11` on `window` and sets
+  `window.TrainwV17ClientsReady = true` after its first `loadAssigns()`
+  (init + the `afterLoadClients` hook); v2 `renderClients()` delegates
+  to it when ready and falls through to v2 otherwise. Also aligned v17
+  `filtClients` payment default to `'paid'` (was `''`, which dropped
+  clients from "Payé"), added the `cc-btn-del` class to the v11 delete
+  button, and call `syncPermissionVisibility()` at the end of
+  `renderClientsV11()` for permission parity.
+- Verification: code inspection + `node --check`. Needs the parent's
+  real-browser check (click each filter, type in search, confirm the
+  rich card survives).
+
+### 2. Coach approval badge doesn't refresh until reload
+
+- Cause: pilot `refresh()` (`tw-gym-pilot.js`) has no generation guard.
+  A stale in-flight refresh (focus/nav-triggered, slow `getContext`)
+  could finish after the post-toggle refresh and repaint pre-toggle data.
+- Fix: `refreshSeq` counter — a superseded refresh returns before
+  rendering. Plus `updateApprovalCardInPlace(profileId, status)` paints
+  the pill text/class and swaps the button label /
+  `data-approval-status` / classes immediately after the confirmed
+  update; the refresh still runs afterwards as source of truth.
+- Verification: node harness `~/workspace/.u9-scratch/u9-pilot-harness.js`
+  (stubbed DOM + Supabase client, real pilot file in `vm`): PASS
+  generation guard (stale refresh finishing last leaves the "Approuve"
+  pill) and PASS in-place toggle (pill "en attente", button "Approuver",
+  one update call `approval_status:"pending"`, toast "Mise a jour
+  enregistree."). Negative control — the same harness against the HEAD
+  pilot — FAILS both checks, so the harness discriminates. Live
+  (owner@test.com, TEST Gym): approval toggle forth-and-back persisted —
+  approved → pending (re-query confirms "pending") → approved with
+  `approved_at` set (re-query confirms), net state unchanged. The
+  in-place update assumes the update affected the row (PostgREST update
+  without `.select()` returns no row count); the confirmation refresh
+  corrects any miss.
+
+### 3. Message threads don't refresh after sending (coach + client)
+
+- Cause: coach `sendCoachMessage` and client `sendClientMessage` only
+  queued a reload (`queueCoachReload(120)` / `queueClientReload(120)`),
+  which rebuilds the thread *list*; the open conversation body is
+  rendered only by `openThread()`.
+- Fix (both files): after the insert, `.select('id, content, sender_id,
+  receiver_id, created_at, is_read').maybeSingle()`, push the returned
+  row onto the thread (fallback local stub with `crypto.randomUUID()`),
+  then call `openThread(activeThreadId)`; the queued reload stays as
+  confirmation. Mirrors the owner portal's `sendMessage`, which already
+  did this correctly.
+- Verification: code inspection + `node --check`. Needs the parent's
+  real-browser check (send, message appears in the open thread at once).
+
+### 4. Weight add from the client drawer fails silently (coach)
+
+- Cause (proven by inspection): the drawer button handler
+  (`tw-coach-acc.js:552`) calls `saveInlineWeight(clientPanel.id)`, but
+  that function reads `[data-weight-input="..."]` — an input that exists
+  only in the Suivi poids table — so the value was always 0 and the
+  function toasted `t('weightKg')` ("INFO / Poids") and returned.
+- Fix: `saveInlineWeight(clientId, valueOverride)` — the drawer call
+  site passes the drawer input value; the Suivi call site passes nothing
+  and keeps reading the table input. After success + `runCoachReload()`,
+  if the drawer is still open for that client, it re-fetches the panel
+  data via `openClientPanel(clientId)`, restores `clientPanel.tab`, and
+  re-renders. The insert payload is byte-identical to the Suivi insert
+  the tester already proved working.
+- Verification: code inspection (selector mismatch + exact toast path)
+  and call-site check (drawer passes the value, Suivi passes nothing);
+  live read as coach@test.com confirms the test client has an 80.00 kg
+  `weight_logs` row (2026-11-15T15:38:39Z), i.e. the insert path works.
+  No new live row was inserted for this check (would be test-data
+  pollution for a payload already proven). Needs the parent's
+  real-browser check of the drawer click path.
+
+### 5. Drawer weight chart scale wrong (0–1.0 kg) in both drawers
+
+- Cause: empty-data default, not a scale formula — all four weight
+  charts use the same Chart.js config with no explicit y-scale, and the
+  Suivi page scales correctly because it has points. The coach drawer
+  never fetched weights at all (it used the bootstrap snapshot in
+  `openClientPanel`).
+- Fix: `openClientPanel` now fetches `weight_logs` (weight_kg, logged_at,
+  desc, limit 40, gym-scoped) and overrides `c.weights` when the fetch
+  succeeds. Both drawer charts render the empty copy instead of a chart
+  when there are no points (coach drawer weight tab conditionally renders
+  the chart shell vs `<p class="empty-state">Aucune mesure
+  enregistrée.</p>`; v17 `drawWeight` returns early and puts
+  `t('noWeight')` into `.weight-chart-shell`).
+- Verification: code inspection + live read (the 80 kg row above exists,
+  so the drawer fetch has data to show). Needs the parent's real-browser
+  check of both drawers.
+
+### 6. "Ouvrir" on a session opens the client profile — misleading label
+
+- Cause: label/action mismatch; both buttons open the client panel.
+- Fix: relabel the coach `openClient` key — fr "Ouvrir" → "Voir le
+  client", en "Open" → "View client", ar "فتح" → "عرض العميل" (applies to
+  the session-card and Mes Clients grid buttons).
+- Verification: code inspection + `node --check`.
+
+### 7. "Complet" badge wrong at 0/20 (1/1 individual session legitimately full)
+
+- Cause: `getStatusLabel` mapped `confirmed` → "Complet"/"Full"
+  (`tw-gym-acc.js:2278`), regardless of attendance.
+- Fix: `confirmed` now maps to Confirmé/Confirmed/مؤكد; new helpers
+  `sessionIsFull(attended, capacity)` and `sessionFullLabel()`; the pill
+  shows "Complet" only when `attended >= capacity > 0`, in both
+  `renderSchedule` and `openSessionDetail` (a 1/1 individual session
+  still correctly shows Complet).
+- Verification: code inspection + `node --check`.
+
+### 8. "Chercher un coach existant" finds nothing for "Test"
+
+- Cause (confirmed by reading `searchExistingCoaches`): the search
+  excludes all current gym members (`excludedUserIds` from
+  `gym_memberships`), so Test Coach is dropped silently. Live check
+  confirms the premise: Test Coach (b38df3c8-…) IS a `gym_memberships`
+  member of TEST Gym and has a `coach_profiles` row
+  (`approval_status: "approved"`).
+- Fix (UI wording, per the brief — not a silent empty result): track
+  `coachSearchExcludedCount` (matched-but-excluded user IDs; rows with no
+  email are non-matches per the PostgREST embedded-relation quirk, not
+  exclusions). The empty state now reads "Tous les coachs correspondants
+  font déjà partie de votre salle." when the count is > 0, and the results
+  count appends "N déjà dans votre salle." when applicable. Count resets
+  on empty/short-term/error paths.
+- Verification: premise confirmed live (see above); code inspection +
+  `node --check`. The >20-coach recall gap (needs a `search_coaches` RPC,
+  noted in P2-5) is untouched — out of scope for this round.
+
+### 9. "?" Messages Auto button does nothing
+
+- Cause: `#btn-show-auto-panel` had no listener. The panel
+  (`#msg-auto-panel` with days/template and `#btn-trigger-auto-msg` →
+  existing `triggerInactivityMessages`) exists in HTML and CSS
+  (`.msg-auto-toggle.active` style exists).
+- Fix: bind the click to toggle the panel `hidden` + the button `active`
+  class. No new feature invented.
+- Verification: code inspection + `node --check`. Needs the parent's
+  real-browser check (click toggles the panel; the trigger button inside
+  was already wired).
+
+### 10. Branding colour cards dead (raw "var(--ac)" / "var(--s1)" / "var(--mt)")
+
+- Cause: static HTML showing raw variable names; no colour storage
+  existed (only `gyms.logo_url`) and no picker.
+- Fix: new migration `20261116200000_u9_branding_colours.sql` adds
+  nullable `accent_color`, `surface_color`, `muted_color` text columns to
+  `gyms` with a hex CHECK (`^#[0-9a-fA-F]{6}$`, NULL = default). Shared
+  helper `Trainw.applyGymBranding(colours)` + `GYM_BRANDING_DEFAULTS`
+  in `trainw-core.js` (strict hex validation, sets `--ac/--s1/--mt` on
+  `:root`, returns resolved values; exported on `window.TrainwCore`).
+  Owner portal: the gym profile load fetches the 3 columns, applies
+  them, and syncs the cards; cards now have `data-branding-colour`,
+  hidden `<input type="color">`, and token spans showing the real hex +
+  "· défaut" when unset; click/Enter/Space opens the picker, `change`
+  persists via a `gyms` update (same `gyms_update` RLS =
+  `manages_gym(id)`, no new policy) with revert-on-error + `savedOk`
+  toast; no live `input` preview (picker cancel fires no event, a preview
+  would stick). The colours section (`#settings-branding-colours`) is
+  hidden in `syncPermissionVisibility()` without `manage_branding`.
+  Coach + client portals apply gym branding at bootstrap (separate
+  tolerant `gyms` select, `silent:true`). CSS: card `cursor:pointer`,
+  `position:relative`, focus-visible outline, hidden input styling.
+- Deploy-order hardening (found during verification): the colour columns
+  were first folded into the owner portal's main gym-profile select, so
+  a code deploy landing before the migration would have failed the whole
+  profile load (name/prices/tier all blank). The colours now load via a
+  separate tolerant select (`fallback:null, toastOnError:false,
+  silent:true`); on error the theme stays at defaults and the profile
+  load is unaffected. The save path still needs the migration (picker
+  save errors and reverts until it is applied) — expected.
+- Verification: full migration chain on a fresh local cluster (see
+  Verification below) — migration applies clean; U9 tests pass (valid hex
+  + NULL accepted; `var(--ac)`, `red`, `#12345`, `#12345678` rejected;
+  row intact). Live: `gyms.accent_color` does NOT exist yet — the
+  migration is NOT applied live; the parent applies it with the deploy.
+  Needs the parent's real-browser check (picker opens, save persists,
+  theme changes across portals).
+
+### 11. "Aucune séance passée" clickable but dead (client)
+
+- Cause: code inspection found no click handler and no `cursor:pointer`
+  on `.empty-state` (the `#client-past-sessions-list` handler only
+  handles review stars/submit; the `document.body` handler only handles
+  `[data-open-page]`). No real action exists to wire it to.
+- Fix (per the brief — make it non-clickable): the empty state is now
+  rendered with class `empty-state-static` + CSS rule
+  `#client-past-sessions-list.empty-state-static{cursor:default;
+  pointer-events:none}` in `tw-client-acc.css`.
+- Verification: code inspection + `node --check`.
+
+### 12. Stale toast after unfreeze ("Abonnement gelé" surfacing after "Annuler le gel")
+
+- Cause: `requestFreeze` / `cancelFreeze` toasted only AFTER
+  `await loadFreezes(); await loadClients();` — slow reload cascades, so
+  the freeze toast could fire after the unfreeze click (and the single
+  legacy `#toast` element shows whichever fires last).
+- Fix: toast immediately after the confirmed RPC success in both
+  functions (`toast('Abonnement gelé')` / `toast('Gel annulé')`), before
+  the reloads; reload failures still toast their own error via `api.run`.
+  Same late-toast pattern observed in `voidPayment` (toast after 3
+  loads) — deliberately NOT fixed here (out of the briefed
+  freeze/unfreeze scope); flag for a later round.
+- Verification: code inspection + `node --check`. Needs the parent's
+  real-browser check of the freeze → unfreeze toast sequence (timing
+  behaviour, not API-verifiable).
+
+### Verification (round-level)
+
+- `node --check` passes on all 6 touched JS files
+  (`trainw-core.js`, `tw-gym-acc.js`, `tw-gym-acc-v17.js`,
+  `tw-gym-pilot.js`, `tw-coach-acc.js`, `tw-client-acc.js`).
+  (`node --check` "fails" on .html/.css are expected — wrong file type.)
+- `node env-config.js` + `npm run verify`: all checks passed.
+- Item 2 harness: see item 2 above (both PASS on fixed code, both FAIL
+  on HEAD code). Harness at `~/workspace/.u9-scratch/u9-pilot-harness.js`.
+- Migration chain on a fresh local Postgres 16.2 cluster (pgserver
+  binaries; pgcrypto/btree_gist/citext .so + control files copied from
+  the 16.4 source build at `~/workspace/.p22-scratch/build/` — pgserver's
+  build ships without them; data dir on /tmp because `nobody` cannot
+  traverse /home): **72 OK, 2 FAIL** — the same 2 known by-design
+  pre-existing failures as the U8 baseline (phase1b directories,
+  phase1e freeze-hash defaults). The U9 migration applies clean.
+  U9 suite (`~/workspace/.u9-scratch/u9-tests.sql`): 3 columns exist,
+  nullable text; CHECK `gyms_branding_colours_hex` exists; valid hex
+  insert ok; NULL ok; `var(--ac)` / `red` / `#12345` / `#12345678` all
+  rejected; row intact after the rejected writes.
+- Live (project Trainw, TEST Gym 8a07bf89-ff6e-40f9-8feb-c384d6b47e5c;
+  no data deleted; one forth-and-back toggle only, net state unchanged):
+  sign-in as owner/coach/client OK; Test Coach is a gym member with an
+  approved `coach_profiles` row (item 8 premise); test client has an
+  80.00 kg `weight_logs` row (items 4/5 premise); approval toggle
+  persisted both ways (item 2); `gyms.accent_color` does not exist live
+  — migration NOT applied live (parent deploys).
+- Double-encoded UTF-8 preserved: mojibake `Ã` counts unchanged after
+  the edits (coach 44/44, client 93/93).
+- Files changed (9 + 1 new migration, 265 insertions, 30 deletions):
+  `trainw-core.js`, `tw-gym-acc.js`, `tw-gym-acc-v17.js`,
+  `tw-gym-pilot.js`, `tw-coach-acc.js`, `tw-client-acc.js`,
+  `tw-gym-acc.html`, `tw-gym-acc.css`, `tw-client-acc.css`, and new
+  `supabase/migrations/20261116200000_u9_branding_colours.sql`.
+- Still needs the parent: push / merge / Vercel deploy (code + the U9
+  migration together — the branding save needs the migration; the
+  profile load no longer does), then real-browser checks for items 1, 2,
+  3, 4, 5, 9, 10 and the item-12 toast sequence. No live-browser access
+  in this round, so all rendering/timing behaviour above is
+  code-inspection + harness verified only.
+
+## UI/UX — U10: cross-cutting issues (2026-11-15)
+
+Source: `../files/trainw-ui-ux-test-pass-2026-11-15.md`, "Cross-cutting UI/UX
+issues", items 1–9. Branch `phase1-security-fixes`. Files changed (12):
+`trainw-core.js`, `tw-gym-acc.js`, `tw-gym-acc-v17.js`, `tw-gym-pilot.js`,
+`tw-coach-acc.js`, `tw-client-acc.js`, `tw-gym-acc.html`, `tw-coach-acc.html`,
+`tw-gym-acc.css`, `tw-coach-acc-v17.css`, `tw-gym-acc-v17.css`,
+`trainw-enhancements.css` (307 insertions, 110 deletions).
+
+### Item 1 — Stale/delayed refresh, remaining paths (fixed)
+- Cause: the save handlers already called `runCoachReload()` /
+  `runClientReload()` → full `bootstrap()` / `loadData()`, but the inflight
+  guard dropped the post-mutation reload: `runCoachReload` /
+  `runClientReload` did `if (inflight) return;` and the queue functions
+  also returned early when inflight, so a reload that started just before
+  the insert (e.g. triggered by the insert's own realtime event) rendered
+  pre-insert data and no further reload was ever queued.
+- Fix: (a) pending-flag loop in both reloaders — if inflight, set
+  `coachReloadPending` / `clientReloadPending = true` and re-run after the
+  current reload finishes; queue functions set pending instead of dropping.
+  (b) Optimistic local updates + immediate targeted re-render before the
+  reload, then the reload confirms: coach `saveAvailability` (insert with
+  `.select('*')`, push row, `renderAvailabilityList()` +
+  `renderProfileSummary()`), coach `saveInlineWeight` (unshift into the
+  client's weights, `renderWeightRows()` + `drawClientWeight()`), coach
+  `saveCoachProfile` (update `coachProfile`/`currentProfile` locals,
+  `renderAll()` — fixes the "Coaching general" summary until re-render),
+  client `saveWeight` (unshift into `weightLogs`, `renderWeight()` +
+  `renderDashboardProgress()`), client `savePersonalRecord` (unshift,
+  `renderPersonalRecordsTable()`), client `saveGoal` (`currentGoal =
+  {...payload}`, `renderGoals()` + `renderDashboardProgress()`), client
+  `saveFreeWorkoutLog` (`persistWorkoutLog` now returns the inserted log id
+  instead of `true` — both callers only tested truthiness — then unshift
+  the log + set `logSetsMap`, `renderProgram()` +
+  `renderDashboardActivity()`). `savePlan` already awaits a full
+  `bootstrap()`; not named, left alone.
+
+### Item 2 — Date/time pickers awkward (fixed)
+- Cause: no `datetime-local` anywhere; all time inputs were native
+  `type="time"` (Chrome's segmented hour/minute/AM-PM spinbuttons; typing
+  across segments zeroes values). Display: `localeForLang('en')` returns
+  `'en-GB'`, so `formatTime` rendered midnight as `00:00` in English mode,
+  and most displays used raw `.slice(0,5)`.
+- Fix: new core helpers `Trainw.parseTimeOfDay(raw)` (accepts `9`, `9:00`,
+  `09:00`, `9h30`, `2:00 PM`, `14:30`, `1430`, strips trailing `:SS`;
+  returns `HH:MM` or null) and `Trainw.formatTimeOfDay(value, lang)` (en →
+  `h:MM AM/PM`, so `00:00` → `12:00 AM`; fr/ar → `HH:MM`), exported from
+  `trainw-core.js`; `formatTime` uses `hour12: lang==='en'` and its string
+  branch delegates to `formatTimeOfDay`. The six named inputs are now
+  plain text fields (`type="text"`, `data-time-input`, `inputmode="numeric"`,
+  `placeholder="09:00"`, `autocomplete="off"`, `maxlength="8"`): session
+  create `#sess-time`, session edit `#edit-sess-time`, class `#class-time`,
+  gym class `#gym-class-time`, coach availability start/end. A delegated
+  `change` listener in core normalizes valid input and sets
+  `aria-invalid="true"` on unparseable input (red border via new CSS rule
+  in `tw-gym-acc.css` + `trainw-enhancements.css`). Save handlers validate:
+  `saveEditSession`, `submitNewSession` (empty vs invalid distinguished),
+  `saveGymClass`, `saveClass` (v17, new `invalidTime` key), coach
+  `saveAvailability` (normalizes before the start<end check). All
+  time-display `.slice(0,5)` sites now use `formatTimeOfDay(..., currentLang)`
+  (owner dashboard/schedule/detail, v17 class lists, coach hero/pulse/
+  client-grid/session cards/availability cards, client feed/hero/upcoming/
+  booking-day/past lists); coach `fmtDT` and client `fmtDateTime` gained
+  `hour12: currentLang==='en'`. Input-value assignments (e.g. edit-session
+  open, v17 class open) deliberately stay `slice(0,5)` "HH:MM" — the entry
+  field is 24h, display surfaces are localized. Staff-schedule drawer
+  inputs stay native `type="time"` (generated by JS, out of named scope).
+
+### Item 3 — Mojibake (fixed by safe bulk re-encode)
+- Cause: double/triple-encoded UTF-8 in `tw-coach-acc.js` and
+  `tw-client-acc.js` (same class as the round-11 fix).
+- Fix: bulk re-encode with `/tmp/u10-mojibake-fix.py` (dry-run first, full
+  replacement log reviewed, then `--apply`). It re-decodes Latin-1/CP1252
+  byte runs only when the decode succeeds, has no control characters, and
+  matches plausible characters; single non-ASCII chars (e.g. legit `Â` in
+  `Âge`) are never touched; up to 3 passes. Coach: 93 replacements, bytes
+  86189 → 85589, `Ã` 44 → 0, `Â` 4 → 0, `â` 3 → 0 (programme-modal close
+  `Ã—` → `×`, `Ã‰crivez Ã vos clients assignÃ©s.` → `Écrivez à vos clients
+  assignés.`, placeholder → `Écrivez un message...`, Arabic day/status
+  words back to real Arabic). Client: 131 replacements, bytes 100069 →
+  99644, `Ã` 93 → 0, `Â` 19 → 0, `â` 17 → 0 (triple-encoded em dash
+  `Ã¢â‚¬â€` → `—`, `â€”` → `—` in OBJECTIF/CIBLE/TEMPS RESTANT and
+  Progression history). Owner HTML: 3 replacements (`SÃ©ances` →
+  `Séances`, `ModÃ¨les de Cours` → `Modèles de Cours`, `regroupÃ©es` →
+  `regroupées`); the 2 remaining `Â` are legit `Âge` labels. Owner Messages
+  empty-state icon `??` → `💬` (the `??` was a lost emoji/icon,
+  unrecoverable from the file).
+- Deferred (not fixed): `tw-gym-acc-v17.js` Arabic table is literal `?`
+  characters in the file bytes (855 `?` total — the +1 vs the earlier 854
+  is my own new `parsedTime?...:...` ternary in `saveClass`, not data) —
+  data loss from an earlier bad encoding round-trip, a different corruption
+  class from mojibake, outside the named item-3 scope. Needs proper Arabic
+  re-translation (needs-user). The v17 `t()` falls back fr → en, so the
+  new `invalidTime` key was still added to the v17 ar block with real
+  Arabic text.
+
+### Item 4 — Missing French accents (fixed)
+- All nine named strings fixed, plus unambiguous siblings in the same
+  tables (longest-first replacements to avoid partial overwrites):
+  pilot COPY.fr (`Confirmée`, `Terminée`, `Annulée`, `Approuvé`,
+  `Prochaines réservations`, `Confirmées`, `Terminées`, `Annulées`, `Mise
+  à jour enregistrée.`, `Aucune réservation à afficher.`); v17 I.fr
+  (`Créez votre premier template...`, `Durée`, `Créneau`, `Capacité`,
+  `Mettre à jour`, `Même niveau...`, `Aucune donnée...`, `Aucune mesure
+  enregistrée.`, `Aucune séance prévue...`, `Template chargé...`,
+  `Clients assignés`, `Aucun client assigné.`, `Série active`, `Séances par
+  semaine`, `Téléphone`); coach `copy()` fr (~35 strings incl.
+  `Disponibilités`, `À venir`, `Spécialité`, `Coaching général`, `À
+  définir`, `Le résumé se met à jour...`, `Journée libre`, `confirmée`,
+  `réservation`, `réservée`, `assigné`, `dès qu'ils seront reliés`,
+  `défini`, `Téléphone`, `Non renseigné`, `données`, `récente`, `Créez un
+  programme...`, `modèle réutilisable...`, `créneaux`, `coordonnée`,
+  `l'espace Programmes.`); client inline `uiCopy` fr (`Unité`, `Aucun
+  record enregistré...`, `Démarrer un entraînement libre`, `Photo ajoutée.`,
+  `Aucune photo enregistrée pour le moment.`); owner (`Cours créé.`,
+  `Cours mis à jour.`, `Aucun coach trouvé`, `Créez votre premier modèle...`,
+  `-- Aucun modèle --`, `+ Créer une séance`, `Gérez vos cours et
+  planifiez des séances à partir des modèles.`).
+- Caution hit during verification: two replacements introduced raw
+  apostrophes inside single-quoted JS strings (`qu'ils`, `l'espace`),
+  which broke `tw-coach-acc.js` syntax; fixed by escaping (`\'`) and
+  re-verified (see Verification).
+
+### Item 5 — Settings layout (fixed)
+- Button row: `ensureMobileSettingsShortcuts()` (tw-gym-acc.js:5799) injected
+  the `.mobile-settings-shortcuts` div (Coaches / Analytics / Check-In)
+  unconditionally on ALL viewports, and its CSS was just
+  `display:flex; gap:12px; flex-wrap:wrap` with unstyled
+  `.settings-shortcut` buttons (default white browser buttons). Fix:
+  `display:none` by default, `display:flex` only inside
+  `@media(max-width:768px)` (the mobile bottom-bar breakpoint), proper
+  secondary-button styling on `.settings-shortcut`, `margin-bottom:20px`.
+  (Exact overlap geometry vs the GENERAL heading could not be reproduced
+  by inspection; the unconditional injection + unstyled buttons is the
+  defect — parent to confirm visually.)
+- Staff-profile drawer clipping: schedule row CSS was
+  `grid-template-columns:110px 120px 1fr 1fr` — fixed columns plus native
+  `type="time"` inputs' large intrinsic min-width overflowed the ~436px
+  inner width. Fix: `grid-template-columns:96px minmax(0,1fr)` (2×2:
+  day+toggle first row, start+end second row) +
+  `.staff-schedule-row input[type="time"]{min-width:0;width:100%}`.
+- Coach Mon Profil numbers jammed (`DISPONIBILITES1`): coach
+  `.summary-chip strong` only set `color` (the grouped
+  `.summary-line strong, .summary-chip strong, .mini-metric-card strong`
+  rule). Fix: later `.summary-chip strong` rule in
+  `tw-coach-acc-v17.css` with `display:block; margin-top:8px;
+  font-family:'Bebas Neue'; font-size:28px; line-height:1` (mirrors the
+  client file; `.summary-line strong` stays inline).
+- Coach client-drawer stat cards wrap mid-word (`CHECK-` / `IN`): the
+  wrapping label is `Dernier check-in` (`t('lastCheckin')`). Fix:
+  non-breaking hyphen U+2011 in fr `Dernier check‑in` and en
+  `Last check‑in`, plus `white-space:nowrap` on `.panel-stat-label`
+  (tw-gym-acc-v17.css).
+- Sidebar flips `Cours`/`Classes`: HTML defaults said `Classes` (nav-label,
+  classes page title) but fr translations say `Cours`. Fix: HTML defaults
+  now match fr (`Cours`, `Cours & Activités`, accented `classesSub`).
+- English mode nav `Paiements` stays French: nav-label and page title were
+  hardcoded with no `data-i18n`. Fix: `data-i18n="navPayments"` on both;
+  new owner T key `navPayments` (fr `Paiements`, en `Payments`, ar
+  `المدفوعات`). Also added `data-i18n` to the hardcoded `Bookings Overview`
+  dashboard card title (key already existed in all three T blocks) and to
+  the Planning `Vue Réservations` card title.
+
+### Item 6 — Mislabelled / confusing controls (fixed)
+- Coach drawer `Assigner un coach` inside `Assigner un client`: the button
+  (v17:109) assigns the selected client to this coach but was labelled
+  `t('assign')` = `Assigner un coach`. Fix: button → `t('assignClient')`.
+  The client-card use of `t('assign')` (v17:91) is correct there (assigns a
+  coach to the client) — left alone.
+- Owner `Réserver` on a coach card opens session creation: label →
+  `t('bookCoachSession')` (new T key: fr `Créer une séance`, en
+  `Create a session`, ar `إنشاء جلسة`).
+- `Vue des réservations` vs `Vue des séances` unexplained: the Planning
+  page has a `Vue Réservations` card (next 8 upcoming sessions, pilot
+  `renderScheduleOverview`) above the full session grid (`#schedule-list`,
+  no heading), and the dashboard `Bookings Overview` card shows KPI counts
+  + next 5 pending. Fix: subtitle under the reservations card (new key
+  `reservationsCardSub`) and a new heading + subtitle above the sessions
+  grid (`sessionsListTitle` = `Vue des séances`, `sessionsListSub`), with
+  new `.card-sub` / `.schedule-list-head` CSS rules.
+- Weekly staff schedule defaults to only Sunday ON: no code default — DB
+  default is `'{}'` (migration `20260415000000_trainw_012_staff_profiles.sql:10`),
+  `buildStaffScheduleGrid(member.work_schedule || {})` shows only stored
+  shifts; live Test Coach row is Sunday-only from earlier saved data
+  (verified via sb-api.py Management API: user
+  `b38df3c8-d7b3-49f6-a180-8d1c377b2f1f`, `{"sun": ["10:00", "17:00"],
+  "mon": null, ...}`). Per the task's either/or, explanation added, no
+  behaviour change (changing the fresh-profile default is a product
+  decision): `<p class="settings-section-copy" data-i18n="staffScheduleNote">`
+  under the `Planning hebdomadaire` label (new T key; `.settings-section-copy`
+  already exists in tw-gym-acc.css).
+- Client QR raw code exposed: `renderGateQr` only renders the QR image,
+  but qrcodejs 1.0.0 sets `this._el.title = token` (verified by fetching
+  the CDN source) — raw token exposed as tooltip/DOM title. Fix:
+  `c.removeAttribute('title')` right after `new QRCode(...)`; the token
+  stays only in JS memory (`gateQrToken`, used as a truthiness check).
+- Verified, no redo: U7 plan-card button is `t('editPlan')` = "Modifier";
+  no `Enregistrer` left on plan cards. U4 prefilled example people gone —
+  no `Sana Ben Ali` / `Ahmed Ben Ali` / `sana@salle` anywhere.
+- Observed, not fixed (out of named scope): the edit-session modal's
+  Delete button starts with a literal `?` (`? <span data-i18n="deleteSession">`)
+  — likely another lost icon like the item-3 `??`; needs the intended icon
+  choice. The dashboard `wow-card-icon` elements also contain literal `?`
+  (tw-gym-acc.html:292–294).
+
+### Item 7 — No Cancel affordance (fixed)
+- Course/session edit modals: core Escape handler (`bindPanelControls`)
+  only closed slide panels, never `.modal.show`; modals open/close via
+  `classList.add/remove('show')`. Fix: Escape now also removes `show` from
+  all `.modal.show` (same semantics as the X button; forms are re-populated
+  on open). Explicit Cancel buttons (`btn-secondary modal-cancel`,
+  `data-i18n="cancel"`, new owner T key `cancel`) added to four owner
+  modals — edit-session (before Save), create-session (flex row with the
+  submit), class-template, gym-class — with a `.modal-cancel` click binding
+  next to the `.modal-close` binding in `bindUi`. Coach plan modal got a
+  Cancel button (`#btn-cancel-plan`, coach T key `cancel` in fr/en/ar)
+  bound next to the close binding.
+- Team inline `Changer le rôle` editor: clicking set
+  `activeStaffRoleEditMembershipId` and re-rendered; the row's select
+  saves on `change`, so "cancel" means abandoning the open editor with the
+  role unchanged. Fix: (a) an `Annuler` button (`data-staff-role-cancel`,
+  `t('cancel')`) next to the select when editing; (b) handler clears the
+  id + re-renders; (c) the `Changer le rôle` button now toggles off when
+  already editing that member; (d) Escape cancels via a guarded `document`
+  keydown listener in `bindUi` (`window.__trainwRoleEditEscBound`).
+
+### Item 8 — Check-in confirm button sticks on "..." (fixed)
+- Cause: `submitManualCheckIn` set `setBusy(btn,true)` + `textContent='...'`,
+  then awaited `Promise.allSettled([loadCheckIns(), loadDashboardStats()])`
+  BEFORE the `finally` restored the label/disabled state. The `finally`
+  exists on main too, so the stick is the untimed post-save reloads:
+  `Trainw.api.run` has NO timeout — a stalled request delays `finally`
+  indefinitely.
+- Fix: reset the button immediately after the successful insert + toast,
+  before the reloads (`btn.textContent = t('confirmCheckIn')`;
+  `Trainw.ui.setBusy(btn, false)`); `finally` stays as a safety net.
+  Systemic note (not changed — out of named scope): many handlers share
+  the `setBusy` + `...` + slow-await + `finally` shape, and `api.run` has
+  no timeout; other buttons can stick the same way on a stalled request.
+
+### Item 9 — Free-workout log repeats the exercise once per set (fixed)
+- Cause: `renderProgram` rendered each log's sets as
+  `Name 12x50` per set, joined with ` - `; same repetition in the
+  in-workout summary (`renderWorkoutStep`).
+- Fix: new `groupWorkoutLogSets(sets, joiner)` helper grouping consecutive
+  same-`exercise_name` sets; identical sets render as
+  `Name 12x50 ×3`, differing sets as `Name: 12x50, 12x50, 10x45`; used in
+  both the log list (joiner ` - `) and the workout summary (joiner ` · `).
+
+### Verification
+- `node --check` passes on all six touched JS files (`trainw-core.js`,
+  `tw-gym-acc.js`, `tw-gym-acc-v17.js`, `tw-gym-pilot.js`,
+  `tw-coach-acc.js`, `tw-client-acc.js`). `node env-config.js` +
+  `npm run verify`: "Trainw verify: all checks passed."
+- Node harness for the new time helpers (`/tmp/u10-time-test.js`, 25
+  cases): `formatTimeOfDay` — `00:00`→`12:00 AM` en / `00:00` fr,
+  `12:00`→`12:00 PM`, `13:00`→`1:00 PM`, `09:30`→`9:30 AM`,
+  `23:45`→`11:45 PM`, `12:30`→`12:30 PM`, `00:30`→`12:30 AM`;
+  `parseTimeOfDay` — `9`/`9:00`/`09:00`→`09:00`, `9h30`→`09:30`,
+  `2:00 PM`→`14:00`, `12:00 AM`→`00:00`, `12:00 PM`→`12:00`,
+  `14:30`/`1430`/`930`→`14:30`/`09:30`, `9:00:00`→`09:00`, and
+  `24:00`/`9:60`/`25:00`/`13:00 PM`/`abc`/empty → null. All passed.
+- Mojibake re-check after the edits: coach `Ã` 0 / `Â` 0, client `Ã` 0 /
+  `Â` 0. Remaining `Ã`/`Â` bytes elsewhere are legitimate: `Âge` labels
+  (owner HTML ×2, owner JS `clientAge`), and the pre-existing core regex
+  character class in `trainw-core.js` (`/[\xC3\x83\xC3\x82\xC3\x98\xC3\x99]/`).
+  v17 literal `?` count 855 (was 854; +1 is the new ternary in `saveClass`).
+- Full `git diff` reviewed hunk by hunk (incl. the minified coach/client/
+  v17 lines). One real bug caught in review: the accent replacements had
+  introduced unescaped apostrophes (`qu'ils`, `l'espace`) that broke
+  `tw-coach-acc.js` syntax — fixed with `\'` and re-verified.
+- All rendering/timing behaviour is code-inspection + harness verified
+  only — no live-browser access in this round; parent browser-verifies
+  after deploy.
+- Still needs the parent: push / merge / Vercel deploy, then real-browser
+  checks for items 1 (save → immediate re-render), 2 (type into the HH:MM
+  fields; midnight shows 12:00 AM in English), 5 (settings row on desktop
+  vs mobile; staff-drawer end-time inputs; coach summary numbers; drawer
+  stat labels), 6 (drawer button label, coach-card button, reservations vs
+  sessions subtitles, staff-schedule note, QR tooltip gone), 7 (Cancel
+  buttons + Escape in modals and role editor), 8 (check-in button resets
+  immediately), 9 (grouped sets display).
+
+## Phase 2 — P2-4: gate hardening (FE-04, GT-02, GT-04, GT-05, GT-08, DB-22, DB-24, DB-47) (2026-11-15)
+
+Step definition (audit §Phase 2, line 346): terminal PIN out of the URL
+(server-checked short-lived terminal token, non-empty PIN required);
+per-device secret; opaque QR tokens; fix the `validate_member_credential`
+gym filter; graceful same-day duplicate handling; mask credential refs to
+last 4 chars; shorten the re-entry window or make it configurable.
+Verify: open the terminal URL without a PIN — admin modal must not open;
+spoof a device id — rejected; re-enter after 30 min — admitted with a
+clear state.
+
+Method: code re-verification against the current tree (every P2-4 item
+re-checked in code, not trusted from the round-2/5 notes) + bounded live
+probes against the live project Trainw (`caylegavnekidhytlswo`):
+harness `/tmp/p24-probes.py` (curl + Management API `sb-api.py`; 2 edge
+calls, 4 limiter-RPC calls on a throwaway bucket, read-only SQL). No
+burst, no hammering, no live data written except the throwaway
+rate-limit bucket rows (auto-expire by window). 8/8 probes passed.
+No code changed in this round — verification-only; no migration, no
+edge-function change, nothing to deploy from P2-4 itself.
+
+### Per-item verdicts
+
+- FE-04 (PIN out of the URL, server-checked short-lived token,
+  non-empty PIN) — DONE. `gate-terminal.js` reads only `gym_id`,
+  `gym_name`, `device_id` from the query string; grep for PIN-in-URL
+  is clean in source and in `dist/`. The PIN is entered on screen
+  (admin modal doubles as the PIN prompt when no terminal session is
+  stored) and verified server-side by `gate-terminal-auth`: `PIN_RE =
+  /^\d{4,8}$/` rejects an empty PIN, HMAC-SHA256(PIN,
+  `GATE_TERMINAL_PEPPER`) is compared constant-time, and a 256-bit
+  random session token (8 h TTL, only the SHA-256 hash stored in
+  `gate_terminal_sessions`) is issued. Empty PIN is also refused
+  client-side (`Saisissez le PIN`, `gate-terminal.js:591-593`) before
+  any request. Live: an empty-PIN `auth` call returns 503
+  `turnstiles_disabled` — the flag check fires before the PIN check,
+  which also proves the flag-first ordering (see GT-03).
+- GT-02 (per-device secret) — DONE, as device-bound session tokens.
+  `gate-terminal-auth` stores `device_id` at token issuance;
+  `gate-checkin` `verifyTerminalSession` rejects a token presented
+  from a different device or with `device_id` omitted (round 5 live
+  4/4). Note: there is no separate per-device secret credential or
+  `gate_terminal_devices` table — the session token bound to
+  `device_id` at issuance IS the per-device secret. That is the
+  implementation the closure already verified; no new device-secret
+  scheme was built, because turnstiles are off and no hardware
+  enrolment flow exists to hold one.
+- GT-05 / FE-09 (opaque QR tokens) — DONE. `randomGateToken`
+  (`tw-client-acc.js:346`) is 128-bit `crypto.getRandomValues`;
+  `gate_sessions` tokens live 60 s, are consumed atomically
+  (`UPDATE ... WHERE used=false`), and the legacy dotted
+  `userId.gymId.timestamp.random` format is rejected outright in the
+  handler. Live QR scan remains a post-deploy browser check (parent).
+- DB-22 (`validate_member_credential` gym filter) — DONE, re-proven
+  live this round: the live function body (`pg_proc.prosrc`, 9,430
+  chars) contains both `mc.gym_id = p_gym_id` and
+  `cp.gym_id = p_gym_id` (latest definition
+  `20261115230000_phase1d_gym_timezone.sql`).
+- DB-24 / GT-08 (graceful same-day duplicates) — DONE. Both paths
+  (QR handler and `validate_member_credential`) return logged 409
+  denials, never a raw unique-index error: within 15 min of the last
+  check-in → `already_inside`; later the same day →
+  `duplicate_checkin_today`; a `23505` race on the insert is mapped
+  to the same `duplicate_checkin_today`.
+- Re-entry window (shorten or make configurable) — DONE by
+  shortening: the original 2-hour guard is now 15 minutes
+  (`already_inside`), hardcoded identically in `handler.mjs` and in
+  `validate_member_credential`. There is no per-gym setting for it;
+  the step's "or" is satisfied by the shortening.
+- DB-47 (mask credential refs) — DONE, with a wording variance.
+  `turnstile_truncate_credential_ref` (SQL) and the handler's
+  `truncateCredentialRef` return first-4 + `'...'` (7 chars) and
+  `'****'` for ≤ 4 chars — never the full value. Live probe:
+  36-char input → `ABCD...`, `ab` → `****`, `12345678` →
+  `1234...`. The audit's own fix text accepts "a hash or a
+  fixed-length masked form (e.g. last 4 chars only)", and first-4 +
+  `'...'` is such a form, so the finding is satisfied — but the
+  step's literal "last 4 chars" wording is NOT met (it shows the
+  first 4, not the last 4). Deliberately not changed: identical
+  masking strength, and switching would need a new migration + a
+  handler edit + a live apply for zero security gain. If the user
+  wants the literal last-4 form, that is a named follow-up, not a
+  gap found by this round.
+- GT-04 (offline queue / allow-list) — NOT-APPLICABLE, as already
+  recorded in the closure: no ESP32 gate firmware exists in this
+  repo, and turnstiles are off by user decision. If turnstiles are
+  ever re-enabled, the offline allow-list must be designed then
+  (firmware + cached list).
+
+### GT-03 (gate throttle) — BLOCKED, not testable while turnstiles are off
+
+Code is in place: `gate-checkin` enforces 60/min per IP + 30/min per
+device (`handler.mjs`, `RATE_LIMITS`), checked BEFORE any token or
+credential lookup, failing open if the limiter itself is down, with
+429 + `Retry-After: 60`. The limiter RPC underneath it was re-proven
+live in this round: throwaway bucket `p24-probe-d688a4a1`, limit 3,
+returned `T, T, T, F` (4 calls, owner JWT).
+
+But the edge-function throttle itself cannot be live-tested while
+turnstiles are disabled, and this round proved why with one call to
+each function instead of a burst: the 503 `turnstiles_disabled`
+fires FIRST, before the rate-limit check, in both `gate-checkin`
+(`handler.mjs`: turnstile check precedes `checkRateLimits`) and
+`gate-terminal-auth` (`index.ts`: flag check precedes the PIN and
+rate-limit logic). Live, both returned 503 on the first call, so a
+burst would only ever return 503s and consume no rate-limit budget —
+it would prove nothing about the throttle and was deliberately not
+run. GT-03 stays NEEDS-LIVE-TEST / BLOCKED: it needs the user to
+re-enable turnstiles for the test (a bounded burst of ~65 calls from
+one IP, stopping on the first 429), or it waits until turnstiles are
+re-enabled for real. Turnstiles were NOT enabled by this round, and
+the flag was not touched.
+
+### Verify-clause deviations (needs the user's call, not a code fix)
+
+- "Re-enter after 30 min — admitted with a clear state" does NOT
+  hold under the current policy, and cannot be made to hold by a
+  code fix alone. A scan 30 minutes after entry returns 409
+  `duplicate_checkin_today` — a clear state, but a denial, not an
+  admission — because one check-in per gym per calendar day is the
+  standing rule (unique index `uq_check_ins_gym_client_day`; see the
+  GT-08 closure note). Admitting same-day re-entry is a product
+  decision (lunch-time re-entry, multi-visit memberships), not a
+  bug. If the user wants the audit's verify literally satisfied,
+  the day rule must be relaxed first; this round did not change it.
+- "Open the terminal URL without a PIN — admin modal must not
+  open": as written this is ambiguous, because the admin modal IS
+  the PIN prompt — opening the terminal URL with no stored session
+  opens the modal asking for the PIN. What does not open without a
+  PIN is the unlocked admin mode / scanner: the scanner starts only
+  after the PIN is verified server-side (`handleAdminKey`). And
+  while turnstiles are off, neither opens at all: the terminal page
+  shows the disabled screen (`Trainw.TURNSTILES_ENABLED !== true`,
+  `trainw-config.js` and `dist/trainw-config.js` both `false`) and
+  stops before any PIN prompt. That disabled screen is expected,
+  not a bug.
+
+### Verification
+
+- Live probes (`/tmp/p24-probes.py`): 8/8 pass — gate-checkin 503
+  `turnstiles_disabled`; gate-terminal-auth empty PIN 503
+  `turnstiles_disabled`; owner sign-in 200; limiter RPC T,T,T,F;
+  live `validate_member_credential` gym filter present; live
+  truncate function `ABCD...` / `****` / `1234...`; gate tables
+  present; `gate_terminal_sessions` readable (2 rows — pre-existing
+  test sessions, not created by this round).
+- No JS/SQL/edge-function files touched, so no `node --check` or
+  local-Postgres chain run was needed for P2-4 code; `node
+  env-config.js` + `npm run verify` run for the notes-only change
+  (see below).
+- Still needs the parent: push / merge / deploy (nothing to deploy
+  from this round — no code changed), then the post-deploy browser
+  checks that only a live browser can do (terminal disabled screen
+  on production, PIN prompt flow once turnstiles are re-enabled,
+  live QR scan). GT-03 live throttle test is blocked until the user
+  re-enables turnstiles.

@@ -236,6 +236,9 @@ body::before { content:''; position:fixed; inset:0; pointer-events:none; z-index
 
 .hidden { display:none; }
 .empty-state { color:var(--mt); text-align:center; padding:32px 20px; font-size:14px; }
+/* U9 item 11: the "no past sessions" empty state is not an action —
+   never show it as clickable or let it swallow clicks. */
+#client-past-sessions-list .empty-state-static { cursor:default; pointer-events:none; }
 
 @media(max-width:768px) {
   .sidebar {

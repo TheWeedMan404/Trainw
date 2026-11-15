@@ -591,6 +591,15 @@
   color: var(--txt);
 }
 
+/* U10: summary numbers on their own line under the label. */
+.summary-chip strong {
+  display:block;
+  margin-top:8px;
+  font-family:'Bebas Neue',sans-serif;
+  font-size:28px;
+  line-height:1;
+}
+
 .summary-chip-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 20px;

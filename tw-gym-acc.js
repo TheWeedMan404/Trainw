@@ -75,6 +75,9 @@ let coachSearchRequestId = 0;
 let coachSearchResults = [];
 let coachSearchTerm = '';
 let coachSearchLoading = false;
+// U9 item 8: how many matching coaches were dropped because they are
+// already members of this gym — shown instead of a bare "not found".
+let coachSearchExcludedCount = 0;
 // P2-5: coach search needs at least 2 characters — a 1-char term is a
 // full-table scan of the gym's coaches, not a search.
 const COACH_SEARCH_MIN_LENGTH = 2;
@@ -314,6 +317,7 @@ const T = {
     membersExpiring:'Membres à Renouveler', noExpiring:'Tous les abonnements sont à jour.',
     revenueReal:'Revenus Réels', revenueMonth:'Ce Mois',
     editSession:'Modifier', deleteSession:'Supprimer', editSessionTitle:'Modifier la Séance',
+    navPayments:'Paiements', cancel:'Annuler', bookCoachSession:'Créer une séance', sessTimeInvalid:'Heure invalide — utilisez le format HH:MM (ex. 14:30).', staffScheduleNote:'Activez les jours travaillés de ce membre et définissez ses horaires — les jours désactivés sont des jours de repos.', reservationsCardSub:'Les prochaines réservations à venir — le détail complet est dans la liste des séances ci-dessous.', sessionsListTitle:'Vue des séances', sessionsListSub:'Toutes les séances planifiées de la salle, avec filtres par statut.',
   },
   en: {
     gymOwner:'Gym Owner', gymAdmin:'Administrator', gymStaff:'Receptionist', signOut:'Sign Out',
@@ -377,6 +381,7 @@ const T = {
     membersExpiring:'Members to Renew', noExpiring:'All memberships are up to date.',
     revenueReal:'Real Revenue', revenueMonth:'This Month',
     editSession:'Edit', deleteSession:'Delete', editSessionTitle:'Edit Session',
+    navPayments:'Payments', cancel:'Cancel', bookCoachSession:'Create a session', sessTimeInvalid:'Invalid time — use HH:MM (e.g. 14:30).', staffScheduleNote:'Turn on the days this member works and set their hours — days left off are days off.', reservationsCardSub:'Upcoming bookings — the full list is in the sessions below.', sessionsListTitle:'Sessions view', sessionsListSub:'Every scheduled session at the gym, filterable by status.',
   },
   ar: {
     gymOwner:'مالك الصالة', gymAdmin:'مدير', gymStaff:'موظف استقبال', signOut:'تسجيل الخروج',
@@ -440,6 +445,7 @@ const T = {
     membersExpiring:'أعضاء للتجديد', noExpiring:'جميع الاشتراكات سارية.',
     revenueReal:'الإيرادات الفعلية', revenueMonth:'هذا الشهر',
     editSession:'تعديل', deleteSession:'حذف', editSessionTitle:'تعديل الجلسة',
+    navPayments:'المدفوعات', cancel:'إلغاء', bookCoachSession:'إنشاء جلسة', sessTimeInvalid:'وقت غير صحيح — استخدم الصيغة HH:MM (مثال 14:30).', staffScheduleNote:'فعّل الأيام التي يعمل فيها هذا العضو وحدّد ساعاته — الأيام غير المفعّلة هي أيام راحة.', reservationsCardSub:'الحجوزات القادمة — القائمة الكاملة في الجلسات أدناه.', sessionsListTitle:'عرض الجلسات', sessionsListSub:'جميع الجلسات المجدولة في الصالة، مع تصفية حسب الحالة.',
   }
 };
 
@@ -850,6 +856,9 @@ function syncPermissionVisibility() {
   document.querySelector('.nav-item[data-page="payments"]')?.classList.toggle('hidden', !paymentsAllowed);
   document.getElementById('btn-save-settings')?.closest('.settings-section')?.classList.toggle('hidden', !brandingAllowed);
   document.getElementById('gym-logo-file')?.closest('.settings-section')?.classList.toggle('hidden', !brandingAllowed);
+  // U9 item 10: the colour cards are their own section — hide them too
+  // when the user may not manage branding.
+  document.getElementById('settings-branding-colours')?.classList.toggle('hidden', !brandingAllowed);
   document.getElementById('btn-save-pricing')?.closest('.settings-section')?.classList.toggle('hidden', !paymentsAllowed);
   document.getElementById('staff-management-section')?.classList.toggle('hidden', !(teamAllowed || manageRolesAllowed));
   document.querySelectorAll('[data-settings-team-tab="team"]').forEach(element => {
@@ -1356,7 +1365,7 @@ function renderStaffDirectory() {
           </div>
           <div><span class="staff-pill">${Trainw.escapeHtml(member.department || t('noDepartment'))}</span></div>
           <div><span class="staff-pill portal-${Trainw.escapeHtml(member.portal || 'client')}">${Trainw.escapeHtml(formatPortalLabel(member.portal))}</span></div>
-          <div>${showRoleSelect ? `<select class="form-input" data-staff-role-select="${Trainw.escapeHtml(member.membership_id || '')}">${roleOptions}</select>` : `<div class="staff-member-subcopy">${Trainw.escapeHtml(member.role_name || t('noRoleAssigned'))}</div>`}</div>
+          <div>${showRoleSelect ? `<div style="display:flex;gap:8px;align-items:center;"><select class="form-input" data-staff-role-select="${Trainw.escapeHtml(member.membership_id || '')}">${roleOptions}</select><button class="btn-secondary" type="button" data-staff-role-cancel="${Trainw.escapeHtml(member.membership_id || '')}">${Trainw.escapeHtml(t('cancel'))}</button></div>` : `<div class="staff-member-subcopy">${Trainw.escapeHtml(member.role_name || t('noRoleAssigned'))}</div>`}</div>
           <div><span class="staff-pill">${Trainw.escapeHtml(formatEmploymentType(member.employment_type))}</span></div>
           <div><span class="staff-pill status-${Trainw.escapeHtml(member.status || 'pending')}">${Trainw.escapeHtml(formatMembershipStatus(member.status))}</span></div>
           <div class="staff-member-subcopy">${Trainw.escapeHtml(formatStaffDate(member.hire_date))}</div>
@@ -2143,9 +2152,15 @@ async function requestFreeze(){
   // the function ... in the schema cache").
   const result=await Trainw.api.run(sb.rpc('request_membership_freeze',{p_user_id:userId,p_gym_id:currentGymId,p_start_date:start,p_end_date:end,p_reason:reason}),{context:'request freeze'});
   if(result.error){showInlineError(errEl,Trainw.api.userMessage(result.error, 'Erreur lors du gel.'));return;}
+  // U9 item 12: the success toast must fire as soon as the RPC is
+  // confirmed — not after loadFreezes()/loadClients(). Those reloads
+  // take seconds, so the toast arrived late: after an "Annuler le gel"
+  // click, the stale "Abonnement gelé" toast surfaced instead of (or
+  // after) the unfreeze toast. A reload failure still toasts its own
+  // error via api.run; the mutation itself already succeeded.
+  toast('Abonnement gelé');
   await loadFreezes();
   await loadClients();
-  toast('Abonnement gelé');
 }
 
 // U3b: no native confirm here — same silent-failure class as U1:
@@ -2155,9 +2170,11 @@ async function requestFreeze(){
 async function cancelFreeze(freezeId){
   const result=await Trainw.api.run(sb.rpc('cancel_membership_freeze',{p_freeze_id:freezeId}),{context:'cancel freeze'});
   if(result.error){toast(Trainw.api.userMessage(result.error, 'Erreur lors de l\'annulation du gel.'));return;}
+  // U9 item 12: same as requestFreeze — toast the confirmed action
+  // now, before the reloads, so no earlier toast can overtake it.
+  toast('Gel annulé');
   await loadFreezes();
   await loadClients();
-  toast('Gel annulé');
 }
 
 async function loadDashboardStats() {
@@ -2226,7 +2243,7 @@ async function loadDashboardStats() {
   const { data: sessions } = await sb.from('sessions').select('id, session_date, start_time, type, status, session_name, users!sessions_coach_id_fkey(name)').eq('gym_id', currentGymId).order('session_date',{ascending:false}).limit(4);
   const recentEl = document.getElementById('recent-sessions-list');
   if (recentEl) recentEl.innerHTML = !sessions?.length ? `<p class="empty-state">${t('noSessions')}</p>` :
-    sessions.map(s => { const time=s.start_time?.slice(0,5)||'—'; const date=new Date(s.session_date).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'}); const label=s.session_name||(s.type||'Séance').replace(/_/g,' ');
+    sessions.map(s => { const time=Trainw.formatTimeOfDay(s.start_time,currentLang)||'—'; const date=new Date(s.session_date).toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'}); const label=s.session_name||(s.type||'Séance').replace(/_/g,' ');
       return `<div class="schedule-item"><div class="schedule-time-col"><div class="schedule-time">${time}</div></div><div><div class="schedule-title">${Trainw.escapeHtml(label)}</div><div class="schedule-meta">${Trainw.escapeHtml(s.users?.name||'—')} · ${date}</div></div><div class="schedule-status status-${s.status||'pending'}">${s.status||'pending'}</div></div>`; }).join('');
 }
 
@@ -2277,11 +2294,24 @@ async function refreshPilotBookings(){
 
 function getStatusLabel(status) {
   const map = {
-    confirmed: { fr:'Complet', en:'Full', ar:'مكتمل', cls:'status-confirmed' },
+    // U9 item 7: "confirmed" is a booking status, not a capacity state.
+    // The old map labelled every confirmed session "Complet", so a 0/20
+    // class read as full. Full is derived from enrolments vs capacity
+    // at the call site (sessionIsFull) instead.
+    confirmed: { fr:'Confirmé', en:'Confirmed', ar:'مؤكد', cls:'status-confirmed' },
     pending:   { fr:'Partiellement réservé', en:'Partial', ar:'جزئي', cls:'status-pending' },
     completed: { fr:'Terminé', en:'Completed', ar:'منتهي', cls:'status-completed' },
   };
   return map[status] || { fr: status, en: status, ar: status, cls:'status-pending' };
+}
+
+// U9 item 7: a session is full only when enrolments reach capacity.
+function sessionIsFull(attended, capacity) {
+  return (capacity || 0) > 0 && (attended ?? 0) >= capacity;
+}
+
+function sessionFullLabel() {
+  return currentLang === 'ar' ? 'مكتمل' : currentLang === 'en' ? 'Full' : 'Complet';
 }
 
 function renderSchedule() {
@@ -2312,7 +2342,7 @@ function renderSchedule() {
   }
 
   el.innerHTML = list.map(s => {
-    const time    = s.start_time?.slice(0,5) || '—';
+    const time    = Trainw.formatTimeOfDay(s.start_time, currentLang) || '—';
     const dateObj = new Date(s.session_date);
     const dateStr = dateObj.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
     const label   = s.session_name || (s.type||'Séance').replace(/_/g,' ');
@@ -2321,6 +2351,9 @@ function renderSchedule() {
     const attended = s._enrollCount ?? 0;
     const fillPct  = cap > 0 ? Math.round((attended / cap) * 100) : 0;
     const sl       = getStatusLabel(s.status || 'pending');
+    // U9 item 7: "Complet" only when actually full (e.g. the 1/1
+    // individual session); a 0/20 confirmed class shows "Confirmé".
+    const pillText = sessionIsFull(attended, cap) ? sessionFullLabel() : (sl[currentLang] || sl.fr);
     const isPast   = s.session_date < new Date().toISOString().split('T')[0];
     const editLbl  = t('editSession')  || (currentLang==='ar'?'تعديل':'Modifier');
     const delLbl   = t('deleteSession')|| (currentLang==='ar'?'حذف':'Supprimer');
@@ -2331,7 +2364,7 @@ function renderSchedule() {
           <div class="sc-date">${dateStr}</div>
           <div class="sc-time">${time} · ${s.duration_minutes ?? 60}min</div>
         </div>
-        <span class="sc-status ${sl.cls}">${sl[currentLang] || sl.fr}</span>
+        <span class="sc-status ${sl.cls}">${pillText}</span>
       </div>
       <div class="sc-title">${Trainw.escapeHtml(label)}</div>
       <div class="sc-meta">
@@ -2365,7 +2398,7 @@ function populateSessionClassSelector() {
   if (!select) return;
 
   const previous = select.value;
-  select.innerHTML = [`<option value="">-- Aucun modele --</option>`].concat(
+  select.innerHTML = [`<option value="">-- Aucun modèle --</option>`].concat(
     gymClasses.map(gymClass => {
       const parts = [gymClass.name || 'Cours'];
       if (gymClass.schedule_day) parts.push(GYM_CLASS_DAY_LABELS[gymClass.schedule_day] || gymClass.schedule_day);
@@ -2497,7 +2530,7 @@ function renderGymClasses() {
       renderCoreEmptyState(target, {
         icon: 'TW',
         title: 'Aucun cours',
-        body: 'Creez votre premier modele pour planifier plus vite vos seances.',
+        body: 'Créez votre premier modèle pour planifier plus vite vos séances.',
         actionLabel: '+ Nouveau cours',
         actionId: 'open-gym-class-modal',
         onAction: () => openGymClassModal(),
@@ -2563,7 +2596,8 @@ async function saveGymClass() {
   const name = document.getElementById('gym-class-name')?.value.trim() || '';
   const coachId = document.getElementById('gym-class-coach')?.value || null;
   const scheduleDay = document.getElementById('gym-class-day')?.value || null;
-  const startTime = document.getElementById('gym-class-time')?.value || '';
+  const rawStartTime = document.getElementById('gym-class-time')?.value || '';
+  const startTime = rawStartTime ? Trainw.parseTimeOfDay(rawStartTime) || '' : '';
   const duration = parseInt(document.getElementById('gym-class-duration')?.value, 10) || 60;
   const capacity = parseInt(document.getElementById('gym-class-capacity')?.value, 10) || 20;
   const description = document.getElementById('gym-class-description')?.value.trim() || null;
@@ -2584,6 +2618,10 @@ async function saveGymClass() {
   // CHECK (unlike sessions) — the migration in this round adds one.
   if (!Number.isFinite(capacity) || capacity < 1) {
     showInlineError(errEl, 'La capacité doit être au moins 1.');
+    return;
+  }
+  if (rawStartTime && !startTime) {
+    showInlineError(errEl, t('sessTimeInvalid'));
     return;
   }
 
@@ -2608,7 +2646,7 @@ async function saveGymClass() {
 
     document.getElementById('gym-class-modal')?.classList.remove('show');
     await loadGymClasses();
-    toast(classId ? 'Cours mis a jour.' : 'Cours cree.');
+    toast(classId ? 'Cours mis à jour.' : 'Cours créé.');
   } catch (error) {
     showInlineError(errEl, Trainw.api.userMessage(error, t('errorMsg')));
   } finally {
@@ -2675,9 +2713,12 @@ async function openSessionDetail(sessionId) {
   const cap    = s.capacity || 0;
   const attended = s._enrollCount ?? 0;
   const fillPct  = cap > 0 ? Math.round((attended / cap) * 100) : 0;
+  // U9 item 7: same rule as the schedule card — "Complet" only when
+  // enrolments actually reach capacity.
+  const pillText = sessionIsFull(attended, cap) ? sessionFullLabel() : (sl[currentLang] || sl.fr);
   const label  = s.session_name || (s.type||'Séance').replace(/_/g,' ');
   const coach  = s.users?.name || '—';
-  const time   = s.start_time?.slice(0,5) || '—';
+  const time   = Trainw.formatTimeOfDay(s.start_time, currentLang) || '—';
   const dateStr = new Date(s.session_date).toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
   const editLbl= t('editSession')   || 'Modifier';
   const delLbl = t('deleteSession') || 'Supprimer';
@@ -2691,7 +2732,7 @@ async function openSessionDetail(sessionId) {
         <div class="sess-detail-title">${Trainw.escapeHtml(label)}</div>
         <div class="sess-detail-meta">🏋️ ${Trainw.escapeHtml(coach)} &nbsp;·&nbsp; 📅 ${dateStr}</div>
       </div>
-      <span class="sc-status ${sl.cls}" style="font-size:12px;padding:5px 14px;">${sl[currentLang]||sl.fr}</span>
+      <span class="sc-status ${sl.cls}" style="font-size:12px;padding:5px 14px;">${pillText}</span>
     </div>
     <div class="sess-detail-grid">
       <div class="sess-detail-stat"><div class="sess-detail-stat-val">${time}</div><div class="sess-detail-stat-lbl">Heure</div></div>
@@ -2838,7 +2879,8 @@ async function saveEditSession() {
   const id       = document.getElementById('edit-sess-id').value;
   const name     = document.getElementById('edit-sess-name').value.trim();
   const date     = document.getElementById('edit-sess-date').value;
-  const time     = document.getElementById('edit-sess-time').value;
+  const rawTime  = document.getElementById('edit-sess-time').value;
+  const time     = rawTime ? Trainw.parseTimeOfDay(rawTime) : '';
   const duration = parseInt(document.getElementById('edit-sess-duration').value) || 60;
   const capacity = parseInt(document.getElementById('edit-sess-capacity').value) || 10;
   const status   = document.getElementById('edit-sess-status').value;
@@ -2849,6 +2891,7 @@ async function saveEditSession() {
   // P2-8 (NX-16): session capacity is a whole number >= 1 (the DB CHECK
   // also enforces it — this gives a readable inline error instead).
   if (!Number.isFinite(capacity) || capacity < 1) { errEl.textContent = 'La capacité doit être au moins 1.'; errEl.classList.add('show'); return; }
+  if (rawTime && !time) { errEl.textContent = t('sessTimeInvalid'); errEl.classList.add('show'); return; }
   const btn = document.getElementById('btn-save-edit-session');
   btn.textContent = '…'; btn.disabled = true;
   try {
@@ -2915,14 +2958,15 @@ async function submitNewSession() {
   const name=document.getElementById('sess-name').value.trim(), typeVal=document.getElementById('sess-type').value;
   const dbType = typeVal === 'individual' ? 'individual_training' : typeVal;
   const category=document.getElementById('sess-category').value, date=document.getElementById('sess-date').value;
-  const time=document.getElementById('sess-time').value, duration=parseInt(document.getElementById('sess-duration').value)||60;
+  const rawTime=document.getElementById('sess-time').value, time=Trainw.parseTimeOfDay(rawTime), duration=parseInt(document.getElementById('sess-duration').value)||60;
   const capacity=parseInt(document.getElementById('sess-capacity').value)||10, coachId=document.getElementById('sess-coach').value||null;
   const basedClassId = dbType === 'group_class' ? (document.getElementById('sess-based-class')?.value || null) : null;
   const errEl=document.getElementById('create-session-err');
   errEl.classList.remove('show'); errEl.textContent='';
   if (!name){errEl.textContent=t('sessNameMissing');errEl.classList.add('show');return;}
   if (!date){errEl.textContent=t('sessDateMissing');errEl.classList.add('show');return;}
-  if (!time){errEl.textContent=t('sessTimeMissing');errEl.classList.add('show');return;}
+  if (!rawTime){errEl.textContent=t('sessTimeMissing');errEl.classList.add('show');return;}
+  if (!time){errEl.textContent=t('sessTimeInvalid');errEl.classList.add('show');return;}
   // P2-8 (NX-16): session capacity is a whole number >= 1 (the DB CHECK
   // also enforces it — this gives a readable inline error instead).
   if (!Number.isFinite(capacity) || capacity < 1){errEl.textContent='La capacité doit être au moins 1.';errEl.classList.add('show');return;}
@@ -3021,7 +3065,7 @@ async function loadCoaches() {
       <div class="ccc-rate">${c.hourly_rate ? c.hourly_rate + ' DT/séance' : '—'}</div>
       <div class="ccc-actions">
         <button class="ccc-btn ccc-btn-view" data-coach-modal="${c.id}">Voir Profil</button>
-        <button class="ccc-btn ccc-btn-book" data-book-coach="${c.id}">Réserver</button>
+        <button class="ccc-btn ccc-btn-book" data-book-coach="${c.id}">${Trainw.escapeHtml(t('bookCoachSession'))}</button>
       </div>
     </div>`;
   }).join('');
@@ -3302,6 +3346,18 @@ async function loadClients() {
   await runGymHooks('afterLoadClients');
 }
 function renderClients(){
+  // U9 item 1: the v17 layer owns the rich client cards ("Voir le
+  // profil" / "Message" / "Assigner un coach"). Its renderer lives in
+  // an IIFE, so the base file can only call it once v17 exports it —
+  // and only once v17 has loaded assignments at least once (the
+  // TrainwV17ClientsReady flag). Until then, fall through to the v2
+  // cards below. Without this, every filter/search click re-rendered
+  // the grid with the v2 cards and the v11 sections were lost until
+  // the next reload (v17's afterLoadClients hook re-rendered v11).
+  if (window.TrainwV17ClientsReady && typeof window.renderClientsV11 === 'function') {
+    window.renderClientsV11();
+    return;
+  }
   const el=document.getElementById('clients-grid'); if(!el) return;
   const q=document.getElementById('clients-search')?.value.toLowerCase()||'';
   let list=allClients;
@@ -3461,12 +3517,17 @@ function renderCoachSearchResults() {
   }
 
   if (!coachSearchResults.length) {
-    statusEl.textContent = `Aucun coach trouve pour "${coachSearchTerm}".`;
+    // U9 item 8: Test Coach *does* exist — the search drops every coach
+    // who is already a member of this gym. Say that instead of
+    // claiming nobody matches.
+    statusEl.textContent = coachSearchExcludedCount > 0
+      ? `Tous les coachs correspondants font déjà partie de votre salle.`
+      : `Aucun coach trouvé pour "${coachSearchTerm}".`;
     resultsEl.innerHTML = '';
     return;
   }
 
-  statusEl.textContent = `${coachSearchResults.length} coach(s) trouves.`;
+  statusEl.textContent = `${coachSearchResults.length} coach(s) trouves.` + (coachSearchExcludedCount > 0 ? ` ${coachSearchExcludedCount} déjà dans votre salle.` : '');
   resultsEl.innerHTML = coachSearchResults.map(coach => `
     <article class="coach-search-card" data-coach-search-card="${Trainw.escapeHtml(coach.user_id || '')}">
       <div class="coach-search-card-head">
@@ -3540,6 +3601,7 @@ async function searchExistingCoaches(term) {
   if (!currentGymId || !normalizedTerm) {
     coachSearchLoading = false;
     coachSearchResults = [];
+    coachSearchExcludedCount = 0;
     renderCoachSearchResults();
     return;
   }
@@ -3549,6 +3611,7 @@ async function searchExistingCoaches(term) {
   if (normalizedTerm.length < COACH_SEARCH_MIN_LENGTH) {
     coachSearchLoading = false;
     coachSearchResults = [];
+    coachSearchExcludedCount = 0;
     renderCoachSearchResults();
     return;
   }
@@ -3605,10 +3668,20 @@ async function searchExistingCoaches(term) {
     if (specialtyResult.error) throw specialtyResult.error;
 
     const resultMap = new Map();
+    // U9 item 8: count matched coaches dropped for already being in
+    // this gym (a row with no email is a non-match on the embedded
+    // users relation, not an exclusion — see the PostgREST note above).
+    // A Set, because one coach can match both the name and specialty
+    // queries.
+    const excludedMatches = new Set();
     [...(specialtyResult.data || []), ...(nameResult.data || [])].forEach(row => {
       const user = row.users || {};
       const userId = row.user_id || user.id;
-      if (!userId || excludedUserIds.has(userId)) return;
+      if (!userId) return;
+      if (excludedUserIds.has(userId)) {
+        if (user.email) excludedMatches.add(userId);
+        return;
+      }
       if (!user.email) return;
       if (!resultMap.has(userId)) {
         resultMap.set(userId, {
@@ -3622,6 +3695,7 @@ async function searchExistingCoaches(term) {
     });
 
     if (requestId !== coachSearchRequestId) return;
+    coachSearchExcludedCount = excludedMatches.size;
     coachSearchResults = Array.from(resultMap.values()).sort((a, b) => {
       const ratingA = Number(a.rating) || 0;
       const ratingB = Number(b.rating) || 0;
@@ -3631,6 +3705,7 @@ async function searchExistingCoaches(term) {
   } catch (error) {
     if (requestId !== coachSearchRequestId) return;
     coachSearchResults = [];
+    coachSearchExcludedCount = 0;
     toast(Trainw.api.userMessage(error, t('errorMsg')), 'err');
   } finally {
     if (requestId === coachSearchRequestId) {
@@ -5312,6 +5387,12 @@ async function submitManualCheckIn() {
     toast(t('checkInDone'));
     const select = document.getElementById('checkin-client-select');
     if (select) select.value = '';
+    // U10: reset the button BEFORE the (slow, untimed) post-save reloads —
+    // api.run has no timeout, so a stalled reload used to leave the button
+    // stuck on "..." disabled after a successful check-in. The finally
+    // below stays as a safety net.
+    if (btn) btn.textContent = t('confirmCheckIn');
+    Trainw.ui.setBusy(btn, false);
     await Promise.allSettled([loadCheckIns(), loadDashboardStats()]);
   } catch (error) {
     if (error?.code === '23505') {
@@ -5440,6 +5521,72 @@ async function loadAnalytics() {
   animateCounters();
   if (directoryResult.error || coachCountResult.error || sessionsResult.error || profileResult.error) toast(t('errorMsg'), 'err');
   await runGymHooks('afterLoadAnalytics');
+}
+
+// U9 item 10: the Branding colour cards were static — they displayed
+// the raw CSS variable names ("var(--ac)" etc.) and did nothing on
+// click. The colours live on the gyms row (accent_color /
+// surface_color / muted_color, nullable = theme default) and are
+// applied as CSS variables on :root via Trainw.applyGymBranding.
+// Clicking a card opens the native colour picker; picking persists the
+// colour with the same gyms update the settings page already uses
+// (RLS: manages_gym — no new policy needed).
+let gymBrandingColours = { accent: null, surface: null, muted: null };
+const BRANDING_COLOUR_FIELDS = [
+  { key: 'accent', column: 'accent_color', inputId: 'branding-accent-input', tokenId: 'branding-accent-token' },
+  { key: 'surface', column: 'surface_color', inputId: 'branding-surface-input', tokenId: 'branding-surface-token' },
+  { key: 'muted', column: 'muted_color', inputId: 'branding-muted-input', tokenId: 'branding-muted-token' },
+];
+
+function syncBrandingColourCards() {
+  const resolved = Trainw.applyGymBranding(gymBrandingColours);
+  for (const field of BRANDING_COLOUR_FIELDS) {
+    const input = document.getElementById(field.inputId);
+    if (input) input.value = resolved[field.key];
+    const token = document.getElementById(field.tokenId);
+    if (token) {
+      token.textContent = gymBrandingColours[field.key]
+        ? resolved[field.key]
+        : `${resolved[field.key]} · défaut`;
+    }
+  }
+}
+
+async function saveBrandingColour(field, value) {
+  if (!currentGymId) return;
+  const previous = gymBrandingColours[field.key];
+  gymBrandingColours = { ...gymBrandingColours, [field.key]: value };
+  syncBrandingColourCards();
+  const result = await Trainw.api.run(
+    sb.from('gyms').update({ [field.column]: value }).eq('id', currentGymId),
+    { context: 'save branding colour' }
+  );
+  if (result.error) {
+    gymBrandingColours = { ...gymBrandingColours, [field.key]: previous };
+    syncBrandingColourCards();
+    return;
+  }
+  toast(t('savedOk'));
+}
+
+function initBrandingColourPickers() {
+  for (const field of BRANDING_COLOUR_FIELDS) {
+    const card = document.querySelector(`[data-branding-colour="${field.key}"]`);
+    const input = document.getElementById(field.inputId);
+    if (!card || !input || card.dataset.brandingBound) continue;
+    card.dataset.brandingBound = '1';
+    card.addEventListener('click', () => input.click());
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); input.click(); }
+    });
+    // Persist when the picker closes with a selection. (No live
+    // 'input' preview: cancelling the picker fires no event, so a
+    // previewed-but-unsaved colour would stick until reload.)
+    input.addEventListener('change', () => {
+      void saveBrandingColour(field, input.value);
+    });
+  }
+  syncBrandingColourCards();
 }
 
 async function saveSettings() {
@@ -5907,10 +6054,18 @@ function bindUi() {
   });
   document.getElementById('btn-submit-checkin')?.addEventListener('click', submitManualCheckIn);
   document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
+  initBrandingColourPickers();
   document.getElementById('btn-upload-logo')?.addEventListener('click', uploadGymLogo);
   document.getElementById('btn-save-pricing')?.addEventListener('click', savePricing);
   document.getElementById('btn-change-password')?.addEventListener('click', changePassword);
   document.getElementById('btn-trigger-auto-msg')?.addEventListener('click', triggerInactivityMessages);
+  // U9 item 9: the "? Messages Auto" toggle had no listener — the panel
+  // (days + template + send button) exists in the HTML and the send
+  // button is wired, but the toggle itself did nothing.
+  document.getElementById('btn-show-auto-panel')?.addEventListener('click', () => {
+    document.getElementById('msg-auto-panel')?.classList.toggle('hidden');
+    document.getElementById('btn-show-auto-panel')?.classList.toggle('active');
+  });
   document.getElementById('btn-save-edit-session')?.addEventListener('click', saveEditSession);
   document.getElementById('btn-save-edit-coach')?.addEventListener('click', saveEditCoach);
   document.getElementById('btn-save-edit-client')?.addEventListener('click', saveEditClient);
@@ -6013,9 +6168,17 @@ function bindUi() {
       void openStaffPanel(editButton.dataset.staffEditProfile || '');
       return;
     }
+    const roleCancelButton = event.target.closest('[data-staff-role-cancel]');
+    if (roleCancelButton) {
+      activeStaffRoleEditMembershipId = null;
+      renderStaffDirectory();
+      return;
+    }
     const roleButton = event.target.closest('[data-staff-role-edit]');
     if (roleButton) {
-      activeStaffRoleEditMembershipId = roleButton.dataset.staffRoleEdit || null;
+      const membershipId = roleButton.dataset.staffRoleEdit || null;
+      // U10: re-clicking "Changer le rôle" while editing cancels it.
+      activeStaffRoleEditMembershipId = activeStaffRoleEditMembershipId === membershipId ? null : membershipId;
       renderStaffDirectory();
       return;
     }
@@ -6058,7 +6221,22 @@ function bindUi() {
     }
   });
 
+  // U10: Escape abandons the inline "Changer le rôle" editor (it has no
+  // save step — picking a role saves at once — so cancel just closes it).
+  if (!window.__trainwRoleEditEscBound) {
+    window.__trainwRoleEditEscBound = true;
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !activeStaffRoleEditMembershipId) return;
+      activeStaffRoleEditMembershipId = null;
+      renderStaffDirectory();
+    });
+  }
+
   document.querySelectorAll('.modal-close').forEach(button => {
+    button.addEventListener('click', () => button.closest('.modal')?.classList.remove('show'));
+  });
+  // U10: explicit Cancel buttons in the course/session edit modals.
+  document.querySelectorAll('.modal-cancel').forEach(button => {
     button.addEventListener('click', () => button.closest('.modal')?.classList.remove('show'));
   });
   document.querySelectorAll('.modal').forEach(modal => {
@@ -6164,6 +6342,19 @@ async function initPage() {
       Trainw.ui.setValue('gym-price-monthly', gym.price_monthly ?? '', '');
       Trainw.ui.setValue('gym-price-quarterly', gym.price_quarterly ?? '', '');
       Trainw.ui.setValue('gym-price-annual', gym.price_annual ?? '', '');
+      // U9 item 10: branding colours live on the gyms row — apply them
+      // as theme variables and show the real values on the cards.
+      // Separate tolerant select: the migration may lag the deploy, and
+      // a missing-column error must not take down the profile load.
+      const brandRes = await Trainw.api.run(sb.from('gyms').select('accent_color, surface_color, muted_color').eq('id', currentGymId).maybeSingle(), { context: 'load gym branding', fallback: null, toastOnError: false, silent: true });
+      if (!brandRes.error && brandRes.data) {
+        gymBrandingColours = {
+          accent: brandRes.data.accent_color || null,
+          surface: brandRes.data.surface_color || null,
+          muted: brandRes.data.muted_color || null,
+        };
+      }
+      syncBrandingColourCards();
       const tier = String(gym.subscription_tier || 'free').toUpperCase();
       const badge = document.getElementById('sub-tier-badge');
       const name = document.getElementById('sub-tier-name');

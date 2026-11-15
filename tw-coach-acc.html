@@ -382,11 +382,11 @@
             </div>
             <div class="form-group">
               <label class="form-label">Start</label>
-              <input class="form-input" id="availability-start-input" type="time">
+              <input class="form-input" id="availability-start-input" type="text" data-time-input inputmode="numeric" placeholder="09:00" autocomplete="off" maxlength="8">
             </div>
             <div class="form-group">
               <label class="form-label">End</label>
-              <input class="form-input" id="availability-end-input" type="time">
+              <input class="form-input" id="availability-end-input" type="text" data-time-input inputmode="numeric" placeholder="09:00" autocomplete="off" maxlength="8">
             </div>
             <div class="form-group">
               <label class="form-label">Slot (min)</label>
@@ -582,6 +582,7 @@
     </div>
     <div id="plan-days-builder"></div>
     <div class="page-head-actions">
+      <button class="btn-secondary" id="btn-cancel-plan" type="button" data-i18n="cancel">Cancel</button>
       <button class="btn-secondary" id="btn-save-template" type="button" data-i18n="saveTemplate">Save as template</button>
       <button class="btn-primary" id="btn-save-plan" type="button" data-i18n="savePlan">Save</button>
     </div>
