@@ -5234,3 +5234,838 @@ TEST Gym `8a07bf89-ff6e-40f9-8feb-c384d6b47e5c`), membership
   replaced by the freeze row, and the "Annuler le gel" button) —
   needs the parent's browser check after deploy. The API-level
   round trip the UI calls is verified end to end.
+
+## UI/UX — U4: direct "Ajouter un Client" fails RLS + example people prefilled (2026-11-15)
+
+Test-pass item: Owner — functional bugs, #1, plus the cross-cutting
+"all add/invite forms come prefilled with example people (Sana Ben Ali,
+Ahmed Ben Ali) as real values, not placeholders". Clients > Ajouter un
+Client > TEST Dummy A / dummy-a@test.com / +216 00 000 001 > Ajouter le
+Client → inline error + toast: `new row violates row-level security
+policy for table "client_profiles"` — no client created (list stays at
+1). Reproduced twice by the tester.
+
+### Root cause (ordering bug, not a missing policy)
+
+`submitNewClient` in `tw-gym-acc.js` created the rows in this order:
+`users` → `client_profiles` → `gym_memberships`. The
+`client_profiles_insert` policy (004, unchanged since, verified live)
+lets a manager insert only when
+`is_gym_manager() AND is_same_gym_user(user_id)` — and
+`is_same_gym_user` (latest form, `20261115210000`) requires an
+`accepted`/`active` `gym_memberships` row for the target user in a gym
+the caller belongs to. At profile-insert time no such row existed yet
+for the brand-new user, so the check was always false for a direct add.
+The `users` insert itself passes (manager branch of `users_insert`);
+the `gym_memberships` insert would also have passed
+(`gym_memberships_insert_v17b` needs only `manage_staff` + a role in
+that gym) — it just never got reached.
+
+Intended design, confirmed from the code: direct-add creates a profile
+for a NON-existent user — a managed walk-in client (`is_managed:
+true`, synthetic `@trainw.local` email derived from the name). It does
+NOT expect the email to match an existing Trainw user. The invite flow
+is the one that requires an existing account. Note the form's email
+field (`new-client-email`) is currently read by nothing — the typed
+address is silently discarded and the synthetic address is stored
+instead. Left as is in U4 (changing it would need a product call: a
+managed client has no login, so the address would be contact detail
+only); flagged as a follow-up below.
+
+### Fix (UI reorder + price validation moved earlier; no policy touched for the bug itself)
+
+`tw-gym-acc.js` `submitNewClient`, new order:
+`users` → `gym_memberships` → `client_profiles` → (`payments` if a
+price was entered). Rollback is unchanged — deleting the `users` row
+cascade-deletes the membership and profile rows
+(`gym_memberships.user_id` and `client_profiles.user_id` are both
+`ON DELETE CASCADE`, verified live; there is no DELETE policy on
+`gym_memberships`, so no separate membership delete was added). The
+price parse/validation also moved BEFORE the first insert: the old code
+parsed it after the `users` insert, so an invalid amount orphaned a
+managed `users` row (the early return deleted nothing).
+
+### Second hole found during the investigation (policy, fixed by migration)
+
+The `client_profiles_insert` WITH CHECK never constrained `NEW.gym_id`:
+`user_id = auth.uid() OR (is_gym_manager() AND
+is_same_gym_user(user_id))`. Proven live 2026-11-15: as the TEST Gym
+owner, inserting a `client_profiles` row for Test Client (a same-gym
+user) with `gym_id` = TEST — Gym B (a real gym the owner does not
+manage) returned **201**. The probe row
+(`8fb42fda-2ec3-4019-b781-8871f010d614`) was deleted immediately after
+(204). Practical impact was cross-gym data pollution, not disclosure —
+the stray row was not visible to Gym B's manager, because the SELECT
+policy also needs `is_same_gym_user(user_id)`. Still a hole, so U4
+closes it: new migration
+`20261116170000_u4_client_profile_insert_gym_binding.sql` adds
+`AND public.manages_gym(gym_id)` to the manager branch. The self-insert
+branch (`user_id = auth.uid()`, signup bootstrap, `gym_id` NULL at that
+point) is untouched. The only direct browser insert of
+`client_profiles` is `submitNewClient`; every SQL-side insert runs in a
+migration or a SECURITY DEFINER function and bypasses RLS. The
+UPDATE/DELETE policies on this table share the unbound shape (they key
+off the row's user, not its `gym_id`); they can only touch rows whose
+user is in the manager's gym, and stray rows can no longer be created
+via INSERT — tightening them is a follow-up, not U4.
+
+### Prefill sweep (what was actually there)
+
+Correction to the test-pass wording: no `value="Sana Ben Ali"`-style
+prefill exists anywhere in source or `dist` — the example people were
+already `placeholder="…"` attributes, never submitted values, and no JS
+sets `.value` on these fields when a modal opens (only `.focus()` on
+the invite name field). The tester read the realistic placeholders as
+prefilled values, which is the real hazard, so U4 makes the hints
+unmistakably generic instead of named people (placeholders stay
+placeholders; values stay empty):
+
+- `tw-gym-acc.html` — invite-member, new-coach, new-client forms:
+  name `Sana Ben Ali` / `Ahmed Ben Ali` → `Prénom Nom`;
+  email `sana@salle.tn` / `ahmed@salle.tn` → `exemple@email.com`;
+  phone `+216 92 123 456` → `+216 XX XXX XXX` (also the edit-client
+  phone placeholder). The `150` price and `28` age placeholders are
+  bare numbers, not people — left alone.
+- `tw-login.html` + `tw-login.js` — public signup name field, same
+  class: `phName` `Ahmed Ben Ali` → `Prénom Nom` (fr),
+  `First Last Name` (en), `الاسم الكامل` (ar).
+- Verified after the change: no `Sana Ben Ali`, `Ahmed Ben Ali`,
+  `sana@salle.tn`, `ahmed@salle.tn` or `92 123 456` string remains in
+  source (JS/HTML, excluding generated `dist/`); `dist/` regenerated
+  by the build carries the new hints.
+- Edits were byte-level (Python, files read/written as bytes) so the
+  double-encoded UTF-8 (mojibake) sequences in `tw-gym-acc.js` are
+  untouched — the `tw-gym-acc.js` diff is confined to the
+  `submitNewClient` region (3 hunks). `tw-coach-acc.js` /
+  `tw-client-acc.js` were not edited in this round.
+
+### Verification (API level, live project, TEST Gym)
+
+Owner JWT (`owner@test.com`, TEST Gym
+`8a07bf89-ff6e-40f9-8feb-c384d6b47e5c`), anon key via Management API,
+tokens in memory only; repro scripts are throwaway in `/tmp`
+(`u4-repro.py`, `u4-probe-c.py`, `u4-tests.sql`, `u4-edit.py`).
+
+- Phase A — current UI order replayed: `users` insert 201, then
+  `client_profiles` insert → **403, code 42501, `new row violates
+  row-level security policy for table "client_profiles"`** — the exact
+  tester error. The `users` row was rolled back exactly as the UI does
+  (delete, 204).
+- Phase B — fixed order replayed: `users` 201 → `gym_memberships` 201
+  → `client_profiles` **201**. Created client **TEST Dummy U4**,
+  user `9a1c45a3-3930-4191-8cfe-d2a71f4fbbff`, profile
+  `4bce875d-241a-44a2-aefa-8baaec39997c`, membership
+  `c07cd3f6-08f0-45f1-b8be-511f97f76bae`, monthly, pending, 2026-11-15 →
+  2026-12-15, price 0 — read back OK. **Left in place as test data**
+  (no payment attached). The cross-gym probe in this run used a random
+  gym id and failed on the FK, not RLS — inconclusive as an RLS proof;
+  the conclusive probe is Phase C below.
+- Phase C — gym-binding probe (before the migration): same-gym user,
+  foreign real gym id → **201** (hole confirmed); probe row deleted
+  immediately (204).
+- Local chain (throwaway Postgres 16, `p26-harness.sh`, stubs):
+  full chain applies, **69 OK, 2 FAIL** — the same 2 failures as the
+  pre-U4 baseline (68 OK, 2 FAIL), both pre-existing and unrelated
+  (`20261115050000_phase1b_directories.sql`,
+  `20261115300000_phase1e_freeze_hash_defaults.sql` — the latter is the
+  `assert_rls_helpers_frozen` drift assertion). The U4 migration
+  itself applies cleanly. Behavioural suite `/tmp/u4-tests.sql`,
+  **6/6 pass**: owner is manager of Gym A not B; profile-before-
+  membership → 42501; membership-first → insert ok (under the NEW
+  policy); cross-gym insert → 42501; self-insert (signup path) still
+  works; fixtures sane.
+- `node --check` on `tw-gym-acc.js` + `tw-login.js`: OK.
+  `node env-config.js` + `npm run verify`: "all checks passed".
+
+### Still needs the parent
+
+- **Browser check after deploy**: open Clients > Ajouter un Client as
+  the owner, add a client end to end (the API-level sequence the UI now
+  runs is verified; the click path itself was not — no live-browser
+  access in this round), and confirm the add/invite forms render empty
+  with the new neutral placeholders.
+- **Live check of the policy migration after deploy**: the tightening
+  is chain-tested locally only; confirm live that a cross-gym
+  `client_profiles` insert is refused (42501) and that direct-add still
+  succeeds.
+- Follow-ups (not U4): the add-client email field is collected but
+  discarded — drop the field or store the address (needs a product
+  call); same unbound-`gym_id` shape in `client_profiles` UPDATE/DELETE
+  policies and (by analogy) `coach_profiles_insert`; the 2 pre-existing
+  chain failures above; test-data cleanup (TEST Dummy U4 from this
+  round, plus the earlier TEST Dummy rows) needs the user's word.
+
+## UI/UX — U5: rescheduling a session to a PM time fails with a range error (2026-11-15)
+
+Test-pass item: Owner — functional bugs, #4. Planning > Modifier on the
+class session, change to 19 Nov 2:00 PM > Enregistrer → red inline error
+`range lower bound must be less than or equal to range upper bound`,
+modal stays open, session unchanged. Reproduced twice by the tester. AM
+changes worked (19 Nov 11:00 AM saved fine; no-change save works).
+
+### Root cause (DB trigger, not the UI)
+
+`saveEditSession` (`tw-gym-acc.js`) sends `session_date` + `start_time`
+only — the UI has no end-time input (duration only). The edit input is
+`type="time"` (`tw-gym-acc.html:898`), whose `.value` is always 24-hour,
+so the PM save sends `start_time: "14:00:00"` — reproduced in node with
+the exact tester values (19 Nov, 2:00 PM → `{session_date:
+"2026-11-19", start_time: "14:00:00"}`); the payload itself is valid.
+The failure is server-side, in the trigger chain on `sessions`:
+
+1. `trg_sessions_10_prepare` → `prepare_session_write()` set
+   `NEW.end_time := session_effective_end_time(start, end, duration)`,
+   which returns a non-null stored `end_time` UNCHANGED.
+2. The session was created 11:00 + 60 min, so it stored `end_time`
+   12:00. The PM edit moved `start_time` to 14:00 but left `end_time`
+   at 12:00.
+3. `trg_sessions_20_validate` → `validate_session_write()` then built
+   `v_range := session_time_range('2026-11-19', 14:00, 12:00, 60)` =
+   `tsrange('2026-11-19 14:00', '2026-11-19 12:00')` → Postgres raises
+   "range lower bound must be less than or equal to range upper bound".
+   AM moves passed only because 11:00 stayed below the stale 12:00 end.
+
+Reproduced exactly, pre-fix, twice over: on the local full chain
+(insert 11:00/60 → end 12:00; UPDATE to 14:00 → the range error from
+`validate_session_write()`) and live via PostgREST as the owner (PATCH
+→ 400, code 22000, the tester's exact message).
+
+The time-picker cross-cutting note (Tab across the hour/minute/AM-PM
+spinbuttons corrupts segments to 0) is a native `type="time"` input
+quirk: whatever the picker shows, `.value` is a valid 24-hour time or
+empty, so it cannot produce this error and no UI change is needed for
+U5. The create path (`submitNewSession`) never sends `end_time`
+either, so fresh PM inserts always computed correctly — no bug there.
+
+### Fix (DB only, migration `20261116180000_u5_session_reschedule_end_time.sql`)
+
+In `prepare_session_write()` only — the one place that decides what
+`end_time` gets stored. `end_time` is now always derived from
+`start_time + duration_minutes` (clamped to 23:59 when the sum wraps
+past midnight, the same pattern as the 003 data cleanup, so the
+`end_time > start_time` CHECK stays satisfied; `NULL` start → `NULL`
+end). The function body is otherwise byte-identical to the 003
+definition (verified by diff — only the `NEW.end_time :=` line
+changed). `session_effective_end_time()` itself is untouched: every
+other caller passes NULL for `end_time`.
+
+Why always derive, rather than keep a stored end that is still after
+the new start: the keep-branch was tested first and is wrong in the
+other direction — 11:00 → 14:00 (end recomputed 15:00) → 11:00 leaves
+a 4-hour session (end 15:00) behind, a phantom block in every overlap
+check that reads `end_time`. Always deriving is correct because no UI,
+RPC or migration ever writes an explicit `sessions.end_time` (verified
+by grep — this trigger is its only writer), and it self-heals rows
+carrying a stale end from the old bug on their next write of any kind.
+No RLS change; no data migration; no JS touched.
+
+### Verification
+
+- Local chain (throwaway Postgres 16, `p22-harness.sh`, stubs): full
+  chain applies, **70 OK, 2 FAIL** — the same 2 failures as the pre-U5
+  baseline (69 OK, 2 FAIL), both pre-existing and unrelated
+  (`20261115050000_phase1b_directories.sql`,
+  `20261115300000_phase1e_freeze_hash_defaults.sql`). The U5 migration
+  itself applies cleanly. Behavioural suite `/tmp/u5-tests.sql`,
+  **7/7 pass**: create 11:00/60 → end 12:00; PM move to 14:00 → end
+  15:00 (was the range error); AM move back to 11:00 → end 12:00 (not
+  the 15:00 the keep-branch left); explicitly supplied end_time is
+  derived, not kept; 23:30 + 60 min → end 23:59 (no midnight wrap);
+  fresh PM insert 14:00 → end 15:00; no-change save → end 12:00.
+- Migration applied live via the Management API
+  (`POST /v1/projects/caylegavnekidhytlswo/database/query`, `[]`);
+  live `prepare_session_write` prosrc confirmed: U5 CASE present, old
+  `session_effective_end_time(NEW.start_time, NEW.end_time, …)` line
+  gone.
+- Live API verification (owner@test.com JWT, PostgREST — the exact
+  PATCH shape `saveEditSession` sends), TEST Gym
+  `8a07bf89-ff6e-40f9-8feb-c384d6b47e5c`, session TEST Dummy Class
+  `7fa5098e-42c3-41df-869f-55ed80103be0` (baseline 19 Nov 11:00→12:00,
+  dur 60, confirmed): pre-fix PATCH to 14:00 → **400, code 22000,
+  the tester's exact error**; post-fix PATCH to 14:00 → **200,
+  stored 2026-11-19 14:00:00→15:00:00**; PATCH back to 11:00 →
+  **200, stored 2026-11-19 11:00:00→12:00:00**. No session deleted.
+  Final state equals the tester's last good state (19 Nov 11:00).
+  Repro scripts are throwaway in `/tmp` (`u5-repro.sql`,
+  `u5-tests.sql`, `u5-live.py`, `u5-apply.json`, `u5-check.json`).
+- `node --check tw-gym-acc.js` clean (no JS changed in this round);
+  `node env-config.js` + `npm run verify`: "all checks passed".
+
+### Still needs the parent
+
+- **Browser check after deploy**: open Planning > Modifier on the
+  class session as the owner, move it to a PM time and save — the
+  API-level round trip the UI calls is verified; the click path itself
+  was not (no live-browser access in this round).
+- **Live check of the migration after deploy**: the fix is applied
+  live and verified via the API above, but confirm in the browser that
+  the saved PM time renders correctly in Planning (and that no other
+  session in TEST Gym shows a stale end — the 17 Nov coach session was
+  untouched, 10:00→11:00).
+- Follow-ups (not U5): changing `duration_minutes` alone in the edit
+  modal now correctly recomputes `end_time` (a side benefit of always
+  deriving); the native time-picker Tab-corruption quirk and the
+  12:00 AM → "00:00" display remain as cross-cutting UI polish; the 2
+  pre-existing chain failures above; test-data cleanup needs the
+  user's word.
+
+## UI/UX — U3b: "Annuler le gel" silently does nothing + full native confirm/prompt audit (2026-11-15)
+
+Test-pass item: Owner — functional bugs, #3 follow-up. Freeze creation
+works, but "Annuler le gel" does nothing — clicked 3x in a real
+browser, no toast, no error, freeze stayed active. (Browser re-check
+of batch 1, production main 5464264d.)
+
+### The gate found
+
+`cancelFreeze` (`tw-gym-acc.js`, was line ~2120) was gated behind a
+bare native `confirm('Annuler ce gel ? …')`. An auto-dismissed
+confirm returns `false`, so the handler returned before the RPC ever
+fired — exactly the U1 booking bug, same silent-failure class. The
+RPC itself was already proven fine: the parent called
+`cancel_membership_freeze` as the owner via PostgREST (HTTP 200) and
+the test freeze (`1b008f12`, "TEST re-check freeze", 16–20 Nov) is
+now status `cancelled`, test client restored.
+
+### Fix (UI only, no DB change)
+
+- `cancelFreeze`: native confirm dropped; the click goes straight to
+  `cancel_membership_freeze({p_freeze_id})` with a success/error
+  toast. Cancelling a freeze is reversible (a new freeze can be
+  created) and the button + toast are the confirmation. Comment
+  notes the U3b reasoning at the call site.
+
+### Full audit: every native confirm/prompt in the vanilla codebase
+
+Searched all app JS (`tw-gym-acc.js`, `tw-client-acc.js`,
+`tw-coach-acc.js`, `tw-role.js`, `tw-login.js`, `trainw-core.js`,
+`tw-gym-pilot.js`, `index.js`, `gate-terminal.js`, `trainw-tenant-utils.js`,
+`trainw-config.js`, `env-config.js`, `scripts/`) plus inline HTML
+scripts, for `window.confirm`, bare `confirm(`, `window.prompt`,
+bare `prompt(` and `alert(`. No `alert(` anywhere. 12 native-dialog
+call sites total (11 confirm + 1 prompt), all in 3 files. There is
+NO shared in-app confirm modal in the codebase — only per-feature
+form modals (`.modal` + `.show`). The line-2060 comment claiming
+"the app's confirm modal" was stale/aspirational; it was never built
+and the comment is corrected in this round.
+
+| # | Site | Action | Verdict |
+|---|---|---|---|
+| 1 | `tw-gym-acc.js` `cancelFreeze` | Cancel freeze (mutation, reversible) | **Fixed** — gate dropped, RPC + toast |
+| 2 | `tw-client-acc.js` `cancelSession` | Client cancels a booking (mutation, re-bookable) | **Fixed** — gate dropped; dead `cancelConfirmCopy()` helper removed |
+| 3 | `tw-coach-acc.js` `respondToBooking` | Coach confirms/declines a booking (routine workflow) | **Fixed** — gate dropped |
+| 4 | `tw-coach-acc.js` `cancelCoachSession` | Coach cancels a session (routine workflow) | **Fixed** — gate dropped |
+| 5 | `tw-coach-acc.js` `completeBooking` | Coach marks a session complete (routine workflow) | **Fixed** — gate dropped; dead `coachDecisionCopy()` helper removed |
+| 6 | `tw-gym-acc.js` `triggerInactivityMessages` | Bulk in-app messages to N inactive clients | **Fixed** — gate dropped per the mutation rule. Flag: one click now sends to all inactive clients; the button + template + day threshold are the only guard. A future round may add an in-app confirm showing the count. |
+| 7 | `tw-gym-acc.js` `deleteCustomRole` | Delete a role | **Kept** — destructive; no in-app confirm modal exists, native confirm is the only guard. Annotated `// U3b`. |
+| 8 | `tw-gym-acc.js` `revokeMembership` | Revoke staff access | **Kept** — destructive; same reason. Annotated. |
+| 9 | `tw-gym-acc.js` `deleteGymClass` | Delete (soft) a class | **Kept** — destructive; same reason. Annotated. |
+| 10 | `tw-gym-acc.js` `deleteSession` | Delete a session, labelled irréversible | **Kept** — destructive; same reason. Annotated. |
+| 11 | `tw-gym-acc.js` `deleteCoach` | Revoke + delete profile AND user row | **Kept** — destructive; same reason. Annotated. |
+| 12 | `tw-gym-acc.js` `deleteClient` | Revoke + delete profile AND user row | **Kept** — destructive; same reason. Annotated. |
+| 13 | `tw-gym-acc.js` `deleteMemberCredential` | Delete a gate badge | **Kept** — destructive (revokes a credential); same reason. Annotated. |
+| 14 | `tw-gym-acc.js` `voidPayment` | `window.prompt` for the mandatory void reason | **Kept** — this is data entry, not a yes/no gate: the reason is mandatory ledger data and the prompt cannot just be dropped. No in-app input modal exists yet; a future round should replace it with one, not remove it. Stale comment fixed. |
+
+No non-mutation confirm was found (nothing guards navigation away
+from unsaved work), so no behaviour of that kind was changed.
+
+After the fix, the only remaining native dialogs are the 8 kept
+ones above (7 confirms on destructive actions + 1 prompt for a
+mandatory reason), each annotated `// U3b` with its reason — proven
+by grep (see Verification).
+
+### Live verification (owner@test.com JWT, PostgREST — the exact call shape the fixed UI now makes)
+
+Baseline: Test Client (`f7b9d45d-1f6a-4487-a7fd-4b61c2c2c649`, TEST
+Gym `8a07bf89-ff6e-40f9-8feb-c384d6b47e5c`), membership end date
+2027-01-15, paid, no active freeze; the parent's `1b008f12` freeze
+confirmed `cancelled`; gate `membership_is_active_for_access` =
+true for 2026-11-17.
+
+- `request_membership_freeze` with `{p_user_id, p_gym_id,
+  p_start_date: 2026-11-16, p_end_date: 2026-11-20, p_reason:
+  "TEST U3b unfreeze re-check"}` → freeze
+  `c16636e1-cc04-4628-ba5a-3fce0e63a3d0`, status `active`.
+- End date shifted 2027-01-15 → 2027-01-19 (+4 days, trigger);
+  gate false for 2026-11-17 while frozen.
+- `cancel_membership_freeze({p_freeze_id: c16636e1-…})` → **200,
+  status `cancelled`** — the exact call the fixed `cancelFreeze`
+  makes, with no confirm in the path.
+- End date rolled back to 2027-01-15; gate true again for
+  2026-11-17. Unfreeze verified end to end at the API level.
+
+First run of the verification script died on the known
+VM↔Supabase flakiness (`IncompleteRead` on sign-in, both attempts);
+re-run succeeded. Repro script is throwaway in `/tmp`
+(`u3b-verify.py`, `u3b-check-avail.py`).
+
+### Test data left in place (no deletion)
+
+- One freeze row `c16636e1-cc04-4628-ba5a-3fce0e63a3d0` (Test
+  Client, 2026-11-16 → 2026-11-20, reason "TEST U3b unfreeze
+  re-check"), status `cancelled`, created by the owner test account.
+  Left as freeze history, per the no-deletion rule. The client's
+  membership end date is back to its pre-test value (2027-01-15).
+
+### 18 Nov availability setup (for the parent's U1 browser re-test)
+
+Test Coach (`b38df3c8-d7b3-49f6-a180-8d1c377b2f1f`, coach@test.com)
+had only a Monday 09:00–12:00 active window. Published Wednesday
+availability the same way the coach UI does
+(`coach_availability` insert, `day_of_week: 3`,
+`start_time: 09:00`, `end_time: 12:00`, `slot_minutes: 60`,
+`is_active: true`, TEST Gym): row
+`486cf170-c0ae-4a7e-a720-68493dbca55f`, created 2026-11-15
+16:50:41 UTC. **Wednesday 18 Nov 2026 is now bookable 09:00–12:00
+in four 60-minute slots** — the parent books in the browser; nothing
+was booked by this round.
+
+Quirk, reported honestly: the insert POST itself returned **400
+`P0001 — conflict: availability overlaps an existing active window`**
+even though no Wednesday window existed (the only prior row was
+Monday 09:00–12:00). The row nevertheless exists — verified by two
+independent reads after the insert (exactly one Wednesday row, no
+duplicate). The 400 looks like the same VM↔Supabase connection
+flakiness that killed the first sign-in attempt (the response was
+likely garbled/replayed), not a real overlap: the stored row is
+correct and no duplicate was created. The insert was NOT re-issued
+(idempotency: the row already exists).
+
+### Verification
+
+- `node --check` clean on all three touched files
+  (`tw-gym-acc.js`, `tw-client-acc.js`, `tw-coach-acc.js`).
+- `node env-config.js` + `npm run verify`: "all checks passed".
+- Grep after the fix: remaining `confirm(`/`prompt(` hits are only
+  the 8 kept sites above (plus `// U3b` comment lines naming them);
+  no native dialog gates any routine mutation.
+- No RLS change; no DB change; no migration.
+
+### Still needs the parent
+
+- **Browser check after deploy**: freeze Test Client, then click
+  "Annuler le gel" — confirm the freeze cancels, the toast appears,
+  and the list returns to "Aucun gel actif." The API-level round
+  trip is verified; the click path itself was not (no live-browser
+  access in this round).
+- **U1 booking + DB-66 credit click path**: book a slot on the new
+  Wed 18 Nov 09:00–12:00 availability as the test client and confirm
+  the booking + credit flow in the browser. The DB-66 credit click
+  path is NOT verified by this round — only the parent's browser
+  re-test can prove it.
+- **Future round (not U3b)**: build one shared in-app confirm modal
+  (the `.modal` + `.show` pattern already exists) and convert the 7
+  kept destructive confirms + the `voidPayment` reason prompt to it;
+  consider the same for the bulk inactivity-message send.
+
+
+## UI/UX — U6: revenue figures disagree across views + Planning shows no reservations (2026-11-15)
+
+Test-pass item: Owner — functional bugs, #12. Dashboard REVENU MENSUEL
+showed "—", then 64, then 56 across reloads with no new payments, while
+Analytiques showed "160 DT CE MOIS"; Planning said "Vue des réservations
+— Aucune reservation a afficher." while the dashboard counted 2 confirmed
+reservations.
+
+### Live reconciliation (owner@test.com JWT, TEST Gym `8a07bf89-…`, 2026-11-15 ~17:52 CET)
+
+Payments — all 4 rows in the gym (no other payments exist):
+
+| row | paid | refunded | status | type | paid_at | net |
+|---|---|---|---|---|---|---|
+| `a8a1ef5f` | 150 | 30 | paid | membership, cash, 1 mo | 2026-11-15 | 120 |
+| `53cd3045` | 10 | 0 | paid | membership, cash, 1 mo | 2026-11-15 | 10 |
+| `dc74a52c` | 50 | 0 | paid | session | 2026-11-15 16:00:32 UTC | 50 |
+| `4d76311d` | 0 | 0 | pending | session, total 50 | — | 0 (excluded) |
+
+The "two 50 DT session payments created 17:00 CET" from the U2 note are
+`dc74a52c` (paid 50, counts) and `4d76311d` (total 50, 0 paid, still
+pending — correctly excluded by the `status='paid'` filter and by its
+zero `amount_paid`).
+
+- **November now: NET 180 DT, GROSS 210 DT. October: 0.**
+- At test time (16:23–16:44 CET, before the two 17:00 CET rows):
+  net 130, gross 160. Analytics' "160 DT CE MOIS" was exactly the
+  deployed build's gross sum — consistent, not a second computation.
+- **Single correct figure every view should show now (current branch,
+  P2-2 netting): 180 DT net** — dashboard `#stat-revenue` "180 DT",
+  analytics `#pred-monthly` "180 DT", delta +180 DT vs Oct (0).
+
+Sessions — the pilot's exact query and `loadSchedule`'s query return
+the **identical 7 rows**: confirmed 3 (17 Nov TEST Dummy Coach Session,
+19 Nov TEST Dummy Class, 23 Nov Coach Session), upcoming 7, this week
+(Sun 15–Sat 21 Nov) 5. At test time confirmed was 2 — the 23 Nov
+confirmed session was created after the pass. The two views disagreed
+on rendering, not on data.
+
+### Variance cause 1 — revenue 64/56: overlapping `animateCounters()` runs (proven)
+
+Not a data race and not a second formula. In the current branch all
+three revenue displays already route through the single
+`loadLedgerRevenue` (grep: `#stat-revenue` and `#pred-monthly` are
+written nowhere else; the deployed main `cff7df9a` had the same single
+function, gross version). The variance is the count-up animation:
+
+- `loadLedgerRevenue` writes "160 DT" into `#stat-revenue`
+  (`.stat-value`). `animateCounters()` parses it with `parseInt` → 160
+  and counts 0→160 in steps of 8 (160/20), one tick per 40 ms.
+- Every dashboard load calls `animateCounters()` at least twice while
+  the first run is still mid-flight: `loadAnalytics()` ends with it,
+  then `runGymHooks('afterLoadAnalytics')` → v17 `refreshRevenue()` →
+  `loadLedgerRevenue()` (resets the text), then `initPage()` calls it
+  again — plus the v17 `init` (window `load` + 120 ms) calls
+  `refreshRevenue()` once more. The old code started a fresh interval
+  per call with no guard, and each call parsed the **live mid-flight
+  text** as its target.
+- A second call landing mid-flight parses e.g. "56" or "64", starts an
+  interval targeting that, and finishes **last** — freezing the card on
+  the partial number. 56 and 64 are exact steps of the 160 count-up
+  (7×8, 8×8); a data-driven value would not land on multiples of 8.
+- Side effect of the same code: the interval wrote the bare number, so
+  even a completed animation left "160" — the " DT" suffix was stripped.
+
+Proven with a harness (`/tmp/u6-harness.js`, fake DOM, the real
+function extracted from the file, second call 200 ms into the first):
+**old code sampled "32" mid-flight and stuck at "32"; fixed code
+settles on "160 DT".**
+
+### Variance cause 2 — "—": a failed payments query read as zero revenue
+
+`loadLedgerRevenue` ignored `result.error`: `Trainw.api.run` returns
+the `[]` fallback on failure, `cur` computed as 0, and the card was
+written "—" — indistinguishable from genuinely zero revenue. (`api.run`
+does toast the error, but a toast is easy to miss on a reload.) Given
+the known VM↔Supabase flakiness, a failed load on one reload is the
+straightforward explanation for the "—" sighting.
+
+### Cause 3 — Planning: stale pilot render, never refreshed after session mutations
+
+The "Vue Réservations" card (`#schedule-booking-overview`) and the
+dashboard "Bookings Overview" KPI (`#gym-bookings-overview`) are both
+rendered by `tw-gym-pilot.js` `refresh()` from the **same** sessions
+array — they cannot disagree within one refresh. They disagreed across
+refreshes:
+
+- The pilot only refreshes on script load, window `focus`, and nav
+  clicks (+150 ms). `submitNewSession` / `saveEditSession` /
+  `deleteSession` call `loadSchedule()` + `loadDashboardStats()` but
+  never the pilot's `refresh()`. So after the tester created the two
+  sessions on the Planning page, the session cards below updated while
+  the "Vue Réservations" card above them kept its pre-creation empty
+  state — and the dashboard KPI picked the sessions up on the next
+  nav-click/focus refresh.
+- Separately, a failed pilot refresh rendered the `[]` fallback as
+  "Aucune reservation a afficher." with no distinction between "no
+  sessions" and "query failed".
+
+### Fix (UI only, no DB change, no RLS change)
+
+`tw-gym-acc.js`:
+
+- `animateCounters()`: the target is now the value the loaders wrote
+  (`el.dataset.countTarget`), never the live mid-flight text; one
+  interval per element (a still-running one is cleared first); the
+  formatted final text (`dataset.countText`, e.g. "180 DT") is restored
+  at completion. A second overlapping call now re-animates to the same
+  true target instead of freezing on a partial sample.
+- `loadLedgerRevenue()`: early return on `result.error` without touching
+  the DOM (a failed load never clobbers a good value with "—", and an
+  out-of-order failed run cannot overwrite a later successful one);
+  records `countTarget`/`countText` on `#stat-revenue`.
+- The `set()` helpers in `loadDashboardStats()` and `loadAnalytics()`,
+  the expiring-stat write, `incrementCheckInStat()`, and
+  `loadCheckIns()` all record `countTarget`/`countText` alongside the
+  value they write, so every `.stat-value` animates to its loader's
+  value. (`#pred-monthly` is a `.prediction-val`, not animated.)
+- New `refreshPilotBookings()` helper (guarded `typeof` check +
+  try/catch — a missing/failing pilot must never break the mutation
+  flow), called after `loadSchedule()`/`loadDashboardStats()` in
+  `submitNewSession`, `saveEditSession`, and `deleteSession`.
+
+`tw-gym-pilot.js`:
+
+- `refresh()` no longer renders on a failed query: the overviews render
+  only when `!sessionsRes.error`, coach approvals only when
+  `!coachesRes.error`. A failed load leaves the previous content (or
+  "Chargement…" on first load); `api.run` already toasts the error.
+- Exposes `window.TrainwPilotRefresh = refresh` for the hookup above.
+
+No view computes revenue its own way any more than it already did —
+all three displays were already routed through `loadLedgerRevenue`;
+the fix is the animation race + the silent-failure rendering + the
+stale pilot card.
+
+Latent edge, noted not fixed (no live row hits it):
+`loadLedgerRevenue` filters by `created_at >= prevStart` but buckets by
+`paid_at || created_at` — a payment created in one month and paid in
+another would be mis-bucketed or excluded. All live rows have
+`paid_at` in the same month as `created_at`.
+
+### Verification
+
+- `node --check` clean on both touched files (`tw-gym-acc.js`,
+  `tw-gym-pilot.js`); `node env-config.js` + `npm run verify`: "all
+  checks passed".
+- Harness `/tmp/u6-harness.js` (throwaway): **PASS** — old code sticks
+  at "32", fixed code settles on "160 DT" under the same interleaving.
+- Live API (owner@test.com JWT, PostgREST — the exact queries the UI
+  makes): payments reconciled above (net 180 / gross 210 now; net 130 /
+  gross 160 at test time); pilot sessions query and `loadSchedule`
+  sessions query return the identical 7 rows (confirmed 3, upcoming 7).
+- No data deleted, no payment voided (the 150 DT row untouched — cleanup
+  still needs the user's word); no RLS change; no migration; no secrets
+  in files. Repro scripts are throwaway in `/tmp` (`u6-recon.py`,
+  `u6-recon2.py`, `u6-harness.js`, `u6-keys.json`, `u6-token.json`).
+  `git diff --stat`: 2 files, +64/−13.
+
+### Still needs the parent
+
+- **Browser check after deploy**: reload the dashboard several times —
+  REVENU MENSUEL must settle on "180 DT" (with the " DT" suffix) every
+  time, Analytiques "Revenus ce Mois" 180 DT, delta +180 DT; the three
+  views must agree with no reload-to-reload drift. Create a session on
+  Planning and confirm the "Vue Réservations" card shows it immediately
+  (no nav click / reload); edit and delete a session and confirm the
+  card follows. The API-level round trips are verified; the click paths
+  were not (no live-browser access in this round).
+- The `created_at` vs `paid_at` month-bucketing edge above is a
+  candidate for a small follow-up once the parent confirms the fix
+  lands.
+
+## UI/UX — U7: program created for a client never becomes the active plan + "Enregistrer comme modèle" creates no template (2026-11-15)
+
+Test-pass items: Coach — functional bugs, #1 and #2. A program created
+("TEST Dummy Program", General, 3/week, Test Client, Jour 1: TEST Dummy
+Squat 3×10, 60s rest) toasted "SUCCÈS — Programme enregistré." and listed
+under PLANS, yet the client profile drawer (coach and owner views), the Mes
+Clients card and the client's own Booking center all said "Aucun programme
+actif" / "Aucun programme." / "Votre coach n'a pas encore créé de
+programme."; "Enregistrer comme modèle" toasted "Programme enregistré."
+yet MODÈLES still showed "Aucun modele".
+
+### Model found (traced, not guessed)
+
+`workout_plans` (`20260408181000_trainw_002`, no `is_active`/status column
+at all) has `client_id` (nullable) and `is_template` (default false).
+"Active plan" is a convention, not a flag — the latest non-template plan
+with `client_id = <client>`, `ORDER BY updated_at DESC LIMIT 1`. All four
+read sites use exactly that query (none of them filtered `is_template`
+before this round):
+
+- client Booking center — `tw-client-acc.js` loadData: `.eq('client_id',
+  currentUserId)` (no gym filter, no template filter);
+- coach drawer — `tw-coach-acc.js` openClientPanel: same + gym scoping;
+- coach Mes Clients card — `latestPlanForClient()`: `plans.find(p =>
+  p.client_id === clientId)` over the coach's own `is_template=false` list;
+- owner drawer — `tw-gym-acc-v17.js` fetchClientData (+ coach-followup
+  query in renderCoachPanel): same + gym filter.
+
+Live row for the test-pass program (`7ca81e2b-c328-491c-8197-1ac46eef0521`,
+TEST Gym `8a07bf89-…`, via Management API SQL + the app's exact PostgREST
+queries as coach/client JWTs):
+
+| field | value |
+|---|---|
+| `title` / `goal` / `frequency_per_week` | TEST Dummy Program / general / 3 |
+| `created_by` | coach `b38df3c8-…` |
+| `client_id` | **null** |
+| `is_template` | **true** |
+| `created_at` / `updated_at` | 2026-11-15 15:37:45 / 15:38:02 UTC |
+
+One exercise row exists (`8813dbf6-…`, Jour 1, TEST Dummy Squat 3×10,
+60s). Only one plan row exists in the gym.
+
+### Root cause
+
+`savePlan(asTemplate)` in `tw-coach-acc.js` used the modal's hidden id for
+BOTH buttons. "Enregistrer comme modèle" on an existing plan therefore
+**UPDATE-d the plan row in place** to `is_template=true, client_id=null`
+— it converted the client's plan into a template instead of creating one.
+Timeline proves it: the row was created as a plan at 15:37:45 UTC and
+converted 17 seconds later at 15:38:02 UTC, the tester's template save.
+After that no row had `client_id = Test Client`, so every "active plan"
+query legitimately returned empty — bug #1 is the direct consequence of
+bug #2's write path, not a read bug. The create path itself was sound:
+`assignedClients` entries carry `users.id`, so the plan-client select
+writes a real user id, and the insert RLS (`workout_plans_insert`) allows
+a coach to insert with `client_id` null or a client they manage.
+
+Why MODÈLES showed "Aucun modele" in the browser despite the row
+existing: the exact templates query the coach portal runs
+(`created_by=coach, is_template=true, gym_id=TEST`) returns the row (200,
+verified live) — so at the API level the template WAS listable. The
+browser empty state was most plausibly stale rendering: `savePlan` shows
+the success toast and closes the modal *before* `await bootstrap()`
+re-renders, so a quick look at MODÈLES still shows the pre-save state
+(the same stale-refresh class as the cross-cutting finding). Not
+reproducible at the API level; the fix below removes the data-level
+cause and the list refreshes via the existing `bootstrap()` call.
+
+Two adjacent mislabels in the same flow: the plan/template card button
+was labelled "Enregistrer" (`t('saveChanges')`) but only re-opens the
+editor; the drawer Programme tab button was also "Enregistrer" but opens
+a NEW plan modal — and worse, its handler set the client select value
+*before* calling `openPlanModal()`, which rebuilds the select options via
+`fillPlanClientSelect()`, silently wiping the preselection (a plan made
+from the drawer opened with client "—").
+
+### Fix (no migration — the model already supports it; no RLS change)
+
+Creation with a client IS activation under the existing convention
+(latest plan for the client wins), so no `is_active` flag was added.
+`tw-coach-acc.js`:
+
+- `savePlan(true)` now always INSERTs a new row (`writeId =
+  (asTemplate && id) ? '' : id`): saving an existing plan as a template
+  creates a **copy** (new id, `is_template=true`, `client_id=null`, the
+  modal's exercise rows copied to the new plan id by the existing
+  exercise-save code); the original plan keeps its client and stays the
+  active plan. Plain plan saves still UPDATE the edited row; brand-new
+  template saves still INSERT as before.
+- Plan/template card button now reads "Modifier" / "Edit" / "تعديل" (new
+  `editPlan` i18n key, fr/en/ar) — it opens the editor.
+- Drawer Programme-tab button now reads "Nouveau programme"
+  (`t('newProgram')`) and passes the client through
+  `openPlanModal('', false, clientId)`; `openPlanModal` gained an
+  optional `presetClientId` applied *after* `fillPlanClientSelect()`, and
+  titles a new template "Nouveau modèle" instead of "Nouveau programme".
+- Coach drawer active-plan query now has explicit
+  `.eq('is_template', false)`.
+
+`tw-client-acc.js`, `tw-gym-acc-v17.js`: the three other active-plan
+reads (client Booking center, owner drawer `fetchClientData`, coach
+followup card) gained the same explicit `.eq('is_template', false)` —
+one token each, stating the "latest non-template plan for the client"
+invariant instead of relying on templates always having `client_id`
+null.
+
+Known behaviour kept: "active" = latest updated plan for the client, so
+editing an older plan re-activates it (its `updated_at` becomes newest).
+No assign/activate button was added — creation for a client is the
+activation, and the template copy no longer destroys it.
+
+### Verification
+
+- `node --check` clean on all three touched files; `node env-config.js`
+  + `npm run verify`: "all checks passed". No migration, so no
+  migration-chain test applies.
+- Live API (PostgREST, exact app queries, coach/client/owner TEST JWTs;
+  `~/workspace/.u7-scratch/verify-u7.py`, idempotent, 12/12 PASS):
+  created plan `4989d6d9-507a-415b-a067-1025f634d7e8` ("TEST U7 Program",
+  client Test Client, is_template=false, 1 exercise) via the exact
+  `savePlan(false)` call sequence, then a template copy
+  `1d90971d-18a3-48e5-82de-9960385e1517` via the exact fixed
+  `savePlan(true)` call sequence (new row, client null, exercise copied).
+  After both: client Booking center, coach drawer, owner drawer and the
+  coach PLANS list all return the plan as Test Client's active plan; the
+  coach MODÈLES list returns the template copy (2 rows there now — the
+  copy plus the original TEST Dummy Program template row); the plan row
+  still has `client_id = Test Client`. The original TEST Dummy Program
+  row was left untouched (still a template, client null — its plan side
+  is gone; it is test data, cleanup needs the user's word).
+- Test data left in TEST Gym (documented, nothing deleted): plan
+  `4989d6d9-…` "TEST U7 Program" (Test Client) + exercise "TEST U7
+  Squat"; template copy `1d90971d-…` "TEST U7 Program" + copied exercise.
+
+### Still needs the parent
+
+- **Browser check after deploy**: as coach, create a program for Test
+  Client and confirm the client drawer, Mes Clients card and the
+  client's Booking center show it as the active plan immediately (no
+  reload); open the plan and "Enregistrer comme modèle" and confirm the
+  plan stays under PLANS *and* a copy appears under MODÈLES; check the
+  plan-card button now reads "Modifier" and the drawer button reads
+  "Nouveau programme" with the client preselected. The API-level round
+  trips are verified; the click paths were not (no live-browser access
+  in this round).
+- The pre-existing TEST Dummy Program row (`7ca81e2b-…`) is a template
+  with no plan behind it — if the team wants Test Client to have that
+  program active again, a coach must recreate it (or the row can be
+  flipped back to a plan with `client_id` set — a data decision, not
+  taken here).
+
+## UI/UX — U8: owner's message to the client is invisible to the client (2026-11-15)
+
+Test-pass item: Client — functional bugs, #2. The client Messages page
+listed only the Test Coach conversation; the owner's "TEST Dummy message
+from owner - UI test" (16:35) never appeared, despite the page heading
+"Discutez avec votre coach et votre gérant". The coach's message WAS
+visible in the client's thread, and the client's reply to the coach worked.
+
+### Root cause (traced, then proven live — not RLS on the message)
+
+- The owner → client message row exists and the client's exact messages
+  query returns it: `messages` SELECT policy is sender-or-receiver =
+  caller, and a live run as client@test.com returned all 3 TEST Gym
+  messages (owner 16:35, coach 16:39, client→coach 16:43).
+- The thread list is NOT built from the messages. `tw-client-acc.js`
+  builds `participants = [primaryCoachId, ownerInfo?.user_id]` and one
+  thread per participant, filtering the loaded messages by participant id.
+- `ownerInfo` comes from `list_gym_member_directory()` filtered for
+  `portal === 'admin'` and `role_code` in `gym_owner`/`gym_admin`.
+  DB-21 (phase1b/phase1c) gates that RPC to staff — the caller must manage
+  the gym or hold `view_clients` — so a plain client gets ZERO rows,
+  `ownerInfo` is null, and the owner thread is never built. The message
+  was loaded and then dropped by the thread builder, not by RLS.
+- The reply path needed no change: `can_message_user()` already lets a
+  client message any active/accepted admin- or coach-portal member of the
+  same gym, and the owner's `loadConversation()` queries both directions,
+  so the owner sees the reply once the client can send it.
+
+### Fix (minimal, no RLS weakening)
+
+- New migration `20261116190000_u8_client_owner_contact.sql`: SECURITY
+  DEFINER RPC `get_gym_owner_contact(p_gym_id)` returning ONLY the gym's
+  owner/manager contact — `user_id`, display `name`, `role_code`,
+  `portal` — to a caller holding an active, non-revoked membership in
+  that gym. No email, no phone, no permissions, no other members.
+  Grants follow the round-9 / P2-6 pattern: REVOKE ALL FROM anon, PUBLIC;
+  GRANT EXECUTE TO authenticated. The in-function membership gate also
+  rejects anon (auth.uid() NULL matches no membership row).
+  `list_gym_member_directory` is untouched — the directory stays
+  staff-only (DB-21).
+- `tw-client-acc.js`: the owner lookup swaps one RPC name
+  (`list_gym_member_directory` → `get_gym_owner_contact`). The
+  `ownerInfo` `.find()` filter and the thread builder are unchanged, so
+  the coach thread is unaffected. The owner thread now exists even before
+  any message is exchanged (same as the coach thread).
+- Out of scope, noted: the coach portal builds threads from assigned
+  clients only (`tw-coach-acc.js`) — the coach has no owner/manager
+  thread either. The test pass did not flag it and the coach heading does
+  not promise it; left as-is.
+
+### Verification
+
+- Local chain (p26 harness, Postgres 16.2): full chain applies
+  **71 OK, 2 FAIL** — the same 2 known by-design pre-existing failures
+  as the pre-U8 baseline (phase1b directories, phase1e freeze-hash
+  defaults); the U8 migration applies clean. U8 suite
+  (`~/workspace/.u8-scratch/u8-tests.sql`): **10/10** — client sees
+  exactly the owner row; no rows for another gym, for an outsider, for a
+  revoked member, or for a caller with no auth uid; anon EXECUTE denied
+  (permission denied); coach member sees the owner row too; output
+  columns are exactly `p_gym_id, user_id, name, role_code, portal`; the
+  old directory RPC still returns [] for the client (root-cause pin).
+- Live (project Trainw, TEST Gym 8a07bf89; migration applied live via the
+  Management API so the API-level checks could run — code NOT deployed,
+  parent deploys): as client@test.com, `get_gym_owner_contact` returns
+  `[{user_id: 50dcaddd-…, name: "Test Owner", role_code: "gym_owner",
+  portal: "admin"}]`; replaying the client's exact UI queries through
+  the UI thread-building logic gives TWO threads — coach (2 messages)
+  and owner (1 message: "TEST Dummy message from owner - UI test").
+  Negative controls live: other-gym call returns `[]`; anon call returns
+  401 `permission denied for function get_gym_owner_contact`.
+- Reply round-trip live: the client inserted "TEST Dummy reply from
+  client to owner - U8 test" (row `98671c6d-99a4-4e71-8799-e7d55ece03b0`,
+  HTTP 201, via the exact UI insert); the owner's exact
+  `loadConversation` query then returns both messages — the original
+  16:35 owner message and the client reply. Coach messages query
+  unchanged (2 rows).
+- `node --check` on `tw-client-acc.js`, `node env-config.js` +
+  `npm run verify`: all pass.
+- Test data left in place (no deletion): the U8 reply message above, in
+  TEST Gym. Nothing else was written live.
+- Still needs the parent: push / merge / Vercel deploy of the JS change,
+  then a real-browser check that the owner thread renders in the client
+  Messages page (API-level verification only here — no live-browser
+  access in this round).

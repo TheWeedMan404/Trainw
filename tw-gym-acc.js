@@ -932,11 +932,22 @@ function skeletonRows(n=4) {
 
 function animateCounters() {
   document.querySelectorAll('.stat-value').forEach(el => {
-    const num = parseInt(el.textContent.trim());
-    if (isNaN(num) || num === 0) return;
+    // U6: the target is the value the loaders wrote (dataset.countTarget),
+    // never the live text. A previous animation's mid-flight text parses
+    // to a smaller number, and a second overlapping run used to finish
+    // last and freeze the card on that partial number — dashboard revenue
+    // showed 56/64, exact steps (7x8/8x8) of the 160 DT count-up, across
+    // reloads with no new payments. One interval per element, and the
+    // formatted final text (dataset.countText, e.g. "180 DT") is restored
+    // at the end so the count-up no longer strips the " DT" suffix.
+    const stored = Number(el.dataset.countTarget);
+    const num = Number.isFinite(stored) && stored > 0 ? stored : parseInt(el.textContent.trim(), 10);
+    if (!Number.isFinite(num) || num === 0) return;
+    if (el._twCounterIv) { clearInterval(el._twCounterIv); el._twCounterIv = null; }
+    const finalText = el.dataset.countText || el.textContent.trim();
     let cur = 0;
     const step = Math.max(1, Math.floor(num / 20));
-    const iv = setInterval(() => { cur = Math.min(cur + step, num); el.textContent = cur; if (cur >= num) clearInterval(iv); }, 40);
+    el._twCounterIv = setInterval(() => { cur = Math.min(cur + step, num); el.textContent = cur; if (cur >= num) { clearInterval(el._twCounterIv); el._twCounterIv = null; el.textContent = finalText; } }, 40);
   });
 }
 
@@ -1779,6 +1790,8 @@ async function resendInvitation(membershipId, email) {
 
 async function deleteCustomRole(roleId) {
   if (!currentGymId || !roleId) return;
+  // U3b: kept — deleting a role is destructive and no in-app confirm
+  // modal exists yet, so the native confirm stays as the only guard.
   if (!window.confirm(t('staffDeleteRoleConfirm'))) return;
   try {
     const result = await Trainw.api.run(sb.from('roles').delete().eq('id', roleId).eq('gym_id', currentGymId), { context: 'delete custom role', fallback: null });
@@ -1805,6 +1818,8 @@ async function updateMembershipRole(membershipId, roleId) {
 }
 
 async function revokeMembership(membershipId) {
+  // U3b: kept — revoking access is destructive and no in-app confirm
+  // modal exists yet, so the native confirm stays as the only guard.
   if (!window.confirm(t('staffRevokeConfirm'))) return;
   try {
     const result = await Trainw.api.run(sb.rpc('revoke_gym_membership', { p_membership_id: membershipId }), { context: 'revoke membership', fallback: null });
@@ -1902,6 +1917,12 @@ async function loadLedgerRevenue(){
       .eq('gym_id',currentGymId).eq('status','paid')
       .gte('created_at',prevStart),
     {context:'load ledger revenue',fallback:[]});
+  // U6: on a failed query the fallback rows are [] and cur would be 0 —
+  // do not clobber a good value (or the first paint) with "—"; api.run
+  // already toasted the error. A failed load must never read as zero
+  // revenue, and a later successful run must not be overwritten by an
+  // earlier failed one resolving out of order.
+  if(result.error) return;
   const rows=Array.isArray(result.data)?result.data:[];
   let cur=0,prev=0;
   for(const row of rows){
@@ -1913,7 +1934,14 @@ async function loadLedgerRevenue(){
     else if(paidDate>=prevStart) prev+=amount;
   }
   const re=document.getElementById('stat-revenue');
-  if(re) re.textContent=cur>0?Trainw.formatCurrencyDT(cur):'—';
+  if(re){
+    // U6: record the numeric target + formatted text for animateCounters —
+    // it must animate to the loader's value, never to a mid-flight parse.
+    const text=cur>0?Trainw.formatCurrencyDT(cur):'—';
+    re.textContent=text;
+    if(cur>0){re.dataset.countTarget=String(cur);re.dataset.countText=text;}
+    else{delete re.dataset.countTarget;delete re.dataset.countText;}
+  }
   const de=document.getElementById('stat-revenue-delta');
   if(de){
     const delta=cur-prev;
@@ -2057,7 +2085,11 @@ async function recordPayment(){
 }
 
 async function voidPayment(paymentId){
-  // P2 polish: replace window.prompt with the app's confirm modal.
+  // U3b: kept — window.prompt is the only reason-entry UI here and
+  // the void reason is mandatory ledger data, so the gate cannot
+  // just be dropped. No in-app input modal exists yet (the "app's
+  // confirm modal" this comment used to name was never built); a
+  // future round should replace this with one, not remove it.
   const reason=window.prompt('Motif de l\'annulation (obligatoire) :');
   if(!reason||!reason.trim()) return;
   const result=await Trainw.api.run(sb.from('payments').update({
@@ -2116,8 +2148,11 @@ async function requestFreeze(){
   toast('Abonnement gelé');
 }
 
+// U3b: no native confirm here — same silent-failure class as U1:
+// an auto-dismissed confirm returns false and the click dies with
+// no toast and no RPC. Cancelling a freeze is reversible (a new
+// freeze can be created) and the button + toast are the confirmation.
 async function cancelFreeze(freezeId){
-  if(!confirm('Annuler ce gel ? La date de fin de l\'abonnement sera raccourcie des jours restants.')) return;
   const result=await Trainw.api.run(sb.rpc('cancel_membership_freeze',{p_freeze_id:freezeId}),{context:'cancel freeze'});
   if(result.error){toast(Trainw.api.userMessage(result.error, 'Erreur lors de l\'annulation du gel.'));return;}
   await loadFreezes();
@@ -2143,7 +2178,7 @@ async function loadDashboardStats() {
   }
   const coachCount = directory.filter(item => item.portal === 'coach' && item.user_id && item.status === 'active').length;
   const clientCount = directory.filter(item => item.portal === 'client' && item.user_id && item.status === 'active').length;
-  const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v ?? 0; };
+  const set = (id, v) => { const el = document.getElementById(id); if(el) { el.textContent = v ?? 0; el.dataset.countTarget = String(v ?? 0); el.dataset.countText = String(v ?? 0); } };
   set('stat-coaches', coachCount); set('stat-clients', clientCount);
   set('an-coaches', coachCount);   set('an-clients', clientCount);
 
@@ -2175,7 +2210,7 @@ async function loadDashboardStats() {
   if (expiringCard) {
     expiringCard.classList.toggle('hidden', expiringCount <= 0);
     const valueEl = document.getElementById('stat-expiring-value');
-    if (valueEl) valueEl.textContent = String(expiringCount);
+    if (valueEl) { valueEl.textContent = String(expiringCount); valueEl.dataset.countTarget = String(expiringCount); valueEl.dataset.countText = String(expiringCount); }
     const labelEl = document.getElementById('stat-expiring-label');
     if (labelEl) labelEl.textContent = t('expiringSoonStat');
     const deltaEl = document.getElementById('stat-expiring-delta');
@@ -2228,6 +2263,16 @@ async function loadSchedule() {
     if (s.session_date < todayStr && s.status === 'confirmed') s.status = 'completed';
   });
   renderSchedule();
+}
+
+// U6: the pilot "Vue Réservations" card (tw-gym-pilot.js) renders from its
+// own refresh, not from loadSchedule — re-run it after session mutations
+// or the card keeps its pre-creation empty state while the session list
+// below it already shows the new session. Guarded: the pilot script may
+// fail to load, and its own refresh must never break the mutation flow.
+async function refreshPilotBookings(){
+  if(typeof window.TrainwPilotRefresh!=='function') return;
+  try{ await window.TrainwPilotRefresh(); }catch(e){ console.error('[Trainw] pilot bookings refresh failed', e); }
 }
 
 function getStatusLabel(status) {
@@ -2572,6 +2617,8 @@ async function saveGymClass() {
 }
 
 async function deleteGymClass(classId) {
+  // U3b: kept — deleting a class is destructive (soft-delete) and no
+  // in-app confirm modal exists yet, so the native confirm stays.
   if (!classId || !window.confirm('Supprimer ce cours ?')) return;
 
   try {
@@ -2842,12 +2889,14 @@ async function saveEditSession() {
 
     toast(t('savedOk'));
     document.getElementById('edit-session-modal')?.classList.remove('show');
-    await loadSchedule(); await loadDashboardStats();
+    await loadSchedule(); await loadDashboardStats(); await refreshPilotBookings();
   } catch(err) { errEl.textContent = Trainw.api.userMessage(err, t('errorMsg')); errEl.classList.add('show'); }
   finally { btn.textContent = t('saveChanges'); btn.disabled = false; }
 }
 
 async function deleteSession(sessionId) {
+  // U3b: kept — deleting a session is irreversible and no in-app
+  // confirm modal exists yet, so the native confirm stays.
   if (!confirm('Supprimer cette séance ? Action irréversible.')) return;
   const key = `delete-session:${sessionId}`;
   if (inFlightActions.has(key)) return;
@@ -2857,7 +2906,7 @@ async function deleteSession(sessionId) {
     if (error) throw error;
     allSessions = allSessions.filter(s => s.id !== sessionId);
     renderSchedule();
-    await loadDashboardStats(); animateCounters();
+    await loadDashboardStats(); animateCounters(); await refreshPilotBookings();
     toast('Séance supprimée');
   } catch(err) { toast(Trainw.api.userMessage(err, t('errorMsg')), 'err'); }
   finally { inFlightActions.delete(key); }
@@ -2897,7 +2946,7 @@ async function submitNewSession() {
     if (sessClientSelect) sessClientSelect.value = '';
     const sessClassSelect = document.getElementById('sess-based-class');
     if (sessClassSelect) sessClassSelect.value = '';
-    await loadSchedule(); await loadDashboardStats(); animateCounters();
+    await loadSchedule(); await loadDashboardStats(); animateCounters(); await refreshPilotBookings();
   } catch(err){errEl.textContent=Trainw.api.userMessage(err, t('errorMsg'));errEl.classList.add('show');}
   finally{btn.textContent=t('createSession');btn.disabled=false;}
 }
@@ -3190,6 +3239,9 @@ async function saveEditCoach(){
   catch(e){toast(t('errorMsg'),'err');}finally{btn.textContent=t('saveChanges');btn.disabled=false;}
 }
 async function deleteCoach(userId,profileId){
+  // U3b: kept — deleting a coach revokes membership, deletes the
+  // profile AND the user row; no in-app confirm modal exists yet,
+  // so the native confirm stays as the only guard.
   if(!confirm('Supprimer ce coach ?')) return;
   const key=`delete-coach:${userId}`;
   if(inFlightActions.has(key)) return;
@@ -3806,6 +3858,9 @@ async function saveEditClient(){
   finally{btn.textContent=t('saveChanges');btn.disabled=false;}
 }
 async function deleteClient(userId){
+  // U3b: kept — deleting a client revokes membership, deletes the
+  // profile AND the user row; no in-app confirm modal exists yet,
+  // so the native confirm stays as the only guard.
   if(!confirm('Supprimer ce client ? Action irréversible.')) return;
   const key=`delete-client:${userId}`;
   if(inFlightActions.has(key)) return;
@@ -3893,6 +3948,20 @@ async function submitNewClient() {
       throw new Error('Client role is not configured for this gym.');
     }
 
+    // U4: validate the amount BEFORE creating any row - the old code
+    // parsed it after the users insert, so an invalid amount orphaned
+    // a managed users row (nothing deleted it on that early return).
+    const startDate = document.getElementById('new-client-start-date')?.value || Trainw.dateOnly(new Date());
+    // FE-19 / FE-16: strict money parse — no negatives, no "12abc".
+    const priceParsed = parseMoneyInput(document.getElementById('new-client-price')?.value);
+    if (!priceParsed.valid) {
+      showInlineError(errEl, 'Montant invalide — utilisez un nombre positif (ex. 150).');
+      Trainw.ui.setBusy(btn, false);
+      if (btn) btn.textContent = t('submitClient');
+      return;
+    }
+    const pricePaid = priceParsed.value || 0;
+
     const safeEmail = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '')}.${newUserId.slice(0, 8)}@trainw.local`;
     const userInsert = await Trainw.api.run(
       sb.from('users').insert({
@@ -3908,16 +3977,34 @@ async function submitNewClient() {
     );
     if (userInsert.error) throw userInsert.error;
 
-    const startDate = document.getElementById('new-client-start-date')?.value || Trainw.dateOnly(new Date());
-    // FE-19 / FE-16: strict money parse — no negatives, no "12abc".
-    const priceParsed = parseMoneyInput(document.getElementById('new-client-price')?.value);
-    if (!priceParsed.valid) {
-      showInlineError(errEl, 'Montant invalide — utilisez un nombre positif (ex. 150).');
-      Trainw.ui.setBusy(btn, false);
-      if (btn) btn.textContent = t('submitClient');
-      return;
+    // U4: the membership MUST be created before the profile. The
+    // client_profiles_insert policy lets a manager insert only for a
+    // user in their gym (is_same_gym_user), which is only true once an
+    // accepted/active gym_memberships row exists for the new user - the
+    // old order (profile first) always failed RLS with "new row violates
+    // row-level security policy for table client_profiles". Rollback
+    // still deletes just the users row: gym_memberships.user_id and
+    // client_profiles.user_id are both ON DELETE CASCADE.
+    const membershipInsert = await Trainw.api.run(
+      sb.from('gym_memberships').insert({
+        gym_id: currentGymId,
+        user_id: newUserId,
+        role_id: clientRoleId,
+        status: 'active',
+        invitation_status: 'accepted',
+        is_default: true,
+        activated_at: new Date().toISOString(),
+      }),
+      { context: 'create client membership' }
+    );
+    if (membershipInsert.error) {
+      await Trainw.api.run(sb.from('users').delete().eq('id', newUserId), {
+        context: 'rollback managed client',
+        silent: true,
+      });
+      throw membershipInsert.error;
     }
-    const pricePaid = priceParsed.value || 0;
+
     // FE-19: the profile starts 'pending' with price_paid 0. Money only
     // enters through the payments ledger below — the settlement trigger
     // derives payment_status / price_paid / end date from the payment row.
@@ -3942,26 +4029,6 @@ async function submitNewClient() {
         silent: true,
       });
       throw profileInsert.error;
-    }
-
-    const membershipInsert = await Trainw.api.run(
-      sb.from('gym_memberships').insert({
-        gym_id: currentGymId,
-        user_id: newUserId,
-        role_id: clientRoleId,
-        status: 'active',
-        invitation_status: 'accepted',
-        is_default: true,
-        activated_at: new Date().toISOString(),
-      }),
-      { context: 'create client membership' }
-    );
-    if (membershipInsert.error) {
-      await Trainw.api.run(sb.from('users').delete().eq('id', newUserId), {
-        context: 'rollback managed client',
-        silent: true,
-      });
-      throw membershipInsert.error;
     }
 
     // FE-19: the first payment goes through the ledger, never as a flag on
@@ -4105,6 +4172,10 @@ function incrementCheckInStat() {
   const currentCount = parseInt(statEl.textContent || '0', 10);
   const nextCount = Number.isFinite(currentCount) ? currentCount + 1 : 1;
   Trainw.ui.setText('stat-checkins', String(nextCount), '0');
+  // U6: keep the animateCounters target in step — otherwise a later
+  // animation would count back down to the loader's stale value.
+  statEl.dataset.countTarget = String(nextCount);
+  statEl.dataset.countText = String(nextCount);
 }
 
 function clearGymRealtimeSubscriptions() {
@@ -4863,6 +4934,9 @@ async function toggleMemberCredential(credentialId, nextActive) {
 }
 
 async function deleteMemberCredential(credentialId) {
+  // U3b: kept — deleting a gate badge is destructive (revokes a
+  // credential) and no in-app confirm modal exists yet, so the
+  // native confirm stays as the only guard.
   if (!credentialId || !window.confirm('Supprimer ce badge ?')) return;
   const result = await Trainw.api.run(
     sb.from('member_credentials').delete().eq('id', credentialId).eq('gym_id', currentGymId),
@@ -5199,6 +5273,9 @@ async function loadCheckIns() {
   checkInsList = Array.isArray(result.data) ? result.data : [];
   renderCheckIns();
   Trainw.ui.setText('stat-checkins', String(checkInsList.length), '0');
+  // U6: keep the animateCounters target in step with the written value.
+  const statEl = document.getElementById('stat-checkins');
+  if (statEl) { statEl.dataset.countTarget = String(checkInsList.length); statEl.dataset.countText = String(checkInsList.length); }
   if (result.error) toast(t('errorMsg'), 'err');
 }
 
@@ -5263,7 +5340,7 @@ async function loadAnalytics() {
   const totalClients = activeClients.length;
   const totalCoaches = coachCountResult.count || 0;
   const sessionRows = Array.isArray(sessionsResult.data) ? sessionsResult.data : [];
-  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value ?? 0; };
+  const set = (id, value) => { const el = document.getElementById(id); if (el) { el.textContent = value ?? 0; el.dataset.countTarget = String(value ?? 0); el.dataset.countText = String(value ?? 0); } };
   set('an-clients', totalClients);
   set('an-coaches', totalCoaches);
 
@@ -5520,8 +5597,11 @@ async function triggerInactivityMessages() {
       toast('All clients are active');
       return;
     }
-    if (!window.confirm('Send automated messages to ' + inactiveClients.length + ' inactive clients?')) return;
-
+    // U3b: no native confirm here — same silent-failure class as U1:
+    // an auto-dismissed confirm returns false and the bulk send dies
+    // silently. The send is deliberate (explicit button + editable
+    // template + day threshold) and the toast reports the outcome;
+    // a future round may add an in-app confirm showing the count.
     const results = await Promise.allSettled(inactiveClients.map(client => {
       const firstName = String(client.name || 'Client').split(' ')[0];
       return Trainw.api.run(
