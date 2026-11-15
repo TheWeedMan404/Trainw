@@ -813,6 +813,8 @@ function syncPermissionVisibility() {
   const manageRolesAllowed = canManageRolesUi();
 
   document.querySelector('.nav-item[data-page="settings"]')?.classList.toggle('hidden', !settingsAllowed);
+  // FE-19: the payments page is for managers (manage_payments) only.
+  document.querySelector('.nav-item[data-page="payments"]')?.classList.toggle('hidden', !paymentsAllowed);
   document.getElementById('btn-save-settings')?.closest('.settings-section')?.classList.toggle('hidden', !brandingAllowed);
   document.getElementById('gym-logo-file')?.closest('.settings-section')?.classList.toggle('hidden', !brandingAllowed);
   document.getElementById('btn-save-pricing')?.closest('.settings-section')?.classList.toggle('hidden', !paymentsAllowed);
@@ -1850,6 +1852,220 @@ function ensureExpiringDashboardStatCard() {
   return card;
 }
 
+// ── LEDGER REVENUE (FE-19 / FE-15) ─────────────────────────────────────────
+// Single source of truth for revenue: cash actually collected, from the
+// payments ledger — never from client_profiles.price_paid sums and never
+// from tier list prices (the old v17 revenueFor estimate). Sets
+// #stat-revenue, #stat-revenue-delta and #pred-monthly. Used by the
+// dashboard, analytics, and the v17 refreshRevenue wrapper.
+async function loadLedgerRevenue(){
+  if(!currentGymId) return;
+  const now=new Date();
+  const curStart=Trainw.dateOnly(new Date(now.getFullYear(),now.getMonth(),1));
+  const prevStart=Trainw.dateOnly(new Date(now.getFullYear(),now.getMonth()-1,1));
+  const result=await Trainw.api.run(
+    sb.from('payments').select('amount_paid,paid_at,created_at')
+      .eq('gym_id',currentGymId).eq('status','paid')
+      .gte('created_at',prevStart),
+    {context:'load ledger revenue',fallback:[]});
+  const rows=Array.isArray(result.data)?result.data:[];
+  let cur=0,prev=0;
+  for(const row of rows){
+    const paidDate=String(row.paid_at||row.created_at||'').slice(0,10);
+    const amount=Number(row.amount_paid)||0;
+    if(paidDate>=curStart) cur+=amount;
+    else if(paidDate>=prevStart) prev+=amount;
+  }
+  const re=document.getElementById('stat-revenue');
+  if(re) re.textContent=cur>0?Trainw.formatCurrencyDT(cur):'—';
+  const de=document.getElementById('stat-revenue-delta');
+  if(de){
+    const delta=cur-prev;
+    de.classList.remove('up','down');
+    if(delta>0){de.classList.add('up');de.textContent=t('up').replace('{amount}',Trainw.formatCurrencyDT(delta));}
+    else if(delta<0){de.classList.add('down');de.textContent=t('down').replace('{amount}',Trainw.formatCurrencyDT(Math.abs(delta)));}
+    else de.textContent=t('flat');
+  }
+  Trainw.ui.setText('pred-monthly',cur>0?Trainw.formatCurrencyDT(cur):'-','-');
+}
+
+// ── PAYMENTS LEDGER VIEW (FE-19 / DB-36) ────────────────────────────────────
+let paymentsList = [];
+let freezesList = [];
+
+function fillPaymentClientSelects(){
+  const options=(allClients||[]).map(c=>`<option value="${c.id}">${Trainw.escapeHtml(c.name||'Client')}</option>`).join('');
+  const paySel=document.getElementById('pay-client-select');
+  if(paySel) paySel.innerHTML=options;
+  const freezeSel=document.getElementById('freeze-client-select');
+  if(freezeSel) freezeSel.innerHTML=options;
+}
+
+function openPaymentsFor(userId){
+  showPage('payments');
+  const sel=document.getElementById('pay-client-select');
+  if(sel && userId) sel.value=userId;
+}
+
+async function loadPayments(){
+  if(!currentGymId) return;
+  fillPaymentClientSelects();
+  const result=await Trainw.api.run(
+    sb.from('payments').select('id,client_id,amount_total,amount_paid,amount_refunded,method,status,payment_type,period_months,period_start,period_end,paid_at,created_at,invoice_number,void_reason')
+      .eq('gym_id',currentGymId).order('created_at',{ascending:false}).limit(50),
+    {context:'load payments',fallback:[]});
+  paymentsList=Array.isArray(result.data)?result.data:[];
+  renderPaymentsList();
+  renderDayTotals();
+  await loadFreezes();
+}
+
+function paymentMemberName(clientId){
+  const c=(allClients||[]).find(x=>x.id===clientId);
+  return c?(c.name||'Client'):'Client';
+}
+
+function renderPaymentsList(){
+  const el=document.getElementById('payments-list');
+  if(!el) return;
+  if(!paymentsList.length){el.innerHTML='<p class="empty-state">Aucun paiement enregistré.</p>';return;}
+  const methodLabel={cash:'Espèces',card:'Carte',bank_transfer:'Virement'};
+  el.innerHTML=paymentsList.map(p=>{
+    const name=Trainw.escapeHtml(paymentMemberName(p.client_id));
+    const amount=Trainw.formatCurrencyDT(Number(p.amount_paid)||0);
+    const date=Trainw.formatDate(p.paid_at||p.created_at);
+    const period=p.period_months>0?` · ${p.period_months} mois`:'';
+    const inv=p.invoice_number?` · Fact. ${Trainw.escapeHtml(p.invoice_number)}`:'';
+    const st=String(p.status||'');
+    const voidBtn=st==='paid'?`<button class="assignment-btn danger" type="button" data-void-payment="${p.id}">Annuler</button>`:'';
+    const reason=st==='voided'&&p.void_reason?` · Motif : ${Trainw.escapeHtml(p.void_reason)}`:'';
+    return `<div class="panel-row"><div><div class="panel-row-title">${name} — ${amount}</div><div class="panel-row-sub">${Trainw.escapeHtml(methodLabel[p.method]||p.method||'')} · ${date}${period}${inv}${reason}</div></div><div style="display:flex;gap:8px;align-items:center;"><span class="client-pill ${st==='paid'?'paid':'pending'}">${Trainw.escapeHtml(st)}</span>${voidBtn}</div></div>`;
+  }).join('');
+}
+
+function renderDayTotals(){
+  const today=Trainw.dateOnly(new Date());
+  const dayEl=document.getElementById('pay-day-date');
+  if(dayEl) dayEl.textContent=new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
+  let cash=0,card=0,transfer=0;
+  for(const p of paymentsList){
+    if(String(p.status||'')!=='paid') continue;
+    const d=String(p.paid_at||p.created_at||'').slice(0,10);
+    if(d!==today) continue;
+    const amt=Number(p.amount_paid)||0;
+    if(p.method==='card') card+=amt;
+    else if(p.method==='bank_transfer') transfer+=amt;
+    else cash+=amt;
+  }
+  Trainw.ui.setText('pay-total-cash',Trainw.formatCurrencyDT(cash),'-');
+  Trainw.ui.setText('pay-total-card',Trainw.formatCurrencyDT(card),'-');
+  Trainw.ui.setText('pay-total-transfer',Trainw.formatCurrencyDT(transfer),'-');
+  Trainw.ui.setText('pay-total-day',Trainw.formatCurrencyDT(cash+card+transfer),'-');
+}
+
+async function recordPayment(){
+  const errEl=document.getElementById('pay-err');
+  clearInlineError(errEl);
+  const clientId=document.getElementById('pay-client-select')?.value||'';
+  const parsed=parseMoneyInput(document.getElementById('pay-amount')?.value);
+  if(!clientId){showInlineError(errEl,'Choisissez un membre.');return;}
+  if(!parsed.valid||parsed.value<=0){showInlineError(errEl,'Montant invalide — utilisez un nombre positif (ex. 150).');return;}
+  const periodMonths=parseInt(document.getElementById('pay-period')?.value,10)||0;
+  const method=document.getElementById('pay-method')?.value||'cash';
+  const paidDate=document.getElementById('pay-date')?.value||Trainw.dateOnly(new Date());
+  const invoiceNumber=document.getElementById('pay-invoice-number')?.value.trim()||null;
+  const buyerTaxId=document.getElementById('pay-buyer-tax-id')?.value.trim()||null;
+  const vatRaw=(document.getElementById('pay-vat-rate')?.value||'').trim();
+  const vatRate=vatRaw===''?null:Number(vatRaw);
+  if(vatRate!==null&&(!Number.isFinite(vatRate)||vatRate<0||vatRate>1)){showInlineError(errEl,'Taux TVA invalide — entre 0 et 1 (ex. 0.19).');return;}
+  const notes=document.getElementById('pay-notes')?.value.trim()||null;
+  const btn=document.getElementById('btn-record-payment');
+  Trainw.ui.setBusy(btn,true);
+  const result=await Trainw.api.run(sb.from('payments').insert({
+    gym_id:currentGymId, client_id:clientId,
+    payment_type:periodMonths>0?'membership':'session',
+    status:'paid', provider:'manual', method, currency_code:'TND',
+    amount_total:parsed.value, amount_paid:parsed.value,
+    period_months:periodMonths, period_start:paidDate,
+    paid_at:paidDate, created_by:currentUser?.id||null,
+    invoice_number:invoiceNumber, buyer_tax_id:buyerTaxId, vat_rate:vatRate,
+    notes,
+  }),{context:'record payment'});
+  Trainw.ui.setBusy(btn,false);
+  if(result.error){showInlineError(errEl,result.error.message||'Erreur lors de l\'enregistrement.');return;}
+  document.getElementById('pay-amount').value='';
+  document.getElementById('pay-invoice-number').value='';
+  document.getElementById('pay-buyer-tax-id').value='';
+  document.getElementById('pay-vat-rate').value='';
+  document.getElementById('pay-notes').value='';
+  await loadPayments();
+  await loadLedgerRevenue();
+  toast('Paiement enregistré');
+}
+
+async function voidPayment(paymentId){
+  // P2 polish: replace window.prompt with the app's confirm modal.
+  const reason=window.prompt('Motif de l\'annulation (obligatoire) :');
+  if(!reason||!reason.trim()) return;
+  const result=await Trainw.api.run(sb.from('payments').update({
+    status:'voided', void_reason:reason.trim(),
+    voided_by:currentUser?.id||null, voided_at:new Date().toISOString(),
+  }).eq('id',paymentId).eq('gym_id',currentGymId),
+  {context:'void payment'});
+  if(result.error){toast(result.error.message||'Erreur lors de l\'annulation.');return;}
+  await loadPayments();
+  await loadLedgerRevenue();
+  await loadClients();
+  toast('Paiement annulé');
+}
+
+async function loadFreezes(){
+  if(!currentGymId) return;
+  const result=await Trainw.api.run(
+    sb.from('membership_freezes').select('id,user_id,freeze_start_date,freeze_end_date,reason,status,created_at')
+      .eq('gym_id',currentGymId).eq('status','active').order('freeze_start_date',{ascending:false}).limit(20),
+    {context:'load freezes',fallback:[]});
+  freezesList=Array.isArray(result.data)?result.data:[];
+  renderFreezesList();
+}
+
+function renderFreezesList(){
+  const el=document.getElementById('freezes-list');
+  if(!el) return;
+  if(!freezesList.length){el.innerHTML='<p class="empty-state">Aucun gel actif.</p>';return;}
+  el.innerHTML=freezesList.map(f=>{
+    const name=Trainw.escapeHtml(paymentMemberName(f.user_id));
+    const range=`${Trainw.formatDate(f.freeze_start_date)} → ${Trainw.formatDate(f.freeze_end_date)}`;
+    const reason=f.reason?` · ${Trainw.escapeHtml(f.reason)}`:'';
+    return `<div class="panel-row"><div><div class="panel-row-title">${name}</div><div class="panel-row-sub">${range}${reason}</div></div><button class="assignment-btn" type="button" data-cancel-freeze="${f.id}">Annuler le gel</button></div>`;
+  }).join('');
+}
+
+async function requestFreeze(){
+  const errEl=document.getElementById('freeze-err');
+  clearInlineError(errEl);
+  const userId=document.getElementById('freeze-client-select')?.value||'';
+  const start=document.getElementById('freeze-start')?.value||'';
+  const end=document.getElementById('freeze-end')?.value||'';
+  const reason=document.getElementById('freeze-reason')?.value.trim()||null;
+  if(!userId){showInlineError(errEl,'Choisissez un membre.');return;}
+  if(!start||!end||end<start){showInlineError(errEl,'Dates invalides — la fin doit suivre le début.');return;}
+  const result=await Trainw.api.run(sb.rpc('request_membership_freeze',{p_user_id:userId,p_start_date:start,p_end_date:end,p_reason:reason}),{context:'request freeze'});
+  if(result.error){showInlineError(errEl,result.error.message||'Erreur lors du gel.');return;}
+  await loadFreezes();
+  await loadClients();
+  toast('Abonnement gelé');
+}
+
+async function cancelFreeze(freezeId){
+  if(!confirm('Annuler ce gel ? La date de fin de l\'abonnement sera raccourcie des jours restants.')) return;
+  const result=await Trainw.api.run(sb.rpc('cancel_membership_freeze',{p_freeze_id:freezeId}),{context:'cancel freeze'});
+  if(result.error){toast(result.error.message||'Erreur lors de l\'annulation du gel.');return;}
+  await loadFreezes();
+  await loadClients();
+  toast('Gel annulé');
+}
+
 async function loadDashboardStats() {
   if (!currentGymId) {
     document.getElementById('stat-expiring')?.classList.add('hidden');
@@ -1882,15 +2098,10 @@ async function loadDashboardStats() {
   const { count: ciCount } = await sb.from('check_ins').select('id',{count:'exact',head:true})
     .eq('gym_id', currentGymId).gte('checked_in_at', todayStr+'T00:00:00').lte('checked_in_at', todayStr+'T23:59:59');
   set('stat-checkins', ciCount);
-  const monthStart = Trainw.dateOnly(new Date(now.getFullYear(), now.getMonth(), 1));
-  const { data: revenueRows } = await sb.from('client_profiles')
-    .select('price_paid')
-    .eq('gym_id', currentGymId)
-    .eq('payment_status', 'paid')
-    .gte('membership_start_date', monthStart);
-  const totalRevenue = (revenueRows || []).reduce((sum, row) => sum + (Number(row?.price_paid) || 0), 0);
-  set('stat-revenue', totalRevenue > 0 ? totalRevenue + ' DT' : '—');
-  set('stat-revenue-delta', 'ce mois');
+  // FE-19 / FE-15: revenue comes from the payments ledger (cash actually
+  // collected), never from a price_paid sum. loadLedgerRevenue sets
+  // #stat-revenue, #stat-revenue-delta and #pred-monthly.
+  await loadLedgerRevenue();
   const expiringEnd = Trainw.dateOnly(Trainw.addDays(now, 14));
   const expiringResult = await Trainw.api.run(
     sb.from('client_profiles')
@@ -3363,16 +3574,22 @@ function openEditClientModal(userId){
   document.getElementById('edit-client-age').value=profile.age||'';
   document.getElementById('edit-client-membership').value=profile.membership_tier||'basic';
   document.getElementById('edit-client-training').value=profile.training_type||profile.fitness_goal||'';
-  document.getElementById('edit-client-payment').value=profile.payment_status||'paid';
+  // FE-19: payment status + amount are DERIVED from the payments ledger and
+  // shown read-only here. To change them, record a payment (or void one)
+  // from the Paiements page — the ledger settlement updates the profile.
+  const paySummary=document.getElementById('edit-client-payment-summary');
+  if(paySummary){
+    const st=String(profile.payment_status||'pending');
+    const amt=Number(profile.price_paid)||0;
+    paySummary.textContent=(st==='paid'?t('paid'):t('filterPending'))+' · '+Trainw.formatCurrencyDT(amt);
+  }
   const esd=document.getElementById('edit-client-start-date'); if(esd) esd.value=profile.membership_start_date||'';
-  const epr=document.getElementById('edit-client-price');      if(epr) epr.value=profile.price_paid||'';
   modal.classList.add('show');
 }
 async function saveEditClient(){
   const userId=document.getElementById('edit-client-id').value, name=document.getElementById('edit-client-name').value.trim();
   const phone=document.getElementById('edit-client-phone').value.trim(), age=parseInt(document.getElementById('edit-client-age').value)||null;
   const membership=document.getElementById('edit-client-membership').value, training=document.getElementById('edit-client-training').value;
-  const payment=document.getElementById('edit-client-payment').value;
   const errEl=document.getElementById('edit-client-err'); errEl.classList.remove('show'); errEl.textContent='';
   if(!name){errEl.textContent=t('nameMissing');errEl.classList.add('show');return;}
   const btn=document.getElementById('btn-save-edit-client'); btn.textContent='…'; btn.disabled=true;
@@ -3386,16 +3603,17 @@ async function saveEditClient(){
     const userResult = await Trainw.api.run(sb.from('users').update({name,phone:phone||null}).eq('id',userId), { context: 'update client user', fallback: null });
     if (userResult.error) throw userResult.error;
     const editStart=document.getElementById('edit-client-start-date')?.value||null;
-    const editPrice=parseFloat(document.getElementById('edit-client-price')?.value)||null;
     const editEnd=editStart?calcEndDate(editStart,membership):null;
-    const profUpdate={membership_tier:membership,training_type:training,fitness_goal:training,payment_status:payment,age};
+    // FE-19: payment_status / price_paid are ledger-derived and are NOT
+    // written here. The profile update below covers identity + tier +
+    // dates only; money moves only through the payments ledger.
+    const profUpdate={membership_tier:membership,training_type:training,fitness_goal:training,age};
     if(editStart) profUpdate.membership_start_date=editStart;
     if(editEnd)   profUpdate.membership_end_date=editEnd;
-    if(editPrice!==null) profUpdate.price_paid=editPrice;
     const profileResult = await Trainw.api.run(sb.from('client_profiles').update(profUpdate).eq('user_id',userId).eq('gym_id', currentGymId), { context: 'update client profile', fallback: null });
     if (profileResult.error) throw profileResult.error;
     const idx=allClients.findIndex(c=>c.id===userId);
-    if(idx!==-1){allClients[idx].name=name;allClients[idx].phone=phone;const esd2=document.getElementById('edit-client-start-date')?.value;const epr2=parseFloat(document.getElementById('edit-client-price')?.value)||null;allClients[idx].profile={...allClients[idx].profile,membership_tier:membership,training_type:training,fitness_goal:training,payment_status:payment,age,membership_start_date:esd2||allClients[idx].profile.membership_start_date,membership_end_date:esd2?calcEndDate(esd2,membership):allClients[idx].profile.membership_end_date,price_paid:epr2??allClients[idx].profile.price_paid};}
+    if(idx!==-1){allClients[idx].name=name;allClients[idx].phone=phone;const esd2=document.getElementById('edit-client-start-date')?.value;allClients[idx].profile={...allClients[idx].profile,membership_tier:membership,training_type:training,fitness_goal:training,age,membership_start_date:esd2||allClients[idx].profile.membership_start_date,membership_end_date:esd2?calcEndDate(esd2,membership):allClients[idx].profile.membership_end_date};}
     toast(t('savedOk')); document.getElementById('edit-client-modal').classList.remove('show'); renderClients();
   }catch(err){errEl.textContent=err.message;errEl.classList.add('show');}
   finally{btn.textContent=t('saveChanges');btn.disabled=false;}
@@ -3430,7 +3648,6 @@ async function submitNewClient() {
   const age = Number.isFinite(ageValue) ? ageValue : null;
   const membership = document.getElementById('new-client-membership')?.value || 'basic';
   const training = document.getElementById('new-client-training')?.value || '';
-  const payment = document.getElementById('new-client-payment-status')?.value || 'paid';
   const errEl = document.getElementById('add-client-err');
   const btn = document.getElementById('btn-submit-client');
 
@@ -3501,8 +3718,18 @@ async function submitNewClient() {
     if (userInsert.error) throw userInsert.error;
 
     const startDate = document.getElementById('new-client-start-date')?.value || Trainw.dateOnly(new Date());
-    const priceValue = parseFloat(document.getElementById('new-client-price')?.value);
-    const pricePaid = Number.isFinite(priceValue) ? priceValue : 0;
+    // FE-19 / FE-16: strict money parse — no negatives, no "12abc".
+    const priceParsed = parseMoneyInput(document.getElementById('new-client-price')?.value);
+    if (!priceParsed.valid) {
+      showInlineError(errEl, 'Montant invalide — utilisez un nombre positif (ex. 150).');
+      Trainw.ui.setBusy(btn, false);
+      if (btn) btn.textContent = t('submitClient');
+      return;
+    }
+    const pricePaid = priceParsed.value || 0;
+    // FE-19: the profile starts 'pending' with price_paid 0. Money only
+    // enters through the payments ledger below — the settlement trigger
+    // derives payment_status / price_paid / end date from the payment row.
     const profileInsert = await Trainw.api.run(
       sb.from('client_profiles').insert({
         user_id: newUserId,
@@ -3510,11 +3737,11 @@ async function submitNewClient() {
         membership_tier: membership,
         fitness_goal: training,
         training_type: training,
-        payment_status: payment,
+        payment_status: 'pending',
         age,
         membership_start_date: startDate,
         membership_end_date: calcEndDate(startDate, membership),
-        price_paid: pricePaid,
+        price_paid: 0,
       }),
       { context: 'create client profile' }
     );
@@ -3544,6 +3771,39 @@ async function submitNewClient() {
         silent: true,
       });
       throw membershipInsert.error;
+    }
+
+    // FE-19: the first payment goes through the ledger, never as a flag on
+    // the profile. The settlement trigger derives payment_status,
+    // price_paid and the end date from this row. A per-session client
+    // pays per session, so its payment carries no membership period.
+    if (pricePaid > 0) {
+      const tierMonths = { monthly: 1, quarterly: 3, annual: 12 }[membership] || 0;
+      const method = document.getElementById('new-client-payment-method')?.value || 'cash';
+      const paymentInsert = await Trainw.api.run(
+        sb.from('payments').insert({
+          gym_id: currentGymId,
+          client_id: newUserId,
+          payment_type: tierMonths > 0 ? 'membership' : 'session',
+          status: 'paid',
+          provider: 'manual',
+          method,
+          currency_code: 'TND',
+          amount_total: pricePaid,
+          amount_paid: pricePaid,
+          period_months: tierMonths,
+          period_start: startDate,
+          created_by: currentUser?.id || null,
+        }),
+        { context: 'record initial payment' }
+      );
+      if (paymentInsert.error) {
+        await Trainw.api.run(sb.from('users').delete().eq('id', newUserId), {
+          context: 'rollback managed client',
+          silent: true,
+        });
+        throw paymentInsert.error;
+      }
     }
 
     toast(t('clientAdded'));
@@ -4807,7 +5067,6 @@ async function loadAnalytics() {
   }).length;
   set('an-sessions', weekSessions);
 
-  const monthStart = Trainw.dateOnly(new Date(now.getFullYear(), now.getMonth(), 1));
   const clientIds = activeClients.map(client => client.user_id);
   const profileResult = clientIds.length
     ? await Trainw.api.run(
@@ -4820,11 +5079,10 @@ async function loadAnalytics() {
     : { data: [], error: null };
   const clientProfiles = Array.isArray(profileResult.data) ? profileResult.data : [];
   const profileMap = new Map(clientProfiles.map(profile => [profile.user_id, profile]));
-  const realRevenue = clientProfiles
-    .filter(profile => profile.payment_status === 'paid' && profile.membership_start_date >= monthStart)
-    .reduce((sum, row) => sum + (Number(row.price_paid) || 0), 0);
+  // FE-19 / FE-15: revenue comes from the payments ledger (loadLedgerRevenue
+  // sets #pred-monthly); the old price_paid sum is gone.
+  await loadLedgerRevenue();
   const retention = totalClients > 0 ? `${Math.min(100, Math.round((weekSessions / Math.max(1, totalClients)) * 100))}%` : '-';
-  Trainw.ui.setText('pred-monthly', realRevenue > 0 ? `${realRevenue} DT` : '-', '-');
   Trainw.ui.setText('pred-sessions', String(weekSessions), '0');
   Trainw.ui.setText('pred-retention', retention, '-');
 
@@ -5085,6 +5343,7 @@ function showPage(page) {
   syncPermissionVisibility();
 
   if (nextPage === 'analytics') loadAnalytics();
+  if (nextPage === 'payments') loadPayments();
   if (nextPage === 'messages') updateMessageBadge();
   if (nextPage === 'schedule') {
     renderScheduleTabs();
@@ -5317,6 +5576,21 @@ function bindUi() {
   document.getElementById('btn-submit-coach')?.addEventListener('click', submitNewCoach);
   document.getElementById('btn-save-gym-class')?.addEventListener('click', saveGymClass);
   document.getElementById('btn-submit-client')?.addEventListener('click', submitNewClient);
+  document.getElementById('btn-record-payment')?.addEventListener('click', recordPayment);
+  document.getElementById('btn-request-freeze')?.addEventListener('click', requestFreeze);
+  document.getElementById('btn-edit-client-record-payment')?.addEventListener('click', () => {
+    const id=document.getElementById('edit-client-id')?.value;
+    document.getElementById('edit-client-modal')?.classList.remove('show');
+    openPaymentsFor(id);
+  });
+  document.getElementById('payments-list')?.addEventListener('click', event => {
+    const btn=event.target.closest('[data-void-payment]');
+    if(btn) voidPayment(btn.dataset.voidPayment);
+  });
+  document.getElementById('freezes-list')?.addEventListener('click', event => {
+    const btn=event.target.closest('[data-cancel-freeze]');
+    if(btn) cancelFreeze(btn.dataset.cancelFreeze);
+  });
   document.getElementById('btn-submit-checkin')?.addEventListener('click', submitManualCheckIn);
   document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
   document.getElementById('btn-upload-logo')?.addEventListener('click', uploadGymLogo);

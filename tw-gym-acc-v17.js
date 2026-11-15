@@ -73,15 +73,16 @@ const S={assigns:[],map:new Map(),classes:[],cp:{id:null,tab:'overview',data:nul
 const t=k=>I[currentLang]?.[k]||I.fr[k]||I.en[k]||'...';
 const esc=v=>Trainw.escapeHTML(Trainw.safeVal(v,'—'));
 const d=v=>Trainw.formatDate(v,currentLang),dt=v=>v?new Date(v).toLocaleString(Trainw.localeForLang(currentLang),{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
-const price=()=>({monthly:+(document.getElementById('gym-price-monthly')?.value||150),mensuel:+(document.getElementById('gym-price-monthly')?.value||150),quarterly:+(document.getElementById('gym-price-quarterly')?.value||400),trimestriel:+(document.getElementById('gym-price-quarterly')?.value||400),annual:+(document.getElementById('gym-price-annual')?.value||1400),annuel:+(document.getElementById('gym-price-annual')?.value||1400),yearly:+(document.getElementById('gym-price-annual')?.value||1400)});
-const tier=v=>{v=String(v||'').trim().toLowerCase();if(['monthly','mensuel','month'].includes(v))return'monthly';if(['quarterly','trimestriel','quarter'].includes(v))return'quarterly';if(['annual','annuel','yearly','year'].includes(v))return'annual';return v||'monthly'};
 const coachBy=u=>(gymCoaches||[]).find(c=>c.user_id===u||c.id===u)||null;
 const coachName=u=>coachBy(u)?.users?.name||coachBy(u)?.name||'Coach';
 const clientBy=id=>(allClients||[]).find(c=>c.id===id)||null;
 const ass=id=>S.map.get(id)||null;
-function monthActive(s,e,m){s=s?new Date(s):null;e=e?new Date(e):null;const a=new Date(m.getFullYear(),m.getMonth(),1),b=new Date(m.getFullYear(),m.getMonth()+1,0,23,59,59,999);if(!s&&!e)return true;if(s&&s>b)return false;if(e&&e<a)return false;return true}
-function revenueFor(m){const p=price();return(allClients||[]).reduce((n,c)=>{const f=c.profile||{};if(String(f.payment_status||'').toLowerCase()!=='paid')return n;if(!monthActive(f.membership_start_date,f.membership_end_date,m))return n;return n+(p[tier(f.membership_tier)]||+f.price_paid||0)},0)}
-async function refreshRevenue(){const n=new Date(),p=new Date(n.getFullYear(),n.getMonth()-1,1),cur=revenueFor(n),prev=revenueFor(p),delta=cur-prev,re=document.getElementById('stat-revenue'),de=document.getElementById('stat-revenue-delta');if(re)re.textContent=Trainw.formatCurrencyDT(cur);if(de){de.classList.remove('up','down');if(delta>0){de.classList.add('up');de.textContent=t('up').replace('{amount}',Trainw.formatCurrencyDT(delta))}else if(delta<0){de.classList.add('down');de.textContent=t('down').replace('{amount}',Trainw.formatCurrencyDT(Math.abs(delta)))}else de.textContent=t('flat')}Trainw.ui.setText('pred-monthly',Trainw.formatCurrencyDT(cur))}
+// FE-19 / FE-15: revenue comes from the payments ledger via
+// loadLedgerRevenue (tw-gym-acc.js). The old revenueFor() charged every
+// paid member the tier list price read from the DOM inputs — a list-price
+// estimate, not cash collected — and overwrote the dashboard's own
+// figure. It is gone; this wrapper just refreshes the ledger figure.
+async function refreshRevenue(){if(typeof loadLedgerRevenue==='function'){await loadLedgerRevenue();}}
 async function loadAssigns(){if(!currentGymId)return;const r=await Trainw.api.run(sb.from('coach_client_assignments').select('id,coach_id,client_id,gym_id,assigned_at,is_active').eq('gym_id',currentGymId).eq('is_active',true),{context:'load coach assignments',fallback:[]});S.assigns=Array.isArray(r.data)?r.data:[];S.map=new Map(S.assigns.map(x=>[x.client_id,x]))}
 function daysLeft(v){if(!v)return null;v=new Date(v);if(Number.isNaN(v.getTime()))return null;return Math.ceil((v-new Date())/86400000)}
 function streak(rows){const days=Array.from(new Set((rows||[]).map(x=>String(x.checked_in_at||'').slice(0,10)))).sort().reverse();let s=0,c=new Date();c.setHours(0,0,0,0);for(const day of days){const a=Trainw.dateOnly(c)===day,b=Trainw.dateOnly(Trainw.addDays(c,-1))===day;if(a||(s>0&&b)){s+=1;c=Trainw.addDays(c,-1)}else if(s===0&&b){s+=1;c=Trainw.addDays(c,-2)}else break}return s}

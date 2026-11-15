@@ -179,7 +179,10 @@ const allowedExtensions = new Set([
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
-    'Trainw build: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'Trainw build: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. ' +
+      'Set both in Vercel (Project Settings > Environment Variables) using the values from ' +
+      'Supabase (Project Settings > API) for the current project. The build refuses to ' +
+      'reuse a stale key from a previous dist copy.',
   );
 }
 

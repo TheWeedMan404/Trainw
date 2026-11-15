@@ -354,9 +354,15 @@ Verification: careful review (no live DB).
 Still needs: live test — self-grant attempt must fail, manager granting a
 role to someone else must succeed.
 
-## P1-11 (schema decision) — SKIPPED (awaiting the user's call)
+## P1-11 (schema decision) — DONE (2026-11-15, round 3; commit cf994d1)
 
-Nothing archived or reconciled; `database/schema.sql` untouched.
+Decision (per audit recommendation, under the standing grind instruction):
+**the migration chain is the authoritative schema.** `database/schema.sql`
+and `database/seed.sql` were moved (not deleted) to `database/archive/`
+with a README explaining why (DB-33/NX-03 divergence) and what still
+depends on it: the Next.js app in `src/` does not work against a
+migration-chain-only DB until its data model is migrated (P2-10, open).
+See `database/archive/README.md` for the full dependency list.
 
 ## P1-12 (GT-03, NX-01, FE-25 — code parts only) — DONE (code); dashboard parts pending
 
@@ -1084,3 +1090,235 @@ verification section at the end). `src/middleware.ts` did NOT exist yet
 - **User decisions still open:** P1-11 schema decision; the FE-08 coach
   search embedded-users name filter (live verification); whether the
   Next.js app is the ship target at all (P2-10).
+
+---
+
+## Round 3 — payments ledger (FE-19 / DB-36, DB-65) — 2026-11-15
+
+Commits (all local, branch `phase1-security-fixes`, on top of be1044a):
+- `cf994d1` P1-11: archive database/schema.sql + seed.sql (migration chain is canonical)
+- `98fb52c` Ledger: append-only payments, settlement, immutability, refund RPC, TEIF fields
+- `6112d1e` Freezes: membership_freezes table, gate check, end-date shift
+- `ffdd175` Frontend: payment writes go through the ledger; revenue from the ledger
+- `5b77717` Payments view: record/void/list, end-of-day totals, freezes UI
+
+### P1-11 — DONE (commit cf994d1)
+Files changed: `database/schema.sql` + `database/seed.sql` moved to
+`database/archive/` (git mv), `database/archive/README.md` (new).
+Decision: the migration chain is the authoritative schema. The README
+documents the divergence (roles shape, parallel coaches/clients/classes/
+class_clients/attendance tables, `provision_new_gym` RPC that fails against
+the chain's roles) and what still depends on the archived file — the
+Next.js app in `src/` does not work against a migration-chain-only DB
+until its data model is migrated (P2-10, open): `src/app/auth/callback/
+route.ts` calls `provision_new_gym`; `src/actions/clients.ts`,
+`classes.ts`, `attendance.ts`, `src/lib/queries.ts`,
+`src/app/api/public/clients/route.ts` query `clients`/`class_clients`;
+`src/types/database.ts` types them; `src/actions/roles.ts` guards the owner
+role by NAME because archived `roles` has no `code` column. Only comment
+references to the old paths remain in code; nothing loads the files.
+Verification: grep confirmed no code loads `database/schema.sql` or
+`database/seed.sql`; `git log --follow` preserves history. Still needs:
+the P2-10 Next.js decision (migrate its data model or drop it).
+
+### Ledger migration — DONE (commit 98fb52c)
+File: `supabase/migrations/20261115100000_phase1c_payments_ledger.sql`
+(new, sorts after round-2 files 20261115010000–20261115090000).
+Extends the EXISTING `payments` table (003 + B4 idempotency/verify/
+no-DELETE — built on, not redone). Adds:
+- `method` (cash/card/bank_transfer), `period_months`, `period_start`,
+  `period_end`, `void_reason`, `voided_by`, `voided_at`, `settled_at`.
+- TEIF e-invoice columns: `invoice_number`, `invoice_date`,
+  `buyer_tax_id/name/address`, `seller_tax_id/name/address`,
+  `service_description`, `amount_ht`, `vat_rate` (fraction 0..1),
+  `vat_amount`, `amount_ttc`, `ttn_reference`, `e_invoice_status`
+  (not_issued/pending/issued). Unique indexes on (gym_id, invoice_number)
+  and (gym_id, ttn_reference) where not null. `gyms.tax_id` +
+  `trade_register`, `client_profiles.tax_id` added for invoice identity.
+- CHECKs: method values, amounts ≥ 0, amount_refunded ≤ amount_paid,
+  period_months ≥ 0, vat_rate 0..1. Deploy note: the new CHECKs assume
+  existing rows are sane — if the migration fails on a constraint, fix
+  the offending rows on staging first.
+- `prepare_payment_write` rewritten (B4 logic verbatim: idempotency-key
+  dedupe, always-verify client, client/gym binding, no DELETE) plus
+  'void' → 'voided' rename, voided_at/by, INSERT-only period defaults
+  with Postgres month-clamping, e-invoice HT/VAT/TTC defaults, buyer/
+  seller identity snapshots (best-effort under RLS). Trigger order
+  follows 003 numbering (10_prepare → 15_settle → 20_audit → 80_guard
+  → 90_upd).
+- Settlement trigger `trg_payments_15_settle_membership` (BEFORE,
+  SECURITY DEFINER): on a paid membership payment with `settled_at`
+  NULL it settles — end date extends from
+  GREATEST(old end, period_start, today) + period_months, start date
+  defaulted, price_paid = amount_paid, payment_status = 'paid',
+  settled_at = now(). Idempotent via settled_at (re-running is a no-op);
+  backdated payments cannot shorten the end date. On paid → voided/
+  cancelled with settled_at set it reverses — end date minus the period,
+  floored at the start date; status/price recomputed from remaining paid
+  payments; settled_at cleared.
+- Immutability guard `trg_payments_80_guard_update` (BEFORE UPDATE,
+  DB-65): only pending → paid/cancelled/voided and paid → voided/
+  cancelled; void requires a reason; voided/cancelled rows are terminal;
+  paid rows' money + identity fields are frozen; amount_refunded changes
+  only via the refund RPC flag `trainw.allow_payment_refund`.
+- Refund RPC `record_payment_refund(p_payment_id, p_amount, p_reason)`
+  (SECURITY DEFINER, manager-only): partial refund keeps paid + fixes
+  price_paid when it is the latest payment; full refund voids + reverses
+  the settlement; writes a `payment_events` 'refunded' row.
+- TEIF research (2026-11-15, browser search — KPMG Circulaire fiscale
+  février 2026, challenges.tn 2026-01-25, bfc.com.tn, lapresse.tn
+  2025-12-30, consistent): invoice number + date of operation; seller
+  tax id (matricule fiscal) + identity/address (+ registre de commerce);
+  buyer identity, address, tax id; service description + price HT; TVA
+  rates and amounts; total TTC; unique TTN reference; electronic
+  signature; QR code/electronic identifier. Art. 53 (Loi de Finances
+  2026, loi n° 2025-17 du 12 décembre 2025) extended the obligation to
+  services from 1 Jan 2026; Note Commune n° 2/2026 gives tolerance for
+  providers who filed with TTN. An amendment to delay Art. 53 was
+  approved in commission but NOT voted in plenary — Art. 53 applies as
+  promulgated. **No VAT rate is hardcoded; `vat_rate` is NULL unless the
+  gym sets it. The exact TEIF field list, the applicable TVA rate for
+  gym services, and the Art. 53 delay-amendment status MUST be verified
+  with an accountant before the first real invoice.**
+- Two bugs caught and fixed while writing: the seller snapshot used
+  `SELECT ... INTO` a `%ROWTYPE` variable (wrong column count — now
+  three scalar vars); the refund flag read could be NULL (now COALESCE
+  to '').
+Verification: SQL reviewed by hand; no live DB yet (see Postgres note
+below). Still needs: live apply + behavioral tests on staging (settle,
+void, refund, freeze, guard — see "Round 3 live checklist" below).
+
+### Freezes migration — DONE (commit 6112d1e)
+File: `supabase/migrations/20261115110000_phase1c_membership_freezes.sql`
+(new). `membership_freezes` table (gym_id, user_id, start/end dates,
+reason, status active/cancelled, created_by; CHECK end ≥ start; RLS
+managers + own rows; no DELETE policy). `membership_is_active_for_access`
+rewritten verbatim from B1 plus a freeze clause (no active freeze covering
+the reference date) — the gate + manual check-in inherit it, so a frozen
+member is denied at the door. End-date shift trigger: extend on freeze
+creation by end−start days, roll back on cancel, floored at the start
+date, only when end ≥ today. RPCs `request_membership_freeze`
+(manager-only, rejects overlapping active freezes) and
+`cancel_membership_freeze` (manager-only). Model per audit P2-3: a freeze
+pauses the membership.
+Verification: SQL reviewed by hand; no live DB yet. Still needs: live
+apply + freeze/gate tests on staging.
+
+### Frontend — DONE (commits ffdd175, 5b77717)
+Files changed: `tw-gym-acc.js`, `tw-gym-acc-v17.js`, `tw-gym-acc.html`.
+- `saveEditClient` no longer writes `payment_status`/`price_paid`; the
+  edit modal shows them read-only (ledger-derived) with a button that
+  jumps to the Paiements page for that member. `submitNewClient` creates
+  the profile as 'pending' / price_paid 0 and, when an initial amount is
+  entered, inserts a paid `payments` row (method + period from the tier);
+  the settlement trigger derives the profile. The amount is now parsed
+  with the strict `parseMoneyInput` (FE-16). New-client modal takes a
+  payment method instead of a payment status.
+- `loadDashboardStats` + `loadAnalytics` use the new `loadLedgerRevenue()`
+  (sum of `amount_paid` of paid payments by paid month) instead of
+  `price_paid` sums; v17 `revenueFor`/`price`/`tier`/`monthActive`
+  deleted — `refreshRevenue` now calls `loadLedgerRevenue`. The old v17
+  estimate charged every paid member the tier list price read from the
+  DOM inputs (a list-price estimate, not cash collected) and overwrote
+  the dashboard's own figure.
+- New Paiements page (nav item, hidden without `manage_payments`; the
+  staff hard-redirect in `showPage` already applies): record a payment
+  (member, strict-parsed amount, method, period 1/3/12/0, date, optional
+  invoice number / buyer tax id / VAT rate / notes), recent payments
+  list with void-with-reason, end-of-day cash/card/transfer totals,
+  freeze form + active freezes with cancel. `recordPayment` inserts into
+  the ledger only; void goes through the DB guard (reason mandatory).
+- Verification: `node --check` clean on both JS files; grep confirms no
+  UI path still writes `payment_status` directly — the only remaining
+  `payment_status:` write is the new profile's `'pending'` seed with
+  `price_paid: 0` in `submitNewClient`; remaining `payment_status` reads
+  are display/filter badges only. All new HTML ids exist and are
+  referenced in JS. Void uses `window.prompt` for the reason — P2 polish
+  is a proper modal.
+
+### Postgres local verification — DONE (2026-11-15, real PostgreSQL 16.15)
+The `apt-get install postgresql` finished; a throwaway cluster was built
+in /tmp (port 54399) with a minimal Supabase emulation (stub file
+/tmp/supabase-stubs.sql — NOT in the repo: `auth` schema with
+`auth.users` + `auth.uid()`/`auth.jwt()`/`auth.role()` driven by the
+`test.auth_uid` / `test.auth_role` GUCs, `storage` schema with buckets /
+objects / `foldername()`, roles anon/authenticated/service_role with the
+schema grants Supabase gives them). The full chain (001 → 012_v18 →
+round-1 → round-2 → 1c) applies cleanly EXCEPT B5 (see below), and a
+50-assertion behavioral suite (/tmp/ledger-tests.sql, throwaway) passes
+end to end: settle (profile paid, price_paid, end date, settled_at,
+period_end, audit event, idempotent re-touch), duplicate
+provider_reference rejected (23505), void with reason reverses
+(status/price/end/settled_at), void without reason rejected, 3-month
+settle + exact void restore, guard rejects direct amount edits,
+paid→pending, tampering with settled_from_end_date, DELETE via FK
+RESTRICT (superuser) and via RLS 0-rows (authenticated role, no DELETE
+policy), partial refund (amount_refunded + price_paid fix + event),
+full refund (void + reversal), refund guards (non-manager, voided
+payment), freeze (+9 days, gate denies during freeze, active after,
+overlap rejected, cancel rolls back), e-invoice defaults (TTC 150, HT
+126.05, VAT 23.95 at 19%, invoice_date today, seller tax id snapshotted)
++ duplicate invoice_number rejected, backdated payment extends from
+the current end date. Three defects found by this verification, all
+fixed as NEW migrations (see below); the chain now applies end to end.
+
+### Round 3 live checklist (staging, after the migration chain + round-1/2 files apply)
+- Apply `20261115100000_phase1c_payments_ledger.sql` then
+  `20261115110000_phase1c_membership_freezes.sql` on a THROWAWAY copy of
+  the chain first (dedup payments before B4; the new CHECKs assume sane
+  existing rows). Then: record a 1-month payment → profile flips paid,
+  end date +1 month, price_paid set; record the same payment again with
+  the same idempotency key → single row; void it with a reason → end
+  date rolls back, profile recomputed; void without a reason → rejected;
+  UPDATE a paid payment's amount directly → rejected; partial refund →
+  amount_refunded + price_paid fixed; full refund → voided + end date
+  reversed; freeze a member → gate denies, end date +frozen days;
+  cancel the freeze → end date rolls back; dashboard + analytics revenue
+  equals the ledger sum; a staff user cannot open the Paiements page.
+- **User decisions still open (unchanged):** the FE-08 coach search
+  embedded-users name filter (live verification); whether the Next.js app
+  is the ship target at all (P2-10). **New:** DB-66 no-show/completion
+  auto-settlement policy is undecided (refund-vs-credit-vs-forfeit) —
+  the refund RPC exists but the policy call is his.
+
+### Deliberately skipped in round 3
+- DB-66 no-show/completion auto-settlement (policy undecided per audit
+  Q10; the mechanism exists via the refund RPC).
+- The Next.js app's payment handling (it uses the archived schema's
+  tables — P2-10 territory).
+- Online payment gateways (Konnect/Paymee — P3-3).
+- `Trainw_001_foundation.sql` rename (DB-51, needs staging
+  `supabase migration list`).
+- The void-reason `window.prompt` is a P2 polish item, not a blocker.
+
+### Verification fixes (new migrations, 2026-11-15 — all found by the local Postgres run)
+- `20261115120000_phase1c_fix_get_staff_directory.sql` (commit 407d32b):
+  B5 (round 2) FAILS on a fresh apply — `CREATE OR REPLACE` cannot
+  change `get_staff_directory`'s return type (012 defined it WITH
+  national_id + invite_token; B5 removes both per DB-20). With
+  ON_ERROR_STOP the rest of B5 never applied (admin_audit_log,
+  get_staff_directory_sensitive, list_gym_member_directory,
+  revoke_gate_session). This file DROPs the old function, re-applies
+  B5's definition verbatim, then applies the remainder of B5. B5 itself
+  is untouched. The chain now applies end to end (B5 still fails on its
+  own by design; the fix migration repairs it).
+- `20261115130000_phase1c_payments_voided_status.sql` (commit 407d32b):
+  the ledger's 'voided' status was NOT in the chain's
+  payments_status_check (003) — every void failed the CHECK. Widens
+  the constraint to include 'voided', then VALIDATEs it.
+- `20261115140000_phase1c_settlement_exact_reversal.sql` (commit
+  0d4a9c8): voiding reversed the end date by subtracting the period,
+  but Postgres month arithmetic is not symmetric around month-ends
+  (2026-11-30 + 3mo = 2027-02-28, minus 3mo = 2026-11-28) — a voided
+  quarterly payment silently lost 2 days. New column
+  settled_from_end_date records the pre-settlement end date; reversal
+  restores it exactly (month-subtraction fallback for rows settled
+  before this column existed). The guard freezes settled_from_end_date
+  on paid/voided rows.
+- Test-harness notes (not code defects): the chain auto-creates
+  public.users + a bare gym-less client_profiles row per auth.users row
+  (on_auth_user_created trigger) — test assertions must scope profiles
+  by gym_id. RLS denies a DELETE silently (0 rows affected), it does
+  NOT raise — the RLS delete test asserts the row count. The stub
+  needed Supabase's schema grants (USAGE on auth/storage) for policies
+  calling auth.uid() to evaluate as the authenticated role.

@@ -19,7 +19,7 @@ BEGIN
     IF (SELECT count(*) FROM public.gyms) = 1 THEN
       SELECT id INTO v_gym_id FROM public.gyms;
     ELSE
-      RAISE EXCEPTION 'Set the target gym first: SELECT set_config(''trainw.seed_gym_id'', ''<gym uuid>'', false); then re-run database/seed.sql.';
+      RAISE EXCEPTION 'Set the target gym first: SELECT set_config(''trainw.seed_gym_id'', ''<gym uuid>'', false); then re-run database/archive/seed.sql.';
     END IF;
   END IF;
 
