@@ -1,0 +1,20 @@
+# Supabase Edge Functions config (GT-09, Phase 1b).
+#
+# NOTE: this file was added from code only — no live Supabase project was
+# available to confirm the CLI/dashboard picks it up. Verify in the
+# Supabase dashboard (Edge Functions > each function > Settings) after the
+# first deploy that verify_jwt matches the values below.
+
+[functions.gate-checkin]
+# The terminal calls with the anon key only; the function authenticates the
+# terminal itself via the x-terminal-token header (see handler.mjs).
+verify_jwt = false
+
+[functions.gate-terminal-auth]
+# The auth action is unauthenticated by design (the PIN is the credential);
+# set_pin verifies the caller's JWT in code.
+verify_jwt = false
+
+[functions.ai-proxy]
+# ai-proxy verifies the user's JWT itself (round 1, P1-7).
+verify_jwt = true

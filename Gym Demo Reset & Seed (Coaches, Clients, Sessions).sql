@@ -5,7 +5,18 @@
 -- WHAT THIS DOES:
 --   1. Adds attendee_count column if missing (needed by the V17 frontend)
 --   2. Deletes all sessions, managed coaches, managed clients for your gym
---   3. Inserts 15 coaches + 15 clients + 35 sessions with realistic variety
+--   3. Inserts 15 coaches + 15 clients + 34 sessions with realistic variety
+--      + real session_enrollments (attendee_count is computed from them)
+--
+-- BEFORE YOU RUN THIS (DB-49, audit 2026-11-14):
+--   This script DELETES data, so it never guesses which gym to wipe.
+--   1. Pick the gym id, then run in the same SQL Editor session:
+--        SELECT set_config('trainw.demo_gym_id', '<gym uuid>', false);
+--   2. Run this script.
+--   The script REFUSES to run when the setting is missing, when the gym
+--   does not exist, and when more than one gym exists in the database
+--   (a multi-gym database must be reset gym-by-gym with an adapted
+--   script — never with a LIMIT 1 guess).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ── STEP 1: Add attendee_count column (safe, idempotent) ─────────────────
@@ -16,9 +27,17 @@ DO $$
 DECLARE
   v_gym_id UUID;
 BEGIN
-  SELECT id INTO v_gym_id FROM public.gyms LIMIT 1;
+  -- DB-49: the gym must be named explicitly (trainw.demo_gym_id).
+  -- Never guess with LIMIT 1, and never run on a multi-gym database.
+  v_gym_id := NULLIF(BTRIM(current_setting('trainw.demo_gym_id', true)), '')::uuid;
   IF v_gym_id IS NULL THEN
-    RAISE EXCEPTION 'No gym found. Sign up as gym_owner first, then run this script.';
+    RAISE EXCEPTION 'Set the target gym first: SELECT set_config(''trainw.demo_gym_id'', ''<gym uuid>'', false); then re-run this script.';
+  END IF;
+  IF (SELECT count(*) FROM public.gyms) > 1 THEN
+    RAISE EXCEPTION 'Refusing: more than one gym exists in this database. This reset script is only safe on a single-gym database.';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.gyms WHERE id = v_gym_id) THEN
+    RAISE EXCEPTION 'Gym % does not exist.', v_gym_id;
   END IF;
 
   -- Delete sessions belonging to this gym
@@ -74,7 +93,18 @@ DECLARE
   cl11 UUID; cl12 UUID; cl13 UUID; cl14 UUID; cl15 UUID;
 
 BEGIN
-  SELECT id INTO v_gym_id FROM public.gyms LIMIT 1;
+  -- DB-49: the gym must be named explicitly (trainw.demo_gym_id).
+  -- Never guess with LIMIT 1, and never run on a multi-gym database.
+  v_gym_id := NULLIF(BTRIM(current_setting('trainw.demo_gym_id', true)), '')::uuid;
+  IF v_gym_id IS NULL THEN
+    RAISE EXCEPTION 'Set the target gym first: SELECT set_config(''trainw.demo_gym_id'', ''<gym uuid>'', false); then re-run this script.';
+  END IF;
+  IF (SELECT count(*) FROM public.gyms) > 1 THEN
+    RAISE EXCEPTION 'Refusing: more than one gym exists in this database. This reset script is only safe on a single-gym database.';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.gyms WHERE id = v_gym_id) THEN
+    RAISE EXCEPTION 'Gym % does not exist.', v_gym_id;
+  END IF;
 
   -- ── Generate IDs ──────────────────────────────────────────────────────
   c1  := gen_random_uuid(); c2  := gen_random_uuid(); c3  := gen_random_uuid();
@@ -189,59 +219,89 @@ BEGIN
       CURRENT_DATE - 95,  CURRENT_DATE - 5,   400);
 
   -- ── INSERT 35 SESSIONS ────────────────────────────────────────────────
-  -- Status logic:
+  -- Status logic (indicative — the dashboard computes FULL / OPEN SPOTS
+  -- from the real attendee_count, which the trigger derives from the
+  -- session_enrollments seeded below, not from a hand-written number):
   --   completed  = past date
-  --   confirmed  = future, attendee_count >= capacity (FULL)
-  --   pending    = future, attendee_count < capacity (OPEN SPOTS)
+  --   confirmed  = future, expected full
+  --   pending    = future, expected open spots
 
   INSERT INTO public.sessions
     (gym_id, coach_id, client_id, session_date, start_time,
-     duration_minutes, type, session_name, status, capacity, attendee_count, notes)
+     duration_minutes, type, session_name, status, capacity, notes)
   VALUES
 
   -- ── PAST — COMPLETED ─────────────────────────────────────────────────
-  (v_gym_id, c1,  cl1,  CURRENT_DATE-21, '07:30:00', 60,  'group_class',        'CrossFit Endurance',      'completed', 12, 12, 'CrossFit'),
-  (v_gym_id, c2,  cl2,  CURRENT_DATE-19, '10:00:00', 90,  'individual_training','Séance Masse — Chest Day', 'completed',  1,  1, 'Musculation'),
-  (v_gym_id, c3,  cl6,  CURRENT_DATE-17, '09:00:00', 60,  'group_class',        'Yoga Débutant Matin',     'completed', 15, 11, 'Yoga'),
-  (v_gym_id, c4,  cl4,  CURRENT_DATE-15, '12:00:00', 45,  'group_class',        'HIIT Express Midi',       'completed', 10, 10, 'HIIT'),
-  (v_gym_id, c5,  cl8,  CURRENT_DATE-14, '06:30:00', 90,  'individual_training','Nage Libre — Technique',  'completed',  1,  1, 'Natation'),
-  (v_gym_id, c6,  cl12, CURRENT_DATE-12, '18:00:00', 60,  'group_class',        'Boxe Initiation',         'completed',  8,  7, 'Boxe'),
-  (v_gym_id, c10, cl11, CURRENT_DATE-10, '17:30:00', 60,  'group_activity',     'Zumba Party Vendredi',    'completed', 20, 18, 'Zumba'),
-  (v_gym_id, c7,  cl13, CURRENT_DATE-9,  '14:00:00', 60,  'individual_training','Bilan Nutritionnel Initial','completed', 1,  1, 'Nutrition'),
-  (v_gym_id, c11, cl14, CURRENT_DATE-8,  '10:00:00', 90,  'group_activity',     'Tennis Débutants',        'completed',  6,  5, 'Tennis'),
-  (v_gym_id, c3,  cl3,  CURRENT_DATE-7,  '09:30:00', 75,  'group_class',        'Yoga Intermédiaire',      'completed', 15, 14, 'Yoga'),
-  (v_gym_id, c2,  cl9,  CURRENT_DATE-5,  '16:00:00', 90,  'individual_training','Programme Squat & Deadlift','completed', 1,  1, 'Musculation'),
-  (v_gym_id, c1,  cl5,  CURRENT_DATE-4,  '07:00:00', 60,  'group_class',        'CrossFit AMRAP',          'completed', 10, 10, 'CrossFit'),
-  (v_gym_id, c8,  cl13, CURRENT_DATE-3,  '15:00:00', 60,  'individual_training','Rééducation Genou S3',    'completed',  1,  1, 'Rééducation'),
-  (v_gym_id, c4,  cl7,  CURRENT_DATE-2,  '11:00:00', 45,  'group_class',        'Cardio Brûle-Graisses',   'completed', 10,  6, 'Cardio'),
-  (v_gym_id, c9,  cl3,  CURRENT_DATE-1,  '10:00:00', 60,  'group_activity',     'Spinning Intensif',       'completed', 14, 12, 'Cyclisme'),
+  (v_gym_id, c1,  cl1,  CURRENT_DATE-21, '07:30:00', 60,  'group_class',        'CrossFit Endurance',      'completed', 12, 'CrossFit'),
+  (v_gym_id, c2,  cl2,  CURRENT_DATE-19, '10:00:00', 90,  'individual_training','Séance Masse — Chest Day', 'completed',  1, 'Musculation'),
+  (v_gym_id, c3,  cl6,  CURRENT_DATE-17, '09:00:00', 60,  'group_class',        'Yoga Débutant Matin',     'completed', 15, 'Yoga'),
+  (v_gym_id, c4,  cl4,  CURRENT_DATE-15, '12:00:00', 45,  'group_class',        'HIIT Express Midi',       'completed', 10, 'HIIT'),
+  (v_gym_id, c5,  cl8,  CURRENT_DATE-14, '06:30:00', 90,  'individual_training','Nage Libre — Technique',  'completed',  1, 'Natation'),
+  (v_gym_id, c6,  cl12, CURRENT_DATE-12, '18:00:00', 60,  'group_class',        'Boxe Initiation',         'completed',  8, 'Boxe'),
+  (v_gym_id, c10, cl11, CURRENT_DATE-10, '17:30:00', 60,  'group_activity',     'Zumba Party Vendredi',    'completed', 20, 'Zumba'),
+  (v_gym_id, c7,  cl13, CURRENT_DATE-9,  '14:00:00', 60,  'individual_training','Bilan Nutritionnel Initial','completed', 1, 'Nutrition'),
+  (v_gym_id, c11, cl14, CURRENT_DATE-8,  '10:00:00', 90,  'group_activity',     'Tennis Débutants',        'completed',  6, 'Tennis'),
+  (v_gym_id, c3,  cl3,  CURRENT_DATE-7,  '09:30:00', 75,  'group_class',        'Yoga Intermédiaire',      'completed', 15, 'Yoga'),
+  (v_gym_id, c2,  cl9,  CURRENT_DATE-5,  '16:00:00', 90,  'individual_training','Programme Squat & Deadlift','completed', 1, 'Musculation'),
+  (v_gym_id, c1,  cl5,  CURRENT_DATE-4,  '07:00:00', 60,  'group_class',        'CrossFit AMRAP',          'completed', 10, 'CrossFit'),
+  (v_gym_id, c8,  cl13, CURRENT_DATE-3,  '15:00:00', 60,  'individual_training','Rééducation Genou S3',    'completed',  1, 'Rééducation'),
+  (v_gym_id, c4,  cl7,  CURRENT_DATE-2,  '11:00:00', 45,  'group_class',        'Cardio Brûle-Graisses',   'completed', 10, 'Cardio'),
+  (v_gym_id, c9,  cl3,  CURRENT_DATE-1,  '10:00:00', 60,  'group_activity',     'Spinning Intensif',       'completed', 14, 'Cyclisme'),
 
   -- ── TODAY ─────────────────────────────────────────────────────────────
-  (v_gym_id, c1,  cl1,  CURRENT_DATE, '07:00:00', 60,  'group_class',        'CrossFit Elite Matin',     'confirmed', 10, 10, 'CrossFit'),  -- FULL
-  (v_gym_id, c3,  cl6,  CURRENT_DATE, '09:00:00', 60,  'group_class',        'Yoga Flow Matinal',        'pending',   15,  8, 'Yoga'),
-  (v_gym_id, c4,  cl7,  CURRENT_DATE, '12:00:00', 45,  'group_class',        'HIIT Lunch Break',         'pending',    8,  3, 'HIIT'),
-  (v_gym_id, c10, cl11, CURRENT_DATE, '18:30:00', 60,  'group_activity',     'Zumba Soir',               'pending',   20, 12, 'Zumba'),
+  (v_gym_id, c1,  cl1,  CURRENT_DATE, '07:00:00', 60,  'group_class',        'CrossFit Elite Matin',     'confirmed', 10, 'CrossFit'),  -- FULL
+  (v_gym_id, c3,  cl6,  CURRENT_DATE, '09:00:00', 60,  'group_class',        'Yoga Flow Matinal',        'pending',   15, 'Yoga'),
+  (v_gym_id, c4,  cl7,  CURRENT_DATE, '12:00:00', 45,  'group_class',        'HIIT Lunch Break',         'pending',    8, 'HIIT'),
+  (v_gym_id, c10, cl11, CURRENT_DATE, '18:30:00', 60,  'group_activity',     'Zumba Soir',               'pending',   20, 'Zumba'),
 
   -- ── UPCOMING — FULL (confirmed) ───────────────────────────────────────
-  (v_gym_id, c1,  cl2,  CURRENT_DATE+1,  '08:00:00', 60,  'group_class',        'CrossFit Strength',       'confirmed', 12, 12, 'CrossFit'),
-  (v_gym_id, c3,  cl3,  CURRENT_DATE+2,  '09:00:00', 60,  'group_class',        'Yoga Vinyasa Flow',       'confirmed', 15, 15, 'Yoga'),
-  (v_gym_id, c5,  cl8,  CURRENT_DATE+3,  '06:30:00', 90,  'individual_training','Coaching Nage Dos',       'confirmed',  1,  1, 'Natation'),
-  (v_gym_id, c1,  cl5,  CURRENT_DATE+5,  '07:30:00', 60,  'group_class',        'CrossFit Competition Prep','confirmed', 10, 10, 'CrossFit'),
-  (v_gym_id, c6,  cl12, CURRENT_DATE+6,  '18:00:00', 60,  'group_class',        'Boxe Avancé',             'confirmed',  8,  8, 'Boxe'),
+  (v_gym_id, c1,  cl2,  CURRENT_DATE+1,  '08:00:00', 60,  'group_class',        'CrossFit Strength',       'confirmed', 12, 'CrossFit'),
+  (v_gym_id, c3,  cl3,  CURRENT_DATE+2,  '09:00:00', 60,  'group_class',        'Yoga Vinyasa Flow',       'confirmed', 15, 'Yoga'),
+  (v_gym_id, c5,  cl8,  CURRENT_DATE+3,  '06:30:00', 90,  'individual_training','Coaching Nage Dos',       'confirmed',  1, 'Natation'),
+  (v_gym_id, c1,  cl5,  CURRENT_DATE+5,  '07:30:00', 60,  'group_class',        'CrossFit Competition Prep','confirmed', 10, 'CrossFit'),
+  (v_gym_id, c6,  cl12, CURRENT_DATE+6,  '18:00:00', 60,  'group_class',        'Boxe Avancé',             'confirmed',  8, 'Boxe'),
 
   -- ── UPCOMING — PARTIALLY BOOKED (pending) ────────────────────────────
-  (v_gym_id, c2,  cl9,  CURRENT_DATE+1,  '10:00:00', 90,  'individual_training','Séance Force Max',         'pending',   1,  1, 'Musculation'),
-  (v_gym_id, c4,  cl4,  CURRENT_DATE+3,  '11:00:00', 45,  'group_class',        'Cardio Intense Mardi',    'pending',   10,  7, 'Cardio'),
-  (v_gym_id, c11, cl14, CURRENT_DATE+4,  '10:00:00', 90,  'group_activity',     'Tennis Intermédiaire',    'pending',    6,  3, 'Tennis'),
-  (v_gym_id, c10, cl11, CURRENT_DATE+5,  '18:30:00', 60,  'group_activity',     'Zumba Weekend',           'pending',   20,  9, 'Zumba'),
-  (v_gym_id, c7,  cl1,  CURRENT_DATE+7,  '11:00:00', 60,  'individual_training','Consultation Nutrition',  'pending',    1,  0, 'Nutrition'),
-  (v_gym_id, c14, cl8,  CURRENT_DATE+7,  '09:00:00', 90,  'individual_training','Prépa Physique Elite',    'pending',    1,  1, 'Prépa Physique'),
-  (v_gym_id, c3,  cl15, CURRENT_DATE+9,  '09:00:00', 60,  'group_class',        'Yoga Tous Niveaux',       'pending',   15,  6, 'Yoga'),
-  (v_gym_id, c9,  cl3,  CURRENT_DATE+10, '10:00:00', 60,  'group_activity',     'Cycling Power Session',   'pending',   12,  4, 'Cyclisme'),
-  (v_gym_id, c13, cl13, CURRENT_DATE+11, '15:00:00', 60,  'individual_training','Mobilité & Récupération', 'pending',    1,  1, 'Stretching'),
-  (v_gym_id, c15, cl10, CURRENT_DATE+14, '10:00:00', 60,  'group_class',        'Fitness Féminin — Reprise','pending',  10,  8, 'Fitness');
+  (v_gym_id, c2,  cl9,  CURRENT_DATE+1,  '10:00:00', 90,  'individual_training','Séance Force Max',         'pending',   1, 'Musculation'),
+  (v_gym_id, c4,  cl4,  CURRENT_DATE+3,  '11:00:00', 45,  'group_class',        'Cardio Intense Mardi',    'pending',   10, 'Cardio'),
+  (v_gym_id, c11, cl14, CURRENT_DATE+4,  '10:00:00', 90,  'group_activity',     'Tennis Intermédiaire',    'pending',    6, 'Tennis'),
+  (v_gym_id, c10, cl11, CURRENT_DATE+5,  '18:30:00', 60,  'group_activity',     'Zumba Weekend',           'pending',   20, 'Zumba'),
+  (v_gym_id, c7,  cl1,  CURRENT_DATE+7,  '11:00:00', 60,  'individual_training','Consultation Nutrition',  'pending',    1, 'Nutrition'),
+  (v_gym_id, c14, cl8,  CURRENT_DATE+7,  '09:00:00', 90,  'individual_training','Prépa Physique Elite',    'pending',    1, 'Prépa Physique'),
+  (v_gym_id, c3,  cl15, CURRENT_DATE+9,  '09:00:00', 60,  'group_class',        'Yoga Tous Niveaux',       'pending',   15, 'Yoga'),
+  (v_gym_id, c9,  cl3,  CURRENT_DATE+10, '10:00:00', 60,  'group_activity',     'Cycling Power Session',   'pending',   12, 'Cyclisme'),
+  (v_gym_id, c13, cl13, CURRENT_DATE+11, '15:00:00', 60,  'individual_training','Mobilité & Récupération', 'pending',    1, 'Stretching'),
+  (v_gym_id, c15, cl10, CURRENT_DATE+14, '10:00:00', 60,  'group_class',        'Fitness Féminin — Reprise','pending',  10, 'Fitness');
 
-  RAISE NOTICE '✅ Done. 15 coaches, 15 clients, 35 sessions inserted for gym %', v_gym_id;
+  -- ── SEED ENROLLMENTS (attendee_count is computed from these) ───────
+  -- DB-49: attendee_count is owned by sync_session_after_write /
+  -- refresh_session_attendee_count (it counts session_enrollments, or 1
+  -- for an individual session with a client). Hand-written counts are
+  -- overwritten on the next write, so seed real enrollments instead:
+  -- every session gets its own client first, group sessions get up to
+  -- their capacity (capped at the 15 seeded clients).
+  INSERT INTO public.session_enrollments (session_id, client_id, gym_id)
+  SELECT s.id, c.user_id, v_gym_id
+  FROM public.sessions s
+  CROSS JOIN LATERAL (
+    SELECT u.id AS user_id,
+           ROW_NUMBER() OVER (
+             ORDER BY CASE WHEN u.id = s.client_id THEN 0 ELSE 1 END,
+                      u.created_at, u.id
+           ) AS rn
+    FROM public.users u
+    WHERE u.gym_id = v_gym_id
+      AND u.role = 'client'
+      AND u.is_managed = true
+  ) c
+  WHERE s.gym_id = v_gym_id
+    AND c.rn <= CASE
+      WHEN s.type IN ('group_class', 'group_activity') THEN LEAST(s.capacity, 15)
+      ELSE 1
+    END
+  ON CONFLICT (session_id, client_id) DO NOTHING;
+
+  RAISE NOTICE '✅ Done. 15 coaches, 15 clients, 34 sessions inserted for gym %', v_gym_id;
 
 END $$;
 
@@ -249,11 +309,11 @@ END $$;
 -- ── STEP 4: VERIFY ───────────────────────────────────────────────────────
 SELECT
   (SELECT COUNT(*) FROM public.users WHERE role='coach' AND is_managed=true
-    AND gym_id=(SELECT id FROM public.gyms LIMIT 1))  AS coaches_inserted,
+    AND gym_id=current_setting('trainw.demo_gym_id', true)::uuid)  AS coaches_inserted,
   (SELECT COUNT(*) FROM public.users WHERE role='client' AND is_managed=true
-    AND gym_id=(SELECT id FROM public.gyms LIMIT 1))  AS clients_inserted,
+    AND gym_id=current_setting('trainw.demo_gym_id', true)::uuid)  AS clients_inserted,
   (SELECT COUNT(*) FROM public.sessions
-    WHERE gym_id=(SELECT id FROM public.gyms LIMIT 1)) AS sessions_inserted;
+    WHERE gym_id=current_setting('trainw.demo_gym_id', true)::uuid) AS sessions_inserted;
 
 -- ── STEP 5: SESSION BREAKDOWN (what you should see in the dashboard) ─────
 SELECT
@@ -262,6 +322,6 @@ SELECT
   SUM(attendee_count)                         AS total_attendees,
   ROUND(AVG(attendee_count::numeric / NULLIF(capacity,0) * 100), 1) AS avg_fill_pct
 FROM public.sessions
-WHERE gym_id = (SELECT id FROM public.gyms LIMIT 1)
+WHERE gym_id = current_setting('trainw.demo_gym_id', true)::uuid
 GROUP BY status
 ORDER BY status;

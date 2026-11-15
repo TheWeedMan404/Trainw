@@ -77,7 +77,7 @@
 
   async function updateCoachApproval(profileId,status){
     const payload={approval_status:status,approved_at:status==='approved'?new Date().toISOString():null};
-    const result=await Trainw.api.run(sb.from('coach_profiles').update(payload).eq('id',profileId),{context:'gym pilot coach approval',fallback:null});
+    const result=await Trainw.api.run(sb.from('coach_profiles').update(payload).eq('id',profileId).eq('gym_id',currentGymId),{context:'gym pilot coach approval',fallback:null});
     if(result.error)return;
     Trainw.ui.showToast(copy('saved'),'success');
     if(typeof loadCoaches==='function')await Promise.allSettled([loadCoaches(),typeof loadDashboardStats==='function'?loadDashboardStats():Promise.resolve(),typeof loadSchedule==='function'?loadSchedule():Promise.resolve()]);

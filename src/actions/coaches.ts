@@ -17,7 +17,12 @@ const createCoachSchema = z.object({
       if (!value) return null;
 
       const parsed = Number(value);
-      return Number.isNaN(parsed) ? null : parsed;
+      if (Number.isNaN(parsed)) return null;
+
+      // NX-16: a coach rating is a 0–5 value by definition. Clamp
+      // server-side so a crafted request cannot store an out-of-range
+      // rating that the dashboard (or a future public display) renders.
+      return Math.max(0, Math.min(5, parsed));
     }),
 });
 

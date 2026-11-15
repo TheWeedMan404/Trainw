@@ -2,6 +2,13 @@
   const SUPABASE_URL = window.__TRAINW_URL__;
   const SUPABASE_ANON = window.__TRAINW_KEY__;
 
+  // Turnstile flag (Phase 1b, user requirement 2026-11-15): read from
+  // window.__TRAINW_TURNSTILES_ENABLED__ (trainw-config.js). Only the
+  // boolean true enables turnstiles; the committed config defaults it to
+  // false, and env-config.js / dev-server.js write it from the
+  // TURNSTILES_ENABLED environment variable at build/dev time.
+  const TURNSTILES_ENABLED = window.__TRAINW_TURNSTILES_ENABLED__ === true;
+
   function isPlaceholderSupabaseConfig(value) {
     const normalized = String(value || '').trim().toLowerCase();
     if (!normalized) return true;
@@ -333,6 +340,20 @@
   }
 
   function setHtml(id, value) {
+    const element = resolveElement(id);
+    if (element) {
+      // FE-31: escaped by default — plain text is rendered as text, never
+      // as markup. Callers that genuinely need HTML use setHtmlUnsafe.
+      element.innerHTML = escapeHTML(value ?? '');
+    }
+    return element;
+  }
+
+  // FE-31: raw innerHTML setter. Use ONLY when the HTML was built from
+  // already-escaped values (the coach <option> lists in tw-gym-acc.js are
+  // the only callers, and they escape every value with Trainw.escapeHtml
+  // at build time). Anything else goes through setHtml (escaped).
+  function setHtmlUnsafe(id, value) {
     const element = resolveElement(id);
     if (element) {
       element.innerHTML = value ?? '';
@@ -1125,6 +1146,24 @@
     };
   }
 
+  // FE-21: image-upload guard. The trainw-media bucket only allows
+  // image/png, image/jpeg and image/webp (DB-60), and the bucket cap is
+  // 5 MB — check both in the browser before uploading so a bad file fails
+  // fast with a readable message instead of a storage error.
+  const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+  function validateImageFile(file) {
+    if (!file) return { ok: false, error: 'No file selected.' };
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      return { ok: false, error: 'Only PNG, JPEG or WebP images are allowed.' };
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      return { ok: false, error: 'Image must be 5 MB or smaller.' };
+    }
+    return { ok: true, error: null };
+  }
+
   async function createSignedMediaUrl(client, bucket, path, expiresInSeconds) {
     if (!bucket || !path) {
       return { url: null, error: null };
@@ -1217,6 +1256,7 @@
   window.TrainwCore = {
     SUPABASE_URL,
     SUPABASE_ANON,
+    TURNSTILES_ENABLED,
     FONT_STACKS,
     createClient,
     safeVal,
@@ -1258,12 +1298,14 @@
     },
     media: {
       createSignedMediaUrl,
+      validateImageFile,
     },
     ui: {
       showToast,
       setText,
       setValue,
       setHtml,
+      setHtmlUnsafe,
       setBusy,
       renderEffortBar,
       emptyState,

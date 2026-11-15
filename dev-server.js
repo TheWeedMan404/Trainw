@@ -21,6 +21,21 @@ const mimeTypes = {
   ".webp": "image/webp"
 };
 
+// FE-32 (Phase 1b): the only file types the dev server may serve. This is
+// the same allow-list env-config.js uses for the production build (plus
+// .map/.webmanifest/.woff/.woff2, which the build also copies). Anything
+// else — .env, .sql, .md, .git internals — is never served.
+const allowedExtensions = new Set([
+  ...Object.keys(mimeTypes),
+  ".map",
+  ".webmanifest",
+  ".woff",
+  ".woff2",
+]);
+
+// FE-32: trees that are never served, even for an allowed extension.
+const blockedFirstSegments = new Set(["database", "supabase"]);
+
 const rewriteMap = new Map([
   ["/role", "/tw-role.html"],
   ["/login", "/tw-login.html"],
@@ -33,6 +48,29 @@ const rewriteMap = new Map([
   ["/client", "/tw-client-acc.html"],
   ["/gate", "/gate-terminal.html"],
 ]);
+
+// P1-6: same security headers as vercel.json, so local dev enforces the same
+// policy as production. Keep the two in sync.
+// - script-src has NO 'unsafe-inline'/'unsafe-eval': pages carry no inline
+//   scripts (config lives in trainw-config.js) and no eval() is used.
+// - style-src keeps 'unsafe-inline': the pages use inline style="..." attrs.
+// - camera=(self): the gate terminal needs the camera for QR scanning.
+const SECURITY_HEADERS = {
+  "Content-Security-Policy":
+    "default-src 'self'; " +
+    "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com; " +
+    "img-src 'self' data: blob: https:; " +
+    "media-src 'self' blob:; " +
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co; " +
+    "frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+};
 
 function readFileIfExists(filePath) {
   try {
@@ -133,30 +171,19 @@ function discoverSupabaseConfig() {
     return { url: envUrl, key: envKey, source: "environment" };
   }
 
-  const candidateFiles = [
-    path.join(root, "tw-coach-acc.html"),
-    path.join(root, "dist", "tw-coach-acc.html"),
-    path.join(root, "tw-login.html"),
-    path.join(root, "tw-role.html"),
-  ];
-
-  for (const candidate of candidateFiles) {
-    const text = readFileIfExists(candidate);
-    if (!text) continue;
-
-    const urlMatch = text.match(/window\.__TRAINW_URL__\s*=\s*['"]([^'"]+)['"]/);
-    const keyMatch = text.match(/window\.__TRAINW_KEY__\s*=\s*['"]([^'"]+)['"]/);
-
-    if (!urlMatch || !keyMatch) continue;
-    if (!hasUsableSupabaseConfig(urlMatch[1], keyMatch[1])) continue;
-
-    return { url: urlMatch[1], key: keyMatch[1], source: path.basename(candidate) };
-  }
-
+  // FE-23 (Phase 1b): no HTML-scraping fallback any more. A previous dev
+  // run succeeded by scraping the Supabase config out of a generated dist
+  // copy or an HTML page — which silently re-used stale values. Without
+  // environment config the dev server now fails loudly for /trainw-config.js
+  // (see the handler below) instead of serving a scraped value.
   return { url: "", key: "", source: "missing" };
 }
 
 const runtimeSupabaseConfig = discoverSupabaseConfig();
+
+// Turnstile flag (Phase 1b): only the literal value 'true' enables
+// turnstiles; anything else (including unset) is OFF.
+const turnstilesEnabled = resolveConfigValue(["TURNSTILES_ENABLED"]) === "true";
 
 function replaceConfigPlaceholders(htmlSource) {
   if (!htmlSource.includes("%%SUPABASE_URL%%") && !htmlSource.includes("%%SUPABASE_ANON_KEY%%")) {
@@ -175,7 +202,7 @@ function replaceConfigPlaceholders(htmlSource) {
 }
 
 function send(res, status, body, headers = {}) {
-  res.writeHead(status, headers);
+  res.writeHead(status, { ...SECURITY_HEADERS, ...headers });
   res.end(body);
 }
 
@@ -199,6 +226,13 @@ function safeResolve(requestPath) {
     const resolved = path.resolve(candidate);
     if (!resolved.startsWith(root)) continue;
 
+    // FE-32: block dotfiles/dot-dirs (.env, .git, .next, .vercel) and the
+    // database/ + supabase/ trees for every candidate, file or directory.
+    const relative = path.relative(root, resolved);
+    const segments = relative.split(path.sep);
+    if (segments.some((segment) => segment.startsWith("."))) continue;
+    if (blockedFirstSegments.has(segments[0])) continue;
+
     if (fs.existsSync(resolved)) {
       const stats = fs.statSync(resolved);
       if (stats.isDirectory()) {
@@ -206,6 +240,8 @@ function safeResolve(requestPath) {
         if (fs.existsSync(indexFile)) return indexFile;
         continue;
       }
+      // FE-32: only the allow-listed extensions are served.
+      if (!allowedExtensions.has(path.extname(resolved).toLowerCase())) continue;
       return resolved;
     }
   }
@@ -218,6 +254,24 @@ function handleRequest(req, res) {
 
   if (!["GET", "HEAD"].includes(method)) {
     send(res, 405, "Method Not Allowed", { "Content-Type": "text/plain; charset=utf-8" });
+    return;
+  }
+
+  // P1-6: serve the runtime config as an external script (same content
+  // env-config.js writes into dist/trainw-config.js) so pages need no inline
+  // <script> block and the CSP can forbid inline scripts outright.
+  const requestPath = decodeURIComponent((req.url || "/").split("?")[0]);
+  if (requestPath === "/trainw-config.js") {
+    if (!runtimeSupabaseConfig.url || !runtimeSupabaseConfig.key) {
+      send(res, 500, "// Trainw dev server: no Supabase config found (set NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY in .env).\n", { "Content-Type": "text/javascript; charset=utf-8" });
+      return;
+    }
+    const configJs =
+      "// Trainw runtime configuration — served by dev-server.js.\n" +
+      `window.__TRAINW_URL__ = ${JSON.stringify(runtimeSupabaseConfig.url)};\n` +
+      `window.__TRAINW_KEY__ = ${JSON.stringify(runtimeSupabaseConfig.key)};\n` +
+      `window.__TRAINW_TURNSTILES_ENABLED__ = ${turnstilesEnabled};\n`;
+    send(res, 200, configJs, { "Cache-Control": "no-store", "Content-Type": "text/javascript; charset=utf-8" });
     return;
   }
 
@@ -239,7 +293,8 @@ function handleRequest(req, res) {
 
     res.writeHead(200, {
       "Cache-Control": "no-store",
-      "Content-Type": contentType
+      "Content-Type": contentType,
+      ...SECURITY_HEADERS,
     });
 
     if (method === "HEAD") {

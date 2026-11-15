@@ -1,11 +1,12 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { type FormState, getErrorMessage } from "@/actions/shared";
-import { isSupabaseAdminConfigured } from "@/lib/env";
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { getAbsoluteUrl } from "@/lib/env";
+import { checkRateLimit, getRequestIp } from "@/lib/rate-limit";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const loginSchema = z.object({
@@ -21,6 +22,26 @@ const signupSchema = z.object({
   password: z.string().min(8),
 });
 
+// NX-01: 5 attempts per 15 minutes, per IP and per email, for both login
+// and signup. The limiter is in-memory (see src/lib/rate-limit.ts).
+const AUTH_RATE_LIMIT = 5;
+const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
+
+async function authRateLimited(scope: "login" | "signup", email: string) {
+  const clientIp = getRequestIp(await headers());
+  const ip = checkRateLimit(
+    `${scope}:ip:${clientIp}`,
+    AUTH_RATE_LIMIT,
+    AUTH_RATE_WINDOW_MS,
+  );
+  const byEmail = checkRateLimit(
+    `${scope}:email:${email.toLowerCase()}`,
+    AUTH_RATE_LIMIT,
+    AUTH_RATE_WINDOW_MS,
+  );
+  return !ip.allowed || !byEmail.allowed;
+}
+
 export async function loginAction(
   _previousState: FormState,
   formData: FormData,
@@ -35,6 +56,10 @@ export async function loginAction(
     return { error: "Please enter a valid email and password." };
   }
 
+  if (await authRateLimited("login", parsed.data.email)) {
+    return { error: "Too many sign-in attempts. Please try again in a few minutes." };
+  }
+
   try {
     const supabase = await createServerSupabaseClient();
     const { error } = await supabase.auth.signInWithPassword({
@@ -43,7 +68,10 @@ export async function loginAction(
     });
 
     if (error) {
-      return { error: error.message };
+      // NX-06: never return Supabase's message (it distinguishes "invalid
+      // credentials" from "email not confirmed" and leaks which accounts
+      // exist). One generic message for every failure.
+      return { error: "Invalid email or password." };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to sign in right now.") };
@@ -67,64 +95,43 @@ export async function signupGymOwnerAction(
     return { error: "Please complete every field with valid values." };
   }
 
-  if (!isSupabaseAdminConfigured()) {
-    return { error: "Supabase admin environment variables are not configured." };
+  if (await authRateLimited("signup", parsed.data.email)) {
+    return { error: "Too many signup attempts. Please try again in a few minutes." };
   }
 
-  const admin = createAdminSupabaseClient();
-
-  const {
-    data: createdUser,
-    error: createUserError,
-  } = await admin.auth.admin.createUser({
-    email: parsed.data.email,
-    email_confirm: true,
-    password: parsed.data.password,
-    user_metadata: {
-      full_name: parsed.data.fullName,
-      gym_name: parsed.data.gymName,
-    },
-  });
-
-  if (createUserError || !createdUser.user) {
-    return { error: createUserError?.message || "Unable to create the owner account." };
-  }
-
-  const { error: provisionError } = await admin.rpc("provision_new_gym", {
-    p_email: parsed.data.email,
-    p_full_name: parsed.data.fullName,
-    p_gym_name: parsed.data.gymName,
-    p_user_id: createdUser.user.id,
-  });
-
-  if (provisionError) {
-    await admin.auth.admin.deleteUser(createdUser.user.id);
-    return { error: provisionError.message };
-  }
-
+  // NX-02: the old flow minted the user with email_confirm: true, ran
+  // provision_new_gym immediately, and auto-signed the user in — a gym
+  // workspace for an unconfirmed email, with no approval step. The new
+  // flow is the normal signUp: Supabase sends the confirmation email, and
+  // the workspace is provisioned only in /auth/callback, after the email
+  // is confirmed (see src/app/auth/callback/route.ts).
   try {
     const supabase = await createServerSupabaseClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signUp({
       email: parsed.data.email,
       password: parsed.data.password,
+      options: {
+        data: {
+          full_name: parsed.data.fullName,
+          gym_name: parsed.data.gymName,
+        },
+        emailRedirectTo: getAbsoluteUrl("/auth/callback"),
+      },
     });
 
-    if (signInError) {
-      return {
-        success:
-          "Gym workspace created. Please sign in manually with your new credentials.",
-      };
+    if (error) {
+      // Generic on purpose: Supabase's message would confirm whether the
+      // email is already registered (user enumeration).
+      return { error: "Unable to create the account right now. Please try again." };
     }
   } catch (error) {
-    return {
-      error: getErrorMessage(
-        error,
-        "Gym created, but we could not sign you in automatically.",
-      ),
-    };
+    return { error: getErrorMessage(error, "Unable to create the account right now.") };
   }
 
-  redirect("/dashboard");
+  return {
+    success:
+      "Check your email to confirm your account — your gym workspace will be created once you confirm.",
+  };
 }
 
 export async function logoutAction() {

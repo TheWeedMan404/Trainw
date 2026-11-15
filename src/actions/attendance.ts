@@ -31,6 +31,35 @@ export async function createAttendanceAction(
 
   try {
     const supabase = (await createServerSupabaseClient()) as any;
+
+    // NX-04: the client (and the class, when given) must belong to the
+    // caller's gym. Individual-type clients have gym_id NULL, so they
+    // cannot be recorded here — the attendance form only lists this gym's
+    // clients.
+    const { data: client, error: clientError } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("id", parsed.data.clientId)
+      .eq("gym_id", context.gymId)
+      .maybeSingle();
+
+    if (clientError || !client) {
+      return { error: "The selected client does not belong to your workspace." };
+    }
+
+    if (parsed.data.classId) {
+      const { data: gymClass, error: classError } = await supabase
+        .from("classes")
+        .select("id")
+        .eq("id", parsed.data.classId)
+        .eq("gym_id", context.gymId)
+        .maybeSingle();
+
+      if (classError || !gymClass) {
+        return { error: "The selected class does not belong to your workspace." };
+      }
+    }
+
     const { error } = await supabase.from("attendance").insert({
       class_id: parsed.data.classId || null,
       client_id: parsed.data.clientId,

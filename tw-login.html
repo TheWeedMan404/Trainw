@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="tw-login.css?v=20260403-1">
   <link rel="stylesheet" href="trainw-enhancements.css">
   <link rel="stylesheet" href="trainw-v17.css">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js" integrity="sha384-gnyZit14c5lnGcarmA166QQjjJXpucw25ogZXuwH3HxxY904zHkBqmxVpelsPorb" crossorigin="anonymous"></script>
 </head>
 <body>
   <div class="orb orb-1"></div>
@@ -127,10 +127,7 @@
     </div>
   </div>
 
-  <script>
-    window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
-    window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
-  </script>
+  <script src="trainw-config.js"></script>
   <script src="trainw-tenant-utils.js?v=20260412-1"></script>
   <script src="trainw-core.js?v=20260403-1"></script>
   <script src="tw-login.js?v=20260403-1"></script>

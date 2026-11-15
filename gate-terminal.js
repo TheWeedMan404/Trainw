@@ -6,7 +6,9 @@
   const params = new URLSearchParams(window.location.search);
   const gymId = params.get('gym_id') || '';
   const gymName = params.get('gym_name') || 'TRAINW';
-  const adminPin = params.get('pin') || '';
+  // FE-04: the PIN is NEVER in the URL any more. The terminal asks for it
+  // on screen (the admin modal) and verifies it server-side via
+  // gate-terminal-auth, which issues a short-lived session token.
   const deviceId = params.get('device_id') || 'gate-1';
 
   const MODE_LABELS = {
@@ -23,6 +25,8 @@
     membership_expired: 'Abonnement expiré',
     payment_unpaid: 'Paiement non validé',
     duplicate_recent_checkin: 'Passage déjà enregistré récemment',
+    duplicate_checkin_today: 'Passage déjà enregistré aujourd’hui',
+    already_inside: 'Déjà à l’intérieur',
     invalid_token: 'QR code invalide',
     token_used: 'QR code déjà utilisé',
     token_expired: 'QR code expiré',
@@ -34,6 +38,10 @@
     invalid_type: 'Type de lecture invalide',
     server_not_configured: 'Configuration Supabase absente',
     method_not_allowed: 'Méthode non autorisée',
+    turnstiles_disabled: 'Tourniquets désactivés',
+    invalid_terminal_session: 'Session du terminal expirée — saisissez le PIN',
+    server_error: 'Erreur serveur — réessayez',
+    rate_limited: 'Trop de tentatives — réessayez dans une minute',
   };
 
   const TYPE_LABELS = {
@@ -306,6 +314,60 @@
     }
   }
 
+  // FE-04: the terminal session token issued by gate-terminal-auth after
+  // the PIN is verified. Kept in sessionStorage (cleared when the tab
+  // closes) and sent as the x-terminal-token header to gate-checkin.
+  const TERMINAL_SESSION_KEY = 'trainw_terminal_session';
+
+  function getStoredSession() {
+    try {
+      const raw = window.sessionStorage.getItem(TERMINAL_SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.token || parsed.gym_id !== gymId) return null;
+      if (!parsed.expires_at || new Date(parsed.expires_at).getTime() <= Date.now()) return null;
+      return parsed;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function storeTerminalSession(token, expiresAt) {
+    try {
+      window.sessionStorage.setItem(TERMINAL_SESSION_KEY, JSON.stringify({
+        token,
+        expires_at: expiresAt,
+        gym_id: gymId,
+      }));
+    } catch (_error) {
+      // sessionStorage unavailable — the terminal re-prompts for the PIN.
+    }
+  }
+
+  function clearStoredSession() {
+    try {
+      window.sessionStorage.removeItem(TERMINAL_SESSION_KEY);
+    } catch (_error) {
+      // Ignore.
+    }
+  }
+
+  async function authenticateTerminal(pin) {
+    const response = await fetch(`${Trainw.SUPABASE_URL}/functions/v1/gate-terminal-auth`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: Trainw.SUPABASE_ANON,
+      },
+      body: JSON.stringify({ action: 'auth', gym_id: gymId, pin, device_id: deviceId }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.ok || !body.token) {
+      return { ok: false, error: body.error || 'server_error' };
+    }
+    return { ok: true, token: body.token, expires_at: body.expires_at };
+  }
+
   async function handleQrScan(token) {
     try {
       const response = await fetch(`${Trainw.SUPABASE_URL}/functions/v1/gate-checkin`, {
@@ -313,6 +375,7 @@
         headers: {
           'Content-Type': 'application/json',
           apikey: Trainw.SUPABASE_ANON,
+          'x-terminal-token': getStoredSession()?.token || '',
         },
         body: JSON.stringify({
           token,
@@ -322,6 +385,21 @@
         }),
       });
       const body = await response.json();
+      // The session expired or was revoked server-side: clear it and
+      // re-prompt for the PIN instead of failing every scan.
+      if (response.status === 401 && body.reason === 'invalid_terminal_session') {
+        clearStoredSession();
+        renderResultState({
+          access: false,
+          reason: 'invalid_terminal_session',
+          credential_type: 'qr',
+          gym_id: gymId,
+          device_id: deviceId,
+          attempted_at: new Date().toISOString(),
+        });
+        openAdminModal();
+        return;
+      }
       const payload = {
         access: Boolean(body.access),
         reason: body.reason || null,
@@ -367,11 +445,12 @@
   }
 
   function refreshAdminDisplay() {
-    const masked = adminBuffer.padEnd(Math.max(adminPin.length, 4), '•').slice(0, Math.max(adminPin.length, 4));
-    setText('admin-display', masked);
+    // Mask by the typed length only — the PIN itself is never held in the
+    // page (it is verified server-side by gate-terminal-auth).
+    setText('admin-display', '•'.repeat(Math.max(adminBuffer.length, 4)));
   }
 
-  function handleAdminKey(key) {
+  async function handleAdminKey(key) {
     if (key === 'clear') {
       adminBuffer = '';
       setText('admin-error', '');
@@ -380,19 +459,33 @@
     }
 
     if (key === 'enter') {
-      if (adminBuffer === adminPin) {
-        window.open('/dashboard/gym', '_blank', 'noopener');
-        closeAdminModal();
-      } else {
-        adminBuffer = '';
-        setText('admin-error', 'Code incorrect');
-        refreshAdminDisplay();
+      // FE-04: no local comparison any more (the old code compared against
+      // the PIN from the URL, and a blank PIN passed: '' === ''). The PIN
+      // is verified server-side; a wrong or empty PIN is rejected there.
+      if (!adminBuffer) {
+        setText('admin-error', 'Saisissez le PIN');
+        return;
       }
+      const pin = adminBuffer;
+      adminBuffer = '';
+      refreshAdminDisplay();
+      setText('admin-error', 'Vérification…');
+      const result = await authenticateTerminal(pin);
+      if (!result.ok) {
+        setText('admin-error', result.error === 'invalid_pin' ? 'Code incorrect' : reasonLabel(result.error));
+        refreshAdminDisplay();
+        return;
+      }
+      storeTerminalSession(result.token, result.expires_at);
+      closeAdminModal();
+      bindRealtime();
+      renderIdleState();
+      await setMode('qr');
       return;
     }
 
     if (/^\d$/.test(key)) {
-      adminBuffer = (adminBuffer + key).slice(0, Math.max(adminPin.length || 4, 4));
+      adminBuffer = (adminBuffer + key).slice(0, 8);
       refreshAdminDisplay();
     }
   }
@@ -430,6 +523,16 @@
       return;
     }
 
+    // Re-auth (Admin button) must not stack a second channel on the old one.
+    if (realtimeChannel) {
+      try {
+        sb.removeChannel(realtimeChannel);
+      } catch (_error) {
+        // Ignore.
+      }
+      realtimeChannel = null;
+    }
+
     realtimeChannel = sb.channel(`gate-terminal:${gymId}`);
     realtimeChannel
       .on('broadcast', { event: 'access_result' }, payload => {
@@ -461,12 +564,41 @@
   function init() {
     setText('terminal-gym-name', gymName);
     renderFeed();
-    renderIdleState();
     updateClock();
     window.setInterval(updateClock, 1000);
     bindUi();
-    bindRealtime();
-    void setMode('qr');
+
+    // Turnstile flag OFF: show the disabled screen and stop here — no
+    // scanner, no realtime, no PIN prompt.
+    if (Trainw.TURNSTILES_ENABLED !== true) {
+      document.getElementById('terminal-disabled')?.classList.remove('hidden');
+      document.querySelector('.terminal-layout')?.classList.add('hidden');
+      document.querySelector('.terminal-bottombar')?.classList.add('hidden');
+      setOnlineStatus(false);
+      return;
+    }
+
+    if (!gymId) {
+      renderResultState({
+        access: false,
+        reason: 'missing_gym_id',
+        credential_type: 'qr',
+      });
+      return;
+    }
+
+    if (getStoredSession()) {
+      // Already unlocked with a valid session token — start normally.
+      bindRealtime();
+      renderIdleState();
+      void setMode('qr');
+    } else {
+      // No terminal session yet — the admin modal doubles as the PIN
+      // prompt. The scanner starts only after the PIN is verified
+      // server-side (see handleAdminKey).
+      renderIdleState();
+      openAdminModal();
+    }
   }
 
   init();

@@ -199,7 +199,7 @@ export async function getClientsPageData(gymId: string): Promise<ClientRow[]> {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase
     .from("clients")
-    .select("id, name, client_code, type, created_at, gym_id")
+    .select("id, name, client_code, type, status, email, phone, created_at, gym_id")
     .eq("gym_id", gymId)
     .order("created_at", { ascending: false });
 

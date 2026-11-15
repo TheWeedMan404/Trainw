@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -10,10 +10,27 @@ type GymOption = {
 };
 
 type ApiResponse = {
-  clientCode: string;
   gymName: string | null;
   message: string;
 };
+
+// NX-05: the CAPTCHA widget (hCaptcha, explicit render, no extra package).
+// The site key is public by design; the secret is verified server-side.
+// When NEXT_PUBLIC_HCAPTCHA_SITE_KEY is unset the widget is skipped and
+// the server fails open with a warning (local dev only — see
+// src/lib/captcha.ts; set both keys before launch).
+declare global {
+  interface Window {
+    hcaptcha?: {
+      render: (
+        container: HTMLElement,
+        options: { sitekey: string; callback: (token: string) => void },
+      ) => string;
+    };
+  }
+}
+
+const HCAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY ?? "";
 
 export function ClientRegistrationForm() {
   const [gyms, setGyms] = useState<GymOption[]>([]);
@@ -21,9 +38,36 @@ export function ClientRegistrationForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [selectedGym, setSelectedGym] = useState<GymOption | null>(null);
   const [type, setType] = useState<"gym" | "individual">("gym");
   const [result, setResult] = useState<ApiResponse | null>(null);
+  const captchaRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!HCAPTCHA_SITE_KEY || !captchaRef.current) return;
+    if (window.hcaptcha) {
+      window.hcaptcha.render(captchaRef.current, {
+        callback: (token: string) => setCaptchaToken(token),
+        sitekey: HCAPTCHA_SITE_KEY,
+      });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://js.hcaptcha.com/1/api.js?render=explicit";
+    script.async = true;
+    script.onload = () => {
+      if (captchaRef.current && window.hcaptcha) {
+        window.hcaptcha.render(captchaRef.current, {
+          callback: (token: string) => setCaptchaToken(token),
+          sitekey: HCAPTCHA_SITE_KEY,
+        });
+      }
+    };
+    document.head.appendChild(script);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -69,8 +113,11 @@ export function ClientRegistrationForm() {
     try {
       const response = await fetch("/api/public/clients", {
         body: JSON.stringify({
+          captchaToken: captchaToken || undefined,
+          email: email.trim() || undefined,
           gymId: type === "gym" ? selectedGym?.id ?? null : null,
           name,
+          phone: phone.trim() || undefined,
           type,
         }),
         headers: {
@@ -88,6 +135,9 @@ export function ClientRegistrationForm() {
 
       setResult(payload);
       setName("");
+      setEmail("");
+      setPhone("");
+      setCaptchaToken("");
       setGymQuery("");
       setSelectedGym(null);
     } catch {
@@ -109,6 +159,33 @@ export function ClientRegistrationForm() {
           value={name}
         />
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <label htmlFor="client-email">Email</label>
+          <input
+            id="client-email"
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="leila@example.tn"
+            type="email"
+            value={email}
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="client-phone">Phone</label>
+          <input
+            id="client-phone"
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder="+216 20 000 000"
+            type="tel"
+            value={phone}
+          />
+        </div>
+      </div>
+      <p className="text-sm text-slate-500">
+        An email or a phone number is required — the gym uses it to reach you
+        about your registration.
+      </p>
 
       <div className="space-y-3">
         <label>Client type</label>
@@ -195,12 +272,25 @@ export function ClientRegistrationForm() {
       {result ? (
         <div className="rounded-2xl bg-emerald-50 px-4 py-4 text-sm text-emerald-800">
           <p className="font-semibold">{result.message}</p>
-          <p className="mt-2">Client code: {result.clientCode}</p>
           <p className="mt-1">Gym: {result.gymName ?? "Independent registration"}</p>
         </div>
       ) : null}
 
-      <Button disabled={isSubmitting || !name || (type === "gym" && !selectedGym)} type="submit">
+      {HCAPTCHA_SITE_KEY ? (
+        <div>
+          <div ref={captchaRef} />
+        </div>
+      ) : null}
+
+      <Button
+        disabled={
+          isSubmitting ||
+          !name ||
+          (!email.trim() && !phone.trim()) ||
+          (type === "gym" && !selectedGym)
+        }
+        type="submit"
+      >
         {isSubmitting ? "Registering..." : "Register client"}
       </Button>
     </form>

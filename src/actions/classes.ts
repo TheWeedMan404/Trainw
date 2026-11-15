@@ -45,6 +45,20 @@ export async function createClassAction(
 
   try {
     const supabase = (await createServerSupabaseClient()) as any;
+
+    // NX-04: the coach must belong to the caller's gym — otherwise a
+    // caller could attach another gym's coach to their class.
+    const { data: coach, error: coachError } = await supabase
+      .from("coaches")
+      .select("id")
+      .eq("id", parsed.data.coachId)
+      .eq("gym_id", context.gymId)
+      .maybeSingle();
+
+    if (coachError || !coach) {
+      return { error: "The selected coach does not belong to your workspace." };
+    }
+
     const { error } = await supabase.from("classes").insert({
       capacity: parsed.data.capacity,
       coach_id: parsed.data.coachId,
@@ -70,7 +84,7 @@ export async function enrollClientInClassAction(
   _previousState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requirePermission(PERMISSIONS.classesManage);
+  const context = await requirePermission(PERMISSIONS.classesManage);
   const parsed = enrollSchema.safeParse({
     classId: formData.get("classId"),
     clientId: formData.get("clientId"),
@@ -82,6 +96,33 @@ export async function enrollClientInClassAction(
 
   try {
     const supabase = (await createServerSupabaseClient()) as any;
+
+    // NX-04: both the class and the client must belong to the caller's
+    // gym. (Individual-type clients have gym_id NULL, so they cannot be
+    // enrolled here — the class form only lists this gym's clients, and
+    // an individual client must be added to the gym first.)
+    const [classResult, clientResult] = await Promise.all([
+      supabase
+        .from("classes")
+        .select("id")
+        .eq("id", parsed.data.classId)
+        .eq("gym_id", context.gymId)
+        .maybeSingle(),
+      supabase
+        .from("clients")
+        .select("id")
+        .eq("id", parsed.data.clientId)
+        .eq("gym_id", context.gymId)
+        .maybeSingle(),
+    ]);
+
+    if (classResult.error || !classResult.data) {
+      return { error: "The selected class does not belong to your workspace." };
+    }
+    if (clientResult.error || !clientResult.data) {
+      return { error: "The selected client does not belong to your workspace." };
+    }
+
     const { error } = await supabase.from("class_clients").insert({
       class_id: parsed.data.classId,
       client_id: parsed.data.clientId,

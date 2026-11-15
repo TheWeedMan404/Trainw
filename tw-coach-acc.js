@@ -97,7 +97,10 @@ T.ar={
 };
 if(window.TrainwTranslations?.coachDashboardAr)T.ar=Object.assign({},T.ar,window.TrainwTranslations.coachDashboardAr);
 function showPage(p){$$('.page').forEach(x=>x.classList.add('hidden'));$('#'+p+'-page')?.classList.remove('hidden');$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===p))}
-function coachGymScopedQuery(query,column='gym_id',mode='match'){if(currentGymId)return query.eq(column,currentGymId);if(mode==='all')return query;return query.is(column,null)}
+// FE-06: 'all' mode used to return the query UNFILTERED when no gym was
+// selected — every gym's rows. It now matches nothing (no gym has the nil
+// UUID) until a gym is selected; 'match' mode is unchanged.
+function coachGymScopedQuery(query,column='gym_id',mode='match'){if(currentGymId)return query.eq(column,currentGymId);if(mode==='all')return query.eq(column,'00000000-0000-0000-0000-000000000000');return query.is(column,null)}
 async function loadCoachGymMemberships(){if(!currentUserId)return[];const membershipsRes=await Trainw.api.run(sb.from('gym_memberships').select('gym_id').eq('user_id',currentUserId).eq('status','active').eq('portal','coach'),{context:'load coach gym memberships',fallback:[]});const gymIds=Array.from(new Set((membershipsRes.data||[]).map(item=>item.gym_id).filter(Boolean)));if(!gymIds.length){coachGymMemberships=[];return coachGymMemberships}const gymsRes=await Trainw.api.run(sb.from('gyms').select('id,name').in('id',gymIds),{context:'load coach gyms',fallback:[]});const gymMap=new Map((gymsRes.data||[]).map(gym=>[gym.id,gym.name||'Gym']));coachGymMemberships=gymIds.map(gymId=>({gym_id:gymId,name:gymMap.get(gymId)||'Gym'})).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{sensitivity:'base'}));return coachGymMemberships}
 function resolveActiveCoachGymId(fallbackGymId=null){const storedGymId=localStorage.getItem('trainw_active_gym')||'';const gymIds=new Set((coachGymMemberships||[]).map(item=>item.gym_id));if(storedGymId&&gymIds.has(storedGymId))return storedGymId;if(fallbackGymId&&gymIds.has(fallbackGymId))return fallbackGymId;return coachGymMemberships[0]?.gym_id||fallbackGymId||null}
 function renderCoachGymSwitcher(){const host=$('#coach-gym-switcher');if(!host)return;if((coachGymMemberships||[]).length<=1){host.classList.add('hidden');host.innerHTML='';return}host.classList.remove('hidden');host.innerHTML=`<label class="coach-gym-switcher-label" for="coach-gym-select">${Trainw.escapeHTML(copy('Salle active','Active gym','الصالة الحالية'))}</label><select class="form-input coach-gym-switcher-select" id="coach-gym-select">${coachGymMemberships.map(item=>`<option value="${item.gym_id}" ${item.gym_id===currentGymId?'selected':''}>${Trainw.escapeHTML(item.name||'Gym')}</option>`).join('')}</select>`}
@@ -191,18 +194,21 @@ async function bootstrap(){
       ),
       {context:'load coach templates',fallback:[]}
     ),
-    Trainw.api.run(
-      coachGymScopedQuery(
-        sb.from('messages')
-          .select('*')
-          .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
-          .order('created_at',{ascending:false})
-          .limit(200),
-        'gym_id',
-        'all'
-      ),
-      {context:'load coach messages',fallback:[]}
-    )
+    // FE-06: 'all' mode no longer returns the query unfiltered when no
+    // gym is selected (that leaked every gym's messages). With no gym it
+    // matches nothing (no gym has the nil UUID); with a gym it scopes to
+    // it. Call sites that load messages refuse explicitly as well.
+    currentGymId
+      ? Trainw.api.run(
+          sb.from('messages')
+            .select('*')
+            .eq('gym_id', currentGymId)
+            .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
+            .order('created_at',{ascending:false})
+            .limit(200),
+          {context:'load coach messages',fallback:[]}
+        )
+      : Promise.resolve({data:[]})
   ]);
 
   coachProfile=cp.data||null;
@@ -436,11 +442,15 @@ async function openThread(id){
   $('#coach-conv-header').innerHTML=`<div class="thread-header-main"><div class="person-avatar">${Trainw.escapeHTML(ini(th.name))}</div><div><strong>${Trainw.escapeHTML(th.name)}</strong><div class="activity-meta">${Trainw.escapeHTML(copy('Client actif','Active client','عميل نشط'))}</div></div></div>`;
   $('#coach-conv-messages').innerHTML=th.messages.length?th.messages.map(m=>`<div class="thread-message ${m.sender_id===currentUserId?'mine':''}"><div>${Trainw.escapeHTML(m.content||'')}</div><div class="thread-message-meta">${Trainw.escapeHTML(fmtDT(m.created_at))}</div></div>`).join(''):`<p class="empty-state">${t('noMessages')}</p>`;
   $('#coach-conv-messages').scrollTop=$('#coach-conv-messages').scrollHeight;
-  await Trainw.api.run(sb.from('messages').update({is_read:true}).eq('receiver_id',currentUserId).eq('sender_id',id),{context:'mark coach messages read',fallback:null,silent:true});
+  // FE-06: mark-read is scoped to this gym; with no gym selected it does
+  // not run at all.
+  if (currentGymId) {
+    await Trainw.api.run(sb.from('messages').update({is_read:true}).eq('gym_id',currentGymId).eq('receiver_id',currentUserId).eq('sender_id',id),{context:'mark coach messages read',fallback:null,silent:true});
+  }
   markCoachThreadReadLocal(id);
   renderMessages();
 }
-async function openClientPanel(id){const c=assignedClients.find(x=>x.id===id);if(!c)return;const [goalRes,planRes,logsRes,msgRes]=await Promise.all([Trainw.api.run(coachGymScopedQuery(sb.from('client_goals').select('*').eq('client_id',id).order('created_at',{ascending:false}).limit(1)),{context:'client goal panel',fallback:[]}),Trainw.api.run(coachGymScopedQuery(sb.from('workout_plans').select('*').eq('client_id',id).order('updated_at',{ascending:false}).limit(1)),{context:'client plan panel',fallback:[]}),Trainw.api.run(coachGymScopedQuery(sb.from('workout_logs').select('*').eq('client_id',id).order('completed_at',{ascending:false}).limit(8)),{context:'client logs panel',fallback:[]}),Trainw.api.run(coachGymScopedQuery(sb.from('messages').select('*').or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${currentUserId})`).order('created_at',{ascending:false}).limit(40)),{context:'client msg panel',fallback:[]})]);const plan=(planRes.data||[])[0]||null;const ex=plan?await Trainw.api.run(sb.from('workout_exercises').select('*').eq('plan_id',plan.id).order('order_index',{ascending:true}),{context:'client ex panel',fallback:[]}):{data:[]};clientPanel={id,tab:'overview',data:{client:c,goal:(goalRes.data||[])[0]||null,plan,ex:ex.data||[],logs:logsRes.data||[],messages:msgRes.data||[]},chart:null};renderClientPanel();Trainw.openPanel('coach-client-panel','coach-client-panel-backdrop')}
+async function openClientPanel(id){const c=assignedClients.find(x=>x.id===id);if(!c)return;const [goalRes,planRes,logsRes,msgRes]=await Promise.all([Trainw.api.run(coachGymScopedQuery(sb.from('client_goals').select('*').eq('client_id',id).order('created_at',{ascending:false}).limit(1)),{context:'client goal panel',fallback:[]}),Trainw.api.run(coachGymScopedQuery(sb.from('workout_plans').select('*').eq('client_id',id).order('updated_at',{ascending:false}).limit(1)),{context:'client plan panel',fallback:[]}),Trainw.api.run(coachGymScopedQuery(sb.from('workout_logs').select('*').eq('client_id',id).order('completed_at',{ascending:false}).limit(8)),{context:'client logs panel',fallback:[]}),currentGymId?Trainw.api.run(sb.from('messages').select('*').eq('gym_id',currentGymId).or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${currentUserId})`).order('created_at',{ascending:false}).limit(40),{context:'client msg panel',fallback:[]}):Promise.resolve({data:[]})]);const plan=(planRes.data||[])[0]||null;const ex=plan?await Trainw.api.run(sb.from('workout_exercises').select('*').eq('plan_id',plan.id).order('order_index',{ascending:true}),{context:'client ex panel',fallback:[]}):{data:[]};clientPanel={id,tab:'overview',data:{client:c,goal:(goalRes.data||[])[0]||null,plan,ex:ex.data||[],logs:logsRes.data||[],messages:msgRes.data||[]},chart:null};renderClientPanel();Trainw.openPanel('coach-client-panel','coach-client-panel-backdrop')}
 function renderClientPanel(){
   const D=clientPanel.data;
   if(!D)return;
@@ -482,7 +492,7 @@ async function respondToBooking(sessionId,decision){if(!window.confirm(coachDeci
 async function cancelCoachSession(sessionId){if(!window.confirm(coachDecisionCopy('cancel')))return;const btn=$(`[data-session-action="cancel"][data-session-id="${sessionId}"]`);setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.rpc('cancel_session_booking',{p_session_id:sessionId,p_reason:null}),{context:'cancel coach session',fallback:null});if(r.error)return;await runCoachReload()}finally{setCoachBusy(btn,false)}}
 async function completeBooking(sessionId){if(!window.confirm(coachDecisionCopy('complete')))return;const btn=$(`[data-session-action="complete"][data-session-id="${sessionId}"]`);setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.rpc('complete_session_booking',{p_session_id:sessionId}),{context:'complete coach session',fallback:null});if(r.error)return;await runCoachReload()}finally{setCoachBusy(btn,false)}}
 async function sendCoachMessage(){const thread=threads.find(x=>x.id===activeThreadId),content=$('#coach-msg-input').value.trim();if(!thread||!content)return;const btn=$('#btn-send-coach-message');setCoachBusy(btn,true);try{const r=await Trainw.api.run(sb.from('messages').insert({sender_id:currentUserId,receiver_id:thread.id,gym_id:currentGymId??null,content}),{context:'send coach message',fallback:null});if(r.error)return;$('#coach-msg-input').value='';Trainw.ui.showToast(t('messageSent'),'success');queueCoachReload(120)}finally{setCoachBusy(btn,false)}}
-async function saveCoachProfile(){const name=$('#coach-name-input').value.trim(),phone=$('#coach-phone-input').value.trim(),rate=$('#coach-rate-input').value?+$('#coach-rate-input').value:null;if(!name){Trainw.ui.showToast(t('nameLabel'),'info');return}if(rate!==null&&(!Number.isFinite(rate)||rate<0)){Trainw.ui.showToast(currentLang==='fr'?'Tarif invalide.':'Invalid rate.','info');return}const btn=$('#btn-save-coach-profile');setCoachBusy(btn,true);try{const userRes=await Trainw.api.run(sb.from('users').update({name,phone:phone||null,language_preference:currentLang}).eq('id',currentUserId),{context:'save coach user',fallback:null});if(userRes.error)throw userRes.error;const profilePayload={user_id:currentUserId,gym_id:currentGymId??null,specialty:$('#coach-speciality-input').value.trim()||null,bio:$('#coach-bio-input').value.trim()||null,experience_years:$('#coach-experience-input').value?+$('#coach-experience-input').value:null,price_per_session:rate};const profileRes=coachProfile?.id?await Trainw.api.run(sb.from('coach_profiles').update(profilePayload).eq('id',coachProfile.id),{context:'save coach profile',fallback:null}):await Trainw.api.run(sb.from('coach_profiles').insert(profilePayload),{context:'create coach profile',fallback:null});if(profileRes?.error)throw profileRes.error;Trainw.ui.showToast(t('profileSaved'),'success');await runCoachReload()}catch(error){Trainw.ui.showToast(error?.message||'Erreur','error')}finally{setCoachBusy(btn,false)}}
+async function saveCoachProfile(){const name=$('#coach-name-input').value.trim(),phone=$('#coach-phone-input').value.trim();if(!name){Trainw.ui.showToast(t('nameLabel'),'info');return}const btn=$('#btn-save-coach-profile');setCoachBusy(btn,true);try{const userRes=await Trainw.api.run(sb.from('users').update({name,phone:phone||null,language_preference:currentLang}).eq('id',currentUserId),{context:'save coach user',fallback:null});if(userRes.error)throw userRes.error;const profilePayload={user_id:currentUserId,gym_id:currentGymId??null,specialty:$('#coach-speciality-input').value.trim()||null,bio:$('#coach-bio-input').value.trim()||null,experience_years:$('#coach-experience-input').value?+$('#coach-experience-input').value:null};const profileRes=coachProfile?.id?await Trainw.api.run(sb.from('coach_profiles').update(profilePayload).eq('id',coachProfile.id),{context:'save coach profile',fallback:null}):await Trainw.api.run(sb.from('coach_profiles').insert(profilePayload),{context:'create coach profile',fallback:null});if(profileRes?.error)throw profileRes.error;Trainw.ui.showToast(t('profileSaved'),'success');await runCoachReload()}catch(error){Trainw.ui.showToast(error?.message||'Erreur','error')}finally{setCoachBusy(btn,false)}}
 function handleCoachSessionClick(e){
   const action=e.target.closest('[data-session-action]');
   if(action){

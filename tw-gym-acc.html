@@ -12,8 +12,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.min.js" integrity="sha384-gnyZit14c5lnGcarmA166QQjjJXpucw25ogZXuwH3HxxY904zHkBqmxVpelsPorb" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/lucide@1.73.0/dist/umd/lucide.min.js" integrity="sha384-DdDSdhkTpRzHOpRXj0iG8b2rBu5xPWN5SFqnCEZ0YKb/Yh1Ymmc9PVsYEZZOq40r" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="tw-gym-acc.css?v=20260420-3">
   <link rel="stylesheet" href="trainw-enhancements.css">
     <link rel="stylesheet" href="trainw-v17.css">
@@ -735,8 +735,10 @@
           </div>
           <div class="form-row terminal-config-row">
             <div class="form-group" style="flex:1;">
-              <label class="form-label">PIN administrateur</label>
-              <input class="form-input" id="terminal-admin-pin" type="text" placeholder="1234">
+              <label class="form-label">PIN administrateur (4–8 chiffres)</label>
+              <!-- FE-04: the PIN is set server-side (gate-terminal-auth) and
+                   never appears in the terminal URL. -->
+              <input class="form-input" id="terminal-admin-pin" type="password" inputmode="numeric" autocomplete="off" placeholder="1234">
             </div>
             <div class="form-group" style="flex:1;">
               <label class="form-label">Device ID</label>
@@ -747,7 +749,9 @@
             <label class="form-label">URL du terminal</label>
             <div class="terminal-url-preview" id="terminal-url-preview"></div>
           </div>
+          <p class="terminal-pin-status" id="terminal-pin-status"></p>
           <div class="terminal-config-actions">
+            <button class="btn-secondary" id="btn-set-terminal-pin" type="button">Définir le PIN</button>
             <button class="btn-secondary" id="btn-copy-terminal-url" type="button">Copier l'URL</button>
             <button class="btn-primary" id="btn-open-terminal" type="button">Ouvrir le terminal</button>
           </div>
@@ -1249,11 +1253,8 @@
 <!-- TOAST -->
 <div class="toast" id="toast"><div class="toast-message" id="toast-msg"></div></div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  window.__TRAINW_URL__ = '%%SUPABASE_URL%%';
-  window.__TRAINW_KEY__ = '%%SUPABASE_ANON_KEY%%';
-</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js" integrity="sha384-Emf5ZVIUiarAdhkgtqK+5/Z5qIvM6QoVrS+qAVtfyZVuD5lIHrac0me485+Antp0" crossorigin="anonymous"></script>
+<script src="trainw-config.js"></script>
 <script src="trainw-tenant-utils.js?v=20260412-1"></script>
 <script src="trainw-core.js?v=20260403-1"></script>
 <script src="tw-gym-acc.js?v=20260420-3"></script>

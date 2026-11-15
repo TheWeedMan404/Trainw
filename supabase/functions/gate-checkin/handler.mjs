@@ -3,7 +3,7 @@ const VALID_TYPES = new Set(['qr', 'rfid_card', 'fingerprint', 'face']);
 function buildCorsHeaders(options) {
   return {
     'Access-Control-Allow-Origin': safeString(options?.getEnv?.('ALLOWED_ORIGIN')) || 'null',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-terminal-token',
   };
 }
 
@@ -21,17 +21,124 @@ function safeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+// Phase 1b (turnstile flag, user requirement 2026-11-15): turnstiles are
+// deactivated by default. The gate-checkin function fails closed while the
+// flag is off — no check-in is processed, no token is consumed, nothing is
+// logged as an access attempt. Re-enable by setting the TURNSTILES_ENABLED
+// edge secret to exactly 'true' (Supabase dashboard > Edge Functions >
+// gate-checkin > Secrets, or `supabase secrets set TURNSTILES_ENABLED=true`).
+// Unset, or any value other than 'true', means OFF.
+function turnstilesEnabled(options) {
+  return safeString(options?.getEnv?.('TURNSTILES_ENABLED')) === 'true';
+}
+
+async function sha256Hex(value) {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// P1-12 (GT-03): per-IP + per-device rate limiting, enforced before any
+// token/credential lookup so a flood cannot hammer the database or probe
+// token validity. Limits are per fixed calendar minute; the counters live in
+// public.gate_rate_limits and are consumed atomically by the
+// trainw_gate_rate_limit_consume() RPC (see migration
+// 20261114040000_phase1_gate_rate_limits.sql).
+// A busy gym terminal does a few scans a minute, so 60/min per IP and
+// 30/min per device leave ample headroom while stopping a brute-force flood.
+const RATE_LIMITS = {
+  perIpPerMinute: 60,
+  perDevicePerMinute: 30,
+};
+
+function getClientIp(req) {
+  const forwardedFor = safeString(req?.headers?.get?.('x-forwarded-for'));
+  if (forwardedFor) {
+    const first = forwardedFor.split(',')[0].trim();
+    if (first) return first.slice(0, 45);
+  }
+  const connectingIp = safeString(req?.headers?.get?.('cf-connecting-ip'));
+  if (connectingIp) return connectingIp.slice(0, 45);
+  const realIp = safeString(req?.headers?.get?.('x-real-ip'));
+  if (realIp) return realIp.slice(0, 45);
+  return 'unknown';
+}
+
+// Returns { allowed: true } or { allowed: false, limitedBy: 'ip' | 'device' }.
+// Fail OPEN on limiter infrastructure errors (console.warn): the gate must
+// keep letting members in when the limiter itself is down — the token is
+// 96-bit, single-use and short-lived, so the limiter is defence-in-depth,
+// not the sole brute-force control.
+async function checkRateLimits(admin, { clientIp, deviceId }) {
+  const consume = async (bucketKey, limit) => {
+    const { data, error } = await admin.rpc('trainw_gate_rate_limit_consume', {
+      p_bucket_key: bucketKey,
+      p_limit: limit,
+    });
+    if (error) throw error;
+    return data === true;
+  };
+
+  try {
+    const ipAllowed = await consume(`ip:${clientIp}`, RATE_LIMITS.perIpPerMinute);
+    if (!ipAllowed) return { allowed: false, limitedBy: 'ip' };
+
+    if (deviceId) {
+      const deviceAllowed = await consume(`device:${deviceId}`, RATE_LIMITS.perDevicePerMinute);
+      if (!deviceAllowed) return { allowed: false, limitedBy: 'device' };
+    }
+
+    return { allowed: true };
+  } catch (error) {
+    console.warn('[gate-checkin] rate limit check failed, failing open', error);
+    return { allowed: true };
+  }
+}
+
+// FE-04 (Phase 1b): the terminal proves it was unlocked with the gym's PIN
+// by sending the session token issued by gate-terminal-auth as the
+// x-terminal-token header. Only the SHA-256 hash of the token is stored
+// (gate_terminal_sessions.token_hash), so a leaked database row cannot be
+// replayed. Returns { ok: true, session } or { ok: false }.
+// When expectedGymId is given, the session must belong to that gym.
+async function verifyTerminalSession(admin, req, expectedGymId) {
+  const token = safeString(req?.headers?.get?.('x-terminal-token'));
+  if (!token) return { ok: false };
+  const tokenHash = await sha256Hex(token);
+  const { data, error } = await admin
+    .from('gate_terminal_sessions')
+    .select('id, gym_id, expires_at')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+  if (error || !data) return { ok: false };
+  if (new Date(data.expires_at).getTime() <= Date.now()) return { ok: false };
+  if (expectedGymId && data.gym_id !== expectedGymId) return { ok: false };
+  // Best-effort last-seen refresh; never fail the check-in over it.
+  try {
+    await admin
+      .from('gate_terminal_sessions')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', data.id);
+  } catch (error) {
+    console.warn('[gate-checkin] last_seen_at refresh failed', error);
+  }
+  return { ok: true, session: data };
+}
+
 function parseMembershipEnd(dateValue) {
   if (!dateValue) return null;
   const parsed = new Date(`${dateValue}T23:59:59.999Z`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+// DB-47 (Phase 1b): the credential reference is first 4 characters + '...'
+// ('****' for 4 characters or fewer) — the same rule as the SQL
+// truncate_credential_ref() in migration 20261115010000.
 function truncateCredentialRef(value) {
   const trimmed = safeString(value);
   if (!trimmed) return null;
-  if (trimmed.length <= 18) return trimmed;
-  return `${trimmed.slice(0, 8)}...${trimmed.slice(-4)}`;
+  if (trimmed.length <= 4) return '****';
+  return `${trimmed.slice(0, 4)}...`;
 }
 
 function normalizeAccessBody(body) {
@@ -122,6 +229,12 @@ export function createGateCheckinHandler(options) {
         return json({ access: false, reason: 'method_not_allowed' }, 405, corsHeaders);
       }
 
+      // Turnstile flag FIRST: while it is off, nothing below runs — no
+      // rate-limit consumption, no token lookup, no check-in.
+      if (!turnstilesEnabled(options)) {
+        return json({ access: false, reason: 'turnstiles_disabled' }, 503, corsHeaders);
+      }
+
       const payload = await req.json();
       const type = safeString(payload?.type || 'qr').toLowerCase() || 'qr';
       const requestedGymId = safeString(payload?.gym_id);
@@ -137,6 +250,29 @@ export function createGateCheckinHandler(options) {
       }
       const admin = adminState.client;
 
+      // P1-12: rate-limit before any credential/token lookup. A 429 reveals
+      // nothing about token validity, and limited attempts are NOT written to
+      // gate_access_log (that would let an attacker flood the log table).
+      const rateLimit = await checkRateLimits(admin, {
+        clientIp: getClientIp(req),
+        deviceId: deviceId || null,
+      });
+      if (!rateLimit.allowed) {
+        return json(
+          { access: false, reason: 'rate_limited', limited_by: rateLimit.limitedBy },
+          429,
+          { ...corsHeaders, 'Retry-After': '60' },
+        );
+      }
+
+      // FE-04: the terminal must prove it was unlocked with the gym PIN
+      // (gate-terminal-auth session token). The gym binding is checked
+      // again once the effective gym is known, in each branch below.
+      const terminalSession = await verifyTerminalSession(admin, req, null);
+      if (!terminalSession.ok) {
+        return json({ access: false, reason: 'invalid_terminal_session' }, 401, corsHeaders);
+      }
+
       if (type !== 'qr') {
         const credentialData = safeString(payload?.credential_data || payload?.credential_value);
         if (!requestedGymId) {
@@ -144,6 +280,9 @@ export function createGateCheckinHandler(options) {
         }
         if (!credentialData) {
           return json({ access: false, reason: 'missing_credential_data' }, 400, corsHeaders);
+        }
+        if (terminalSession.session.gym_id !== requestedGymId) {
+          return json({ access: false, reason: 'invalid_terminal_session' }, 401, corsHeaders);
         }
 
         const { data: rpcResult, error: rpcError } = await admin.rpc('validate_member_credential', {
@@ -231,6 +370,9 @@ export function createGateCheckinHandler(options) {
       if (requestedGymId && requestedGymId !== gateSession.gym_id) {
         return denyQr(403, 'gym_mismatch', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
       }
+      if (terminalSession.session.gym_id !== gateSession.gym_id) {
+        return denyQr(401, 'invalid_terminal_session', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
+      }
       if (gateSession.used) {
         return denyQr(409, 'token_used', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
       }
@@ -240,14 +382,32 @@ export function createGateCheckinHandler(options) {
         return denyQr(410, 'token_expired', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
       }
 
+      // DB-23: membership is decided by the single shared rule
+      // (membership_is_active_for_access) — paid/trial/waived, or
+      // price_paid > 0 and not cancelled/refunded/overdue, with end_date
+      // >= today. The old payment_status = 'paid' + end-date check is
+      // retired (trial/waived members were wrongly refused, and the
+      // profile lookup had no gym filter). The profile is still read,
+      // gym-filtered, for the member's name and days_left only.
+      const { data: membershipActive, error: membershipError } = await admin.rpc(
+        'membership_is_active_for_access',
+        {
+          p_client_id: gateSession.client_id,
+          p_gym_id: gateSession.gym_id,
+          p_reference_date: new Date().toISOString().slice(0, 10),
+        },
+      );
+      if (membershipError) throw membershipError;
+
       const [
         { data: clientProfile, error: clientProfileError },
         { data: clientUser, error: clientUserError },
       ] = await Promise.all([
         admin
           .from('client_profiles')
-          .select('payment_status, membership_end_date')
+          .select('membership_end_date')
           .eq('user_id', gateSession.client_id)
+          .eq('gym_id', gateSession.gym_id)
           .maybeSingle(),
         admin
           .from('users')
@@ -259,38 +419,51 @@ export function createGateCheckinHandler(options) {
       if (clientProfileError) throw clientProfileError;
       if (clientUserError) throw clientUserError;
 
-      const membershipEnd = parseMembershipEnd(clientProfile?.membership_end_date ?? null);
-      if (!clientProfile || !membershipEnd || membershipEnd.getTime() < Date.now()) {
+      if (membershipActive !== true) {
         return denyQr(403, 'membership_inactive', {
           gym_id: gateSession.gym_id,
           client_id: gateSession.client_id,
           client_name: clientUser?.name || null,
         });
       }
-      if ((clientProfile.payment_status || '').toLowerCase() !== 'paid') {
-        return denyQr(403, 'payment_unpaid', {
-          gym_id: gateSession.gym_id,
-          client_id: gateSession.client_id,
-          client_name: clientUser?.name || null,
-        });
-      }
 
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-      const { data: recentCheckIns, error: recentCheckInsError } = await admin
+      const membershipEnd = parseMembershipEnd(clientProfile?.membership_end_date ?? null);
+      const daysLeft = membershipEnd
+        ? Math.max(0, Math.ceil((membershipEnd.getTime() - Date.now()) / 86400000))
+        : null;
+
+      // DB-24 / GT-08: graceful duplicate handling instead of a raw
+      // unique-index error. Within 15 minutes of the last check-in the
+      // member is already inside; a second check-in later the same day
+      // is a duplicate for the day. Both are logged denials, not errors.
+      const { data: lastCheckIns, error: lastCheckInError } = await admin
         .from('check_ins')
-        .select('id')
+        .select('checked_in_at')
         .eq('gym_id', gateSession.gym_id)
         .eq('client_id', gateSession.client_id)
-        .gte('checked_in_at', twoHoursAgo)
+        .order('checked_in_at', { ascending: false })
         .limit(1);
 
-      if (recentCheckInsError) throw recentCheckInsError;
-      if (Array.isArray(recentCheckIns) && recentCheckIns.length > 0) {
-        return denyQr(409, 'duplicate_recent_checkin', {
-          gym_id: gateSession.gym_id,
-          client_id: gateSession.client_id,
-          client_name: clientUser?.name || null,
-        });
+      if (lastCheckInError) throw lastCheckInError;
+      if (Array.isArray(lastCheckIns) && lastCheckIns.length > 0) {
+        const lastAt = new Date(lastCheckIns[0].checked_in_at).getTime();
+        if (!Number.isNaN(lastAt) && Date.now() - lastAt < 15 * 60 * 1000) {
+          return denyQr(409, 'already_inside', {
+            gym_id: gateSession.gym_id,
+            client_id: gateSession.client_id,
+            client_name: clientUser?.name || null,
+            days_left: daysLeft,
+          });
+        }
+        const todayUtc = new Date().toISOString().slice(0, 10);
+        if (!Number.isNaN(lastAt) && new Date(lastAt).toISOString().slice(0, 10) === todayUtc) {
+          return denyQr(409, 'duplicate_checkin_today', {
+            gym_id: gateSession.gym_id,
+            client_id: gateSession.client_id,
+            client_name: clientUser?.name || null,
+            days_left: daysLeft,
+          });
+        }
       }
 
       const { data: consumedSession, error: consumeError } = await admin
@@ -310,8 +483,6 @@ export function createGateCheckinHandler(options) {
         return denyQr(409, 'token_used', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
       }
 
-      const daysLeft = Math.max(0, Math.ceil((membershipEnd.getTime() - Date.now()) / 86400000));
-
       const { error: insertCheckInError } = await admin
         .from('check_ins')
         .insert({
@@ -328,12 +499,23 @@ export function createGateCheckinHandler(options) {
 
       if (insertCheckInError) {
         if (insertCheckInError.code === '23505') {
-          return denyQr(409, 'duplicate_recent_checkin', {
+          return denyQr(409, 'duplicate_checkin_today', {
             gym_id: gateSession.gym_id,
             client_id: gateSession.client_id,
             client_name: clientUser?.name || null,
             days_left: daysLeft,
           });
+        }
+        // GT-07: the token was consumed but the check-in did not land.
+        // Un-consume it so the member can retry with the same QR instead
+        // of being locked out with a spent token.
+        try {
+          await admin
+            .from('gate_sessions')
+            .update({ used: false, used_at: null })
+            .eq('id', gateSession.id);
+        } catch (resetError) {
+          console.warn('[gate-checkin] failed to un-consume gate session after insert failure', resetError);
         }
         throw insertCheckInError;
       }
@@ -366,8 +548,10 @@ export function createGateCheckinHandler(options) {
         days_left: daysLeft,
       }, 200, corsHeaders);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'server_error';
-      return json({ access: false, reason }, 500, corsHeaders);
+      // GT-06: never leak internals (stack traces, SQL, Supabase error
+      // text) to the caller. The raw error goes to the server log only.
+      console.error('[gate-checkin] unexpected error', error);
+      return json({ access: false, reason: 'server_error' }, 500, corsHeaders);
     }
   };
 }

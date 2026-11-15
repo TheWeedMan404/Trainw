@@ -1,4 +1,5 @@
 import { ClientForm } from "@/components/forms/client-form";
+import { ClientRowActions } from "@/components/forms/client-row-actions";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -45,8 +46,22 @@ export default async function ClientsPage() {
                     <p className="mt-1 text-xs text-slate-500">
                       Created {formatDateTime(client.created_at)}
                     </p>
+                    {client.email || client.phone ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        {[client.email, client.phone].filter(Boolean).join(" · ")}
+                      </p>
+                    ) : null}
                   </div>
-                  <StatusBadge label={client.type} />
+                  <div className="flex flex-col items-end gap-2">
+                    <StatusBadge
+                      label={
+                        client.status === "pending"
+                          ? "Pending approval"
+                          : client.type
+                      }
+                    />
+                    <ClientRowActions clientId={client.id} status={client.status} />
+                  </div>
                 </div>
               ))
             ) : (

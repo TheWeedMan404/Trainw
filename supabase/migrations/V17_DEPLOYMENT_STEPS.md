@@ -17,12 +17,14 @@ Run each file separately. Both are idempotent (safe to re-run).
 
 ## Step 2 — Create demo auth accounts
 
-In Supabase Dashboard → Authentication → Users → "Add user":
+In Supabase Dashboard → Authentication → Users → "Add user". Use a strong,
+unique password per account — never reuse one across accounts and never write
+a password in this document (P1-8):
 
 | Email | Password | Role metadata |
 |---|---|---|
-| `admin@lakeclub.tn` | `LakeClub2026!` | `{"role":"gym_admin","name":"Sami Admin"}` |
-| `reception@lakeclub.tn` | `LakeClub2026!` | `{"role":"staff","name":"Rim Receptionist"}` |
+| `admin@lakeclub.tn` | *(set in Dashboard — strong, unique)* | `{"role":"gym_admin","name":"Sami Admin"}` |
+| `reception@lakeclub.tn` | *(set in Dashboard — strong, unique)* | `{"role":"staff","name":"Rim Receptionist"}` |
 
 After creating them, copy the generated UUIDs from the Users table.
 
@@ -67,6 +69,6 @@ Push to Vercel or run locally. No build step required (vanilla JS).
 
 ## Risks accepted for demo (non-blocking)
 
-- Anon key still in `env-config.js` — intentional, do not change before demo
+- Supabase anon key is injected at build time from the environment (P1-6/P1-8) — it must never appear in any committed file
 - ZKTeco relay trigger is simulation-only — QR flow works, physical gate does not
 - Staff landing page shows full shell for ~200ms before redirect — cosmetic only

@@ -7,6 +7,7 @@ export type Json =
   | Json[];
 
 export type ClientType = "gym" | "individual";
+export type ClientStatus = "pending" | "approved" | "rejected";
 export type ClassType = "group" | "private" | "supervising";
 export type AttendanceStatus = "checked_in" | "late" | "missed" | "excused";
 
@@ -123,26 +124,38 @@ export interface Database {
       clients: TableDefinition<
         {
           client_code: string;
+          contact_verified: boolean;
           created_at: string;
+          email: string | null;
           gym_id: string | null;
           id: string;
           name: string;
+          phone: string | null;
+          status: ClientStatus;
           type: ClientType;
         },
         {
           client_code?: string | null;
+          contact_verified?: boolean;
           created_at?: string;
+          email?: string | null;
           gym_id?: string | null;
           id?: string;
           name: string;
+          phone?: string | null;
+          status?: ClientStatus;
           type: ClientType;
         },
         {
           client_code?: string | null;
+          contact_verified?: boolean;
           created_at?: string;
+          email?: string | null;
           gym_id?: string | null;
           id?: string;
           name?: string;
+          phone?: string | null;
+          status?: ClientStatus;
           type?: ClientType;
         }
       >;

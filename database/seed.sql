@@ -9,14 +9,25 @@ DECLARE
   v_client_b uuid;
   v_client_c uuid;
 BEGIN
-  SELECT id
-  INTO v_gym_id
-  FROM public.gyms
-  ORDER BY created_at
-  LIMIT 1;
-
+  -- DB-63: the gym must be named explicitly (trainw.seed_gym_id), and the
+  -- script refuses to run when more than one gym exists — never pick the
+  -- oldest gym with ORDER BY created_at LIMIT 1. Set it first, in the
+  -- same SQL Editor session:
+  --   SELECT set_config('trainw.seed_gym_id', '<gym uuid>', false);
+  v_gym_id := NULLIF(BTRIM(current_setting('trainw.seed_gym_id', true)), '')::uuid;
   IF v_gym_id IS NULL THEN
-    RAISE EXCEPTION 'Create a gym workspace first, then run database/seed.sql.';
+    IF (SELECT count(*) FROM public.gyms) = 1 THEN
+      SELECT id INTO v_gym_id FROM public.gyms;
+    ELSE
+      RAISE EXCEPTION 'Set the target gym first: SELECT set_config(''trainw.seed_gym_id'', ''<gym uuid>'', false); then re-run database/seed.sql.';
+    END IF;
+  END IF;
+
+  IF (SELECT count(*) FROM public.gyms) > 1 THEN
+    RAISE EXCEPTION 'Refusing: more than one gym exists in this database. This seed script only runs on a single-gym database.';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.gyms WHERE id = v_gym_id) THEN
+    RAISE EXCEPTION 'Gym % does not exist.', v_gym_id;
   END IF;
 
   INSERT INTO public.coaches (gym_id, name, rating)

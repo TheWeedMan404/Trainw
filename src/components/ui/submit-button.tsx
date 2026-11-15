@@ -13,5 +13,11 @@ export function SubmitButton({
 }) {
   const { pending } = useFormStatus();
 
-  return <Button type="submit">{pending ? pendingLabel : children}</Button>;
+  // NX-13: the pending state must actually disable the button — without
+  // this, a double click submits the same server action twice.
+  return (
+    <Button disabled={pending} type="submit">
+      {pending ? pendingLabel : children}
+    </Button>
+  );
 }

@@ -28,10 +28,10 @@ export function StaffUserForm({
         <input id="staff-email" name="email" placeholder="staff@lakeclub.tn" type="email" />
       </div>
 
-      <div className="space-y-2">
-        <label htmlFor="staff-password">Temporary password</label>
-        <input id="staff-password" name="password" placeholder="Minimum 8 characters" type="password" />
-      </div>
+      <p className="text-sm text-slate-500">
+        The staff member receives an invite email and sets their own password —
+        no temporary password is stored here.
+      </p>
 
       <div className="space-y-2">
         <label htmlFor="staff-role">Assigned role</label>
@@ -59,7 +59,7 @@ export function StaffUserForm({
         </p>
       ) : null}
 
-      <SubmitButton pendingLabel="Creating staff user...">Create staff user</SubmitButton>
+      <SubmitButton pendingLabel="Sending invitation...">Invite staff user</SubmitButton>
     </form>
   );
 }
