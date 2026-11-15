@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import {
   hasPermission,
+  normalisePermissions,
   type PermissionKey,
   type PermissionMap,
 } from "@/lib/permissions";
@@ -29,16 +30,6 @@ export type WorkspaceContext = {
   roleName: string;
   userId: string;
 };
-
-function normalisePermissions(input: Json | null | undefined): PermissionMap {
-  if (!input || Array.isArray(input) || typeof input !== "object") {
-    return {};
-  }
-
-  const entries = Object.entries(input).map(([key, value]) => [key, Boolean(value)]);
-
-  return Object.fromEntries(entries) as PermissionMap;
-}
 
 export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | null> => {
   const supabase = await createServerSupabaseClient();
@@ -94,7 +85,10 @@ export async function requirePermission(permission: PermissionKey) {
   const context = await requireWorkspaceContext();
 
   if (!hasPermission(context.permissions, permission)) {
-    redirect("/dashboard?forbidden=1");
+    // NX-18: a dedicated page that requires no permission. The old
+    // target (/dashboard?forbidden=1) was itself permission-gated, so a
+    // role without dashboard.view looped until the browser gave up.
+    redirect("/forbidden");
   }
 
   return context;

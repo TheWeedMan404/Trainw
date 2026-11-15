@@ -36,12 +36,18 @@ The hardware controller only needs to check `access`.
 
 ### QR
 
+The QR `token` is a single opaque 128-bit crypto-random string (32 hex
+characters). It carries no user id, gym id, or timestamp — the member and
+gym come from the `gate_sessions` row the token points to, and the
+legacy dotted format (`userId.gymId.timestamp.random`) is rejected by
+the handler. Tokens live 60 seconds and are single-use.
+
 ```json
 {
   "type": "qr",
   "gym_id": "GYM_UUID",
   "device_id": "gate-1",
-  "token": "CLIENT_UUID.GYM_UUID.random.signature"
+  "token": "9f2c4a7e1b83d05f6a24c9e0b817d3a5"
 }
 ```
 

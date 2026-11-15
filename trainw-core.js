@@ -1197,46 +1197,6 @@
     });
   }
 
-  async function callEdge(client, type, payload, options) {
-    const config = {
-      functionName: 'ai-proxy',
-      rawBody: null,
-      ...(options || {}),
-    };
-    const sessionResult = await getSession(client);
-    const headers = {
-      'Content-Type': 'application/json',
-      apikey: SUPABASE_ANON,
-    };
-
-    if (sessionResult.session?.access_token) {
-      headers.Authorization = 'Bearer ' + sessionResult.session.access_token;
-    }
-
-    const response = await fetch(SUPABASE_URL + '/functions/v1/' + config.functionName, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(config.rawBody || { type, payload }),
-    });
-
-    const rawText = await response.text();
-    let parsed = null;
-    try {
-      parsed = rawText ? JSON.parse(rawText) : {};
-    } catch (parseError) {
-      parsed = { error: rawText || 'Invalid response payload' };
-    }
-
-    if (!response.ok || parsed?.error) {
-      throw normalizeError(
-        parsed?.error || response.statusText || 'Edge function call failed',
-        'Edge function call failed'
-      );
-    }
-
-    return parsed;
-  }
-
   function installGlobalErrorHandlers() {
     if (window.__trainwGlobalErrorHandlersInstalled) return;
     window.__trainwGlobalErrorHandlersInstalled = true;
@@ -1282,7 +1242,6 @@
     installTextRepairObserver,
     api: {
       run,
-      edge: callEdge,
     },
     auth: {
       getSession,

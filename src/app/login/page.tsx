@@ -1,9 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
 import { ConfigNotice } from "@/components/ui/config-notice";
 import { Card } from "@/components/ui/card";
 import { isSupabaseConfigured } from "@/lib/env";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getWorkspaceContext } from "@/lib/workspace";
 
 export default async function LoginPage({
   searchParams,
@@ -16,6 +19,20 @@ export default async function LoginPage({
         <ConfigNotice />
       </main>
     );
+  }
+
+  // NX-27: a signed-in user has no business on the sign-in form — send
+  // them to the dashboard instead of showing the form again (and keep
+  // the redirectTo parameter out of reach of already-signed-in users).
+  // NX-28: but only when they actually HAVE a workspace — an orphaned
+  // account (no users row) goes to /auth/recover instead, or /login ->
+  // /dashboard -> /login would loop forever.
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) {
+    redirect((await getWorkspaceContext()) ? "/dashboard" : "/auth/recover");
   }
 
   const params = await searchParams;
@@ -34,6 +51,14 @@ export default async function LoginPage({
         <div className="mt-6">
           <LoginForm redirectTo={params.redirectTo} />
         </div>
+
+        <p className="mt-6 text-sm text-slate-600">
+          Forgot your password?{" "}
+          <Link className="font-medium text-brand-700" href="/forgot-password">
+            Reset it here
+          </Link>
+          .
+        </p>
 
         <p className="mt-6 text-sm text-slate-600">
           Need a new gym workspace?{" "}

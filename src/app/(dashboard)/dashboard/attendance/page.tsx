@@ -1,16 +1,21 @@
 import { AttendanceForm } from "@/components/forms/attendance-form";
+import { AttendanceRowActions } from "@/components/forms/attendance-row-actions";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getAttendancePageData } from "@/lib/queries";
+import { parsePageParam } from "@/lib/pagination";
 import { formatDateTime } from "@/lib/utils";
 import { requirePermission } from "@/lib/workspace";
 
-export default async function AttendancePage() {
+export default async function AttendancePage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const context = await requirePermission(PERMISSIONS.attendanceManage);
-  const { attendance, classes, clients } = await getAttendancePageData(context.gymId);
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const { attendance, classes, clients, hasMore } = await getAttendancePageData(context.gymId, page);
 
   return (
     <div className="space-y-6">
@@ -50,7 +55,10 @@ export default async function AttendancePage() {
                       {formatDateTime(entry.timestamp)}
                     </p>
                   </div>
-                  <StatusBadge label={entry.status.replace("_", " ")} tone={entry.status} />
+                  <div className="flex flex-col items-end gap-2">
+                    <StatusBadge label={entry.status.replace("_", " ")} tone={entry.status} />
+                    <AttendanceRowActions attendanceId={entry.id} />
+                  </div>
                 </div>
               ))
             ) : (
@@ -60,6 +68,7 @@ export default async function AttendancePage() {
               />
             )}
           </div>
+          <Pagination hasMore={hasMore} page={page} />
         </Card>
       </div>
     </div>

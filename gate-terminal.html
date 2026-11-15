@@ -66,9 +66,9 @@
     </footer>
   </div>
 
-  <div class="admin-modal hidden" id="admin-modal" aria-hidden="true">
+  <div class="admin-modal hidden" id="admin-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="admin-title">
     <div class="admin-dialog">
-      <div class="admin-title">Code administrateur</div>
+      <div class="admin-title" id="admin-title">Code administrateur</div>
       <div class="admin-display" id="admin-display">••••</div>
       <div class="admin-error" id="admin-error"></div>
       <div class="admin-pad">
@@ -81,9 +81,9 @@
         <button type="button" data-key="7">7</button>
         <button type="button" data-key="8">8</button>
         <button type="button" data-key="9">9</button>
-        <button type="button" data-key="clear">C</button>
+        <button type="button" data-key="clear" aria-label="Effacer">C</button>
         <button type="button" data-key="0">0</button>
-        <button type="button" data-key="enter">OK</button>
+        <button type="button" data-key="enter" aria-label="Valider">OK</button>
       </div>
       <button class="admin-close" type="button" id="admin-close">Fermer</button>
     </div>

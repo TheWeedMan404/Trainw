@@ -1,17 +1,23 @@
 import { ClassEnrollmentForm } from "@/components/forms/class-enrollment-form";
+import { ClassEnrollmentActions } from "@/components/forms/class-enrollment-actions";
 import { ClassForm } from "@/components/forms/class-form";
+import { ClassRowActions } from "@/components/forms/class-row-actions";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getClassesPageData } from "@/lib/queries";
+import { parsePageParam } from "@/lib/pagination";
 import { formatDateTime } from "@/lib/utils";
 import { requirePermission } from "@/lib/workspace";
 
-export default async function ClassesPage() {
+export default async function ClassesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const context = await requirePermission(PERMISSIONS.classesManage);
-  const { classes, clients, coaches } = await getClassesPageData(context.gymId);
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const { classes, clients, coaches, hasMore } = await getClassesPageData(context.gymId, page);
 
   return (
     <div className="space-y-6">
@@ -51,6 +57,7 @@ export default async function ClassesPage() {
                     <p className="text-xs text-slate-500">
                       Capacity: {gymClass.capacity ?? "Unlimited"}
                     </p>
+                    <ClassRowActions classId={gymClass.id} />
                   </div>
                 </div>
 
@@ -62,10 +69,14 @@ export default async function ClassesPage() {
                     {gymClass.enrollments.length ? (
                       gymClass.enrollments.map((client) => (
                         <div
-                          className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700"
+                          className="flex items-center gap-1 rounded-full bg-slate-100 py-1 pl-3 pr-1 text-xs font-medium text-slate-700"
                           key={client.id}
                         >
                           {client.clientName} ({client.clientCode})
+                          <ClassEnrollmentActions
+                            classId={gymClass.id}
+                            clientId={client.clientId}
+                          />
                         </div>
                       ))
                     ) : (
@@ -87,6 +98,7 @@ export default async function ClassesPage() {
               />
             </Card>
           )}
+          <Pagination hasMore={hasMore} page={page} />
         </div>
       </div>
     </div>

@@ -1322,3 +1322,1064 @@ fixed as NEW migrations (see below); the chain now applies end to end.
   NOT raise — the RLS delete test asserts the row count. The stub
   needed Supabase's schema grants (USAGE on auth/storage) for policies
   calling auth.uid() to evaluate as the authenticated role.
+
+# Round 4 — remaining code-doable audit items, 2026-11-15
+
+38 commits on `phase1-security-fixes` after the round-3 head `4e40313`
+(`359e269` … `74bf6d7`). Local only — not pushed in this round. Rules
+held throughout: never edit an applied migration (all SQL as NEW
+files), one commit per logical piece, no history rewrites, no live
+database, no production deploy, no P2-10 decision.
+
+Verification harness (same approach round 3 proved): throwaway local
+Postgres 16.15 cluster, `/tmp/r4-harness.sh` (up/apply/test/psql/down/
+reset), cluster `/tmp/r4-pgdata`, port 54399, DB `trainw`, stubs in
+`/tmp/supabase-stubs.sql` (auth + storage emulation). Quirk: the
+server must run as the `postgres` OS user (initdb/pg_ctl refuse root)
+but psql runs as root (userns permission quirk); the harness runs
+server commands via `su postgres` and psql directly. Log path is
+`/tmp/r4-apply.log` (root-owned). The harness's `service_role` now
+gets BYPASSRLS (matching real Supabase) and the stub enables RLS on
+`storage.objects` — both added in round 4. Test files live in `/tmp`,
+NOT in the repo: `/tmp/r4-tests.sql` (82 PASS), `/tmp/r4-tests-db27.sql`
+(20), `/tmp/r4-tests-db37.sql` (8), `/tmp/r4-tests-db38.sql` (5),
+`/tmp/r4-tests-db57.sql` (5), `/tmp/r4-tests-db59.sql` (6),
+`/tmp/r4-tests-db62.sql` (4), `/tmp/r4-tests-fe26.sql` (2),
+`/tmp/r4-tests-p29.sql` (6) — **138 PASS total** (82+20+8+5+5+6+4+2+6).
+Test-suite order/collision rules (learned the hard way): run each
+suite on a FRESH cluster (`reset` first) — fixtures collide across
+suites (DB-62's check and FE-26's gym UUID both broke when suites
+shared a cluster). Never run the chain `apply` twice on one cluster
+(5 files are not idempotent on re-application) and never run a test
+suite twice on one cluster. Correct run order on a fresh cluster:
+r4-tests.sql → DB-27 → DB-37 → DB-38 → DB-57 → DB-59 → DB-62, then
+FE-26 and P2-9 each on their own fresh cluster. r4-tests.sql's
+outsider is `55555555`, which the DB-27 file originally also used as
+member 2 — DB-27's member 2 is now `56565656-5656-5656-5656-565656565656`.
+r4-tests.sql's DB-61 tamper check is LAST and deliberately leaves
+`can_view_user` redefined as `SELECT true`; the DB-37 file restores
+the frozen definition before its freeze assert so it is
+order-independent. Test-harness lessons: `validate_coach_availability_write`
+requires legacy `users.gym_id` set for the coach AND `users.role =
+'coach'`; the gyms row must be inserted before users reference it
+(users_gym_id_fkey); a mutating function call and a state check must
+not share one boolean expression (Postgres may evaluate the state
+check first — split into two statements, learned on DB48h); RLS policy
+tests use `SET ROLE authenticated;` + `SET test.auth_uid = '...';`
+then `RESET ROLE;` — INSERT denials raise `insufficient_privilege`,
+UPDATE/DELETE denials are silent (0 rows, use GET DIAGNOSTICS
+ROW_COUNT). Deleting a gym cascades to sessions, but the
+session-deletion trigger `log_session_status_event` inserts into
+session_status_history with the about-to-be-deleted gym_id → FK
+violation; test cleanup must delete sessions first, then the gym.
+
+## DB-51 — 359e269 — rename foundation + v18 files so the chain sorts in order
+
+- Files: `git mv Trainw_001_foundation.sql →
+  20260408180000_trainw_001_foundation.sql`,
+  `20260419000000_trainw_012_v18_additions.sql →
+  20260419000000_trainw_013_v18_additions.sql` (the v18 file's own
+  header already said "TRAINW 013 ADDITIONS";
+  `docs/DATABASE_AUDIT_V17.md:21` already cited the timestamped
+  foundation name, so no doc edits were needed).
+- Before-state proof: applying
+  `20260408181000_trainw_002_profiles_operations.sql` first fails with
+  `relation "public.users" does not exist`. After: the full chain
+  applies in pure lexicographic filename order — 33 files OK; the only
+  failure is the pre-existing by-design B5 return-type failure
+  (repaired by `20261115120000` as before). Round-3 ledger suite
+  re-run on the renamed chain: 51 PASS.
+- Live note: if any environment already recorded
+  `Trainw_001_foundation.sql` as applied, the rename must be paired
+  with a migration-version repair on that environment before pushing.
+
+## DB-35 — 308780d — validate every NOT VALID constraint in the chain
+
+- File: `supabase/migrations/20261115150000_phase1d_validate_constraints.sql`.
+- Dynamic DO block validating every unvalidated CHECK/FK constraint in
+  `public`. Authoritative count was **24**, not the audit's 25 — the 1c
+  payments_status_check had already been validated. Plus persistent
+  `assert_no_unvalidated_constraints()` tripwire function called at the
+  end of the migration.
+- Verified: unvalidated count 24 → **0**.
+- Convention documented (also in the runbook, DB-50): never add a NOT
+  VALID constraint without validating it in the same migration.
+
+## DB-45 — 7207893 — coach/client assignments are pending until confirmed
+
+- Files: `supabase/migrations/20261115160000_phase1d_coach_assignment_pending.sql`,
+  `tw-gym-acc-v17.js`,
+  `supabase/migrations/20261115165000_phase1d_fix_assignment_profile_sync.sql`.
+- `coach_client_assignments` gains `status` ('pending'|'active'|
+  'ended'); status is the source of truth, `is_active` is a derived
+  mirror kept in sync by trigger `trg_coach_assignment_sync_status`
+  (so `can_manage_client_data`/`can_message_user`, which read
+  `is_active`, enforce the pending model with no edits); `is_active`
+  default flipped to false; existing rows grandfathered (is_active=true
+  → 'active'); `book_coach_session` rewritten (verbatim 003 definition
+  with only the assignment block changed) to create a PENDING row only
+  and never reactivate an ended one (a fresh pending row is created
+  instead); new RPCs `confirm_coach_client_assignment` (assigned coach
+  or gym manager, pending→active) and `end_coach_client_assignment`
+  (coach, client, or manager, pending/active→ended), both SECURITY
+  DEFINER, PUBLIC revoked, granted to authenticated; trigger honours
+  legacy direct `is_active` writes (an explicit is_active change with
+  unchanged status derives status from it; on INSERT, is_active=true +
+  status='pending' → 'active') so cached frontend JS keeps working.
+  Frontend: `tw-gym-acc-v17.js` `assignCoachToClient`/
+  `unassignCoachFromClient`/`loadAssigns` now write/read `status`
+  (`node --check` clean).
+- **Verification exposed a REAL pre-existing bug** (found 2026-11-15
+  ~00:55, fix written as `20261115165000`):
+  `sync_client_profile_assignment` (migration 006, trigger
+  `trg_sync_client_profile_assignment`) did `UPDATE client_profiles
+  SET gym_id = src.gym_id, coach_id = ... WHERE cp.user_id =
+  src.client_id` — it reassigned the profile row to a different gym
+  and touched ALL of the user's rows. The chain auto-creates a bare
+  NULL-gym `client_profiles` row per auth user, so the first time any
+  assignment becomes active the trigger tried to set that bare row's
+  gym_id to the gym, colliding with the user's real gym row →
+  `duplicate key value violates unique constraint
+  "uq_client_profiles_user_gym"`. Fix: scope the UPDATE to the
+  assignment's gym (`cp.gym_id = src.gym_id`), never SET gym_id, and
+  scope the NOT FOUND branch (coach_id=NULL) to that gym too.
+- Verified with a 17-assertion suite (DB45a–p, incl. pending on
+  booking, no data access while pending, member cannot confirm, coach
+  confirm opens access, second booking adds no row, manager end closes
+  access, re-booking creates a fresh pending row, legacy is_active
+  write activates).
+- History note: a first commit attempt bundled DB-35 and DB-45 files
+  together plus an empty DB-45 commit; history was fixed with `git
+  reset --soft HEAD~2` and clean re-commits (308780d, 7207893) —
+  nothing pushed, so no history rule was broken.
+
+## DB-41 — f513cba — replace the blanket authenticated grant with per-table grants
+
+- File: `supabase/migrations/20261115170000_phase1d_replace_blanket_grant.sql`.
+- Revokes the 004 blanket `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL
+  TABLES IN SCHEMA public TO authenticated` and re-grants each public
+  table exactly the operations its RLS policies allow for the
+  authenticated role (ALL-policy counts for all four; service_role-only
+  policies do not count), derived dynamically from pg_policy. Tables
+  with no applicable policy (`ai_proxy_usage`, `gate_rate_limits`,
+  `gate_terminal_sessions`) keep no grant. Adds
+  `public.assert_all_tables_have_rls()` called at the end.
+- **Audit-vs-code note:** `polroles` for a PUBLIC policy is `{0}` (an
+  oidvector containing InvalidOid), not an empty array — the predicate
+  is `polroles::oid[] = '{0}'::oid[] OR
+  'authenticated'::regrole::oid = ANY(polroles::oid[])`. A `text[] ||
+  'literal'` in plpgsql resolves to array-concat and fails to parse
+  the literal — use `array_append`.
+- Verified with 7 assertions (DB41a–g): payments has no DELETE grant,
+  service_role-only tables have no grant, payment_events is
+  SELECT-only, RLS assert runs clean, and behaviourally a manager
+  payment insert as the authenticated role still settles while a
+  client insert is still denied by RLS.
+
+## DB-46 — fb1ad6c — profiles/ storage objects are private by default
+
+- File: `supabase/migrations/20261115180000_phase1d_storage_profiles_private.sql`.
+- Rewrites storage policy `trainw_media_select_v17` as v18:
+  `profiles/` reads now need the object owner (foldername[3] =
+  auth.uid()), `manage_staff` or `manage_media` on the gym, or the
+  object being a public asset; `gyms/` (branding) branch unchanged.
+- **Audit-vs-code mismatch:** `milestone_photos` HAS `is_public`, but
+  `media_assets` does NOT — the migration adds
+  `media_assets.is_public` (default false) plus an index on
+  `milestone_photos(storage_bucket, storage_path)`. The publicity
+  lookup is a SECURITY DEFINER helper
+  `storage_object_is_public(bucket, path)` exposing exactly one bit —
+  the inline EXISTS version could not see `milestone_photos` rows at
+  all, because that table's own SELECT policy hides them from plain
+  members (caught by the behavioral suite).
+- Verified with 9 assertions (DB46a–i): owner reads own photo, member
+  cannot read another member's private photo, member can read public
+  media_assets and milestone_photos of another member, manager can
+  read a private photo, gym logo readable by members but not outsiders,
+  is_public defaults to false, v17 gone and v18 present.
+
+## DB-48 — dbe5f08 — gate credential lockout, 5 failures / 15 minutes
+
+- Files: `supabase/migrations/20261115190000_phase1d_gate_credential_lockout.sql`,
+  `gate-terminal.js` (label only).
+- New table `gate_credential_lockouts` scoped by (gym_id,
+  credential_hash, device_id) — device_id is '' when the terminal
+  sends none; RLS on with no policies (service-role only, no
+  authenticated grant under the DB-41 model). Helper
+  `record_gate_credential_failure(gym, hash, device)` returns the lock
+  expiry when the failure just locked the credential, else NULL:
+  reaching 5 sets locked_until = now() + 15 min and resets the counter
+  to 0 (5 attempts per 15-minute window); an expired lock restarts the
+  window at attempt 1. `validate_member_credential` rewritten verbatim
+  from the round-2 version (extracted programmatically from
+  `20261115010000`, 336 lines) plus 4 insertions: lockout check after
+  the credential advisory lock returning `{access:false,
+  reason:'credential_locked', locked_until}` (logged to
+  gate_access_log; denial_reason is free text, no constraint change
+  needed); failure recorded only on the invalid-credential branch (a
+  valid credential denied for membership reasons never locks a
+  legitimate member out); success clears the counter. The gate-checkin
+  edge function passes the new reason through unchanged. Label added:
+  `credential_locked: 'Badge verrouillé — réessayez dans 15 minutes'`.
+- Verified with 11 assertions (DB48a–j): 4 failures →
+  invalid_credential and counter 4; 5th → credential_locked with a
+  15-minute lock; still locked on re-presentation; the legitimate
+  member's own credential still grants access while another is locked
+  and its pre-seeded failure row is cleared by the success; expiry
+  restarts the window at 1 attempt; table has RLS with no authenticated
+  grant; helper is not executable by authenticated.
+
+## DB-50 — 068f135 — data repairs get a log, a runbook, and a dry-run audit
+
+- Files: `supabase/migrations/20261115200000_phase1d_data_repair_log.sql`,
+  `docs/DATA_REPAIR_RUNBOOK.md`, `scripts/data-repair-audit.sql`.
+- Service-role-only `public.data_repair_log` table: performed_at/by,
+  gym_id, table_name, row_id, action, reason, row_snapshot jsonb,
+  runbook_ref. Runbook rule: a migration never performs destructive
+  data repair; procedure backup → dry-run → review → logged repair →
+  re-audit; template joins the repair to the log rows just written.
+  The audit script is a read-only dry-run: generic FK orphan audit
+  over every FK in `public` + the three 003 overlap rules + the DB-62
+  signup-gap check; exits 0 when clean, non-zero with the full report
+  otherwise.
+- Verified on the throwaway cluster (`/tmp/r4-db50-test.sql`): clean DB
+  audits exit 0; a seeded orphan + duplicate availability +
+  conflicting session pair are reported as exactly 1 row each (plus
+  conflicting_availability 1) with a non-zero exit; after cleanup the
+  audit is clean again. Seeding the overlap rows needed triggers off
+  (`SET session_replication_role = replica`) — the write validators now
+  reject overlaps, so such rows can only arise from legacy data or
+  direct SQL; seeding also needed `users.role = 'coach'` (the
+  availability validator requires it) and a `coach_profiles` row.
+
+## DB-61 — cd4e37a — freeze the RLS helper functions
+
+- File: `supabase/migrations/20261115210000_phase1d_freeze_rls_helpers.sql` (753 lines).
+- Re-creates 30 RLS helpers verbatim as they stand after the full
+  chain, plus `public.assert_rls_helpers_frozen()`, which compares each
+  helper's live definition against a frozen hash and raises on drift.
+  The hash is over stored catalog values (signature, result type,
+  language, volatility, SECURITY DEFINER, proconfig, body prosrc) —
+  NOT over pg_get_functiondef output, whose rendering can differ
+  between Postgres versions. Freeze set: every function the RLS
+  policies call plus transitive dependencies (computed from pg_policy +
+  pg_proc on the applied chain — this surfaced helpers the audit did
+  not name, e.g. `get_my_portal`, `current_membership`,
+  `permission_codes_for_membership`,
+  `caller_holds_permission_in_gym`, `caller_manages_gym_direct`,
+  `get_my_permissions`), plus the four access helpers the audit names
+  or the gate relies on (`can_view_user`,
+  `client_membership_is_active`, `membership_is_active_for_access`,
+  `lock_booking_key`). Definitions are topologically ordered so a
+  function is created after the functions it calls.
+- Verified with 36 assertions (DB61a–aj): the freeze assert passes on
+  the applied chain; a behavior matrix over manager/member/coach/
+  outsider callers (`manages_gym`, `has_permission`, portals, roles,
+  `can_view_user`, `can_manage_client_data`, `can_message_user`,
+  `can_manage_sessions`, `auth_user_email`, workout-log access); and a
+  tamper check — redefining `can_view_user` to always true is detected
+  by the assert. (The coach matrix rows needed the DB-45 assignment
+  ended first — DB-45 left it active — via
+  `end_coach_client_assignment` called as the manager.)
+- **Known freeze gap (follow-up):** the hash does not cover a
+  function's DEFAULT expressions (`proargdefaults` is not in the
+  formula) — a default-only change would slip past the tripwire. DB-37
+  changed the membership helpers' defaults AND bodies, so the hashes
+  did change there, but the gap stands.
+
+## DB-27 + DB-28 — 51b0bef — close the direct booking/session write paths
+
+- File: `supabase/migrations/20261115220000_phase1d_booking_session_write_scoping.sql` (183 lines).
+- DB-27: `bookings_manage_v17` was FOR ALL for any row where
+  client_id/coach_id = auth.uid(), with no session/gym/transition
+  checks — replaced with three manager-only policies
+  (`bookings_insert_v18` / `bookings_update_v18` /
+  `bookings_delete_v18`, all `has_permission('manage_bookings',
+  gym_id)`); read policy unchanged; safe because session RPCs and
+  `sync_booking_from_session` are SECURITY DEFINER, and the frontend
+  writes no bookings directly (verified by grep in JS and TS/edge
+  code). New trigger `validate_booking_consistency` (BEFORE INSERT OR
+  UPDATE on bookings, SECURITY DEFINER): linked session must exist and
+  gym_id/client_id/coach_id must match it (null-safe `IS DISTINCT
+  FROM`).
+- DB-28: `sessions_update` coach branch could UPDATE any column — new
+  trigger `validate_session_coach_update` (BEFORE UPDATE on sessions,
+  SECURITY DEFINER): when the caller IS the session's own coach acting
+  directly, gym_id/client_id/coach_id/payment_id are frozen and status
+  may only move along the RPC transitions (pending→confirmed/cancelled,
+  confirmed→completed/cancelled/no_show); managers keep full edit
+  rights; a caller who is neither manager nor the session's coach never
+  reaches the trigger directly (the policy blocks them first), so such
+  updates can only be SECURITY DEFINER RPCs working on someone else's
+  behalf — `book_coach_session` sets payment_id as the member — and the
+  trigger lets those through (the first version raised for that case
+  and broke booking; the test caught it). The assignment-check
+  alternative was NOT implemented: legacy and manager-created sessions
+  can exist with no assignment row, and the RPC path does not check
+  assignment either.
+- Verified: 20-assertion suite `/tmp/r4-tests-db27.sql` (DB27a–j,
+  DB28a–j), all passing, incl. RPC flow end to end (book → respond →
+  complete, booking kept in sync). The suite also documents that
+  `validate_session_write` (003) already blocks future completion and
+  cross-gym moves, so the DB-28 tests use a past date + a same-gym
+  client swap to isolate the new trigger.
+
+## DB-37 — 4815c57 — compute 'today' in the gym's timezone
+
+- File: `supabase/migrations/20261115230000_phase1d_gym_timezone.sql` (1,265 lines).
+- New helpers `gym_timezone(p_gym_id)` (gyms.timezone, Africa/Tunis
+  fallback) and `gym_today(p_gym_id)` (`(now() AT TIME ZONE zone)::date`).
+  Rewired: `membership_is_active_for_access` /
+  `client_membership_is_active` (reference date now defaults to NULL =
+  the gym's today; an explicit date is still honoured),
+  `validate_member_credential` (gate's same-day duplicate day),
+  `validate_session_write`, `book_coach_session` (past check now uses
+  the gym's day AND clock), `complete_session_booking`,
+  `get_bookable_slots` (date filter), `shift_membership_for_freeze`,
+  and the manual check-in guard (drops the explicit CURRENT_DATE).
+  `check_ins.checked_in_date` was a GENERATED column in UTC — a
+  generated column cannot read another table, so it is now a plain
+  column set by a BEFORE INSERT/UPDATE trigger in the row's gym
+  timezone, with a backfill and a re-dedup for live data (two rows that
+  were different UTC days can land on the same gym day). DB-61 freeze:
+  the two membership helpers are frozen, so their hashes are updated
+  in this migration (assert re-created with the new hashes, then run).
+- Deliberately unchanged: ai-proxy quota day (per-user UTC day), the
+  ledger's invoice/period dates (business dates, explicit dates
+  passed), `client_profiles.membership_start_date` default (a column
+  default cannot see the row's gym), and `get_bookable_slots`' naive
+  slot timestamps compared to now() (date filter fixed; generating
+  slots in the gym timezone is a follow-up).
+- Verified: full chain applies end to end on a fresh throwaway cluster
+  (only the known by-design B5 failure); 8-assertion DB-37 suite
+  (`/tmp/r4-tests-db37.sql`, Kiritimati/Midway gyms so the timezone
+  path is exercised — 23:30 UTC stamps 11-16 in Tunis and Kiritimati,
+  11-15 in Midway; the membership 'gym yesterday' case notes when it
+  discriminates from UTC at run time) plus the prior suites — 82 + 20
+  + 8 = 110 PASS. Builder script: `/tmp/build-db37.py` (extracts
+  verbatim definitions, applies surgical replacements, fails loudly on
+  a missing pattern).
+
+## DB-38 — 35f9b1b — forbid deleting a gym that still holds tenant data
+
+- File: `supabase/migrations/20261115240000_phase1d_gym_delete_guard.sql`.
+- BEFORE DELETE trigger on gyms raises when the gym still has payments,
+  member profiles, sessions, check-ins, or coach profiles, naming the
+  blocking category and count; an empty gym (only the owner's
+  membership row) still deletes. RLS already denies gym DELETEs for
+  authenticated users (no gyms DELETE policy), so the trigger is the
+  backstop for service-role / direct-SQL deletes. A second BEFORE
+  DELETE trigger on users replaces the opaque payments-client FK
+  violation with a clear 'cannot_delete_user: user still has N
+  payment(s)' error.
+- **Deferred to the soft-delete work:** `messages.sender_id`/
+  `receiver_id` are NOT NULL... ON DELETE CASCADE, so deleting a user
+  still erases the other party's copy of the conversation — fixing
+  that needs nullable columns plus chat UI handling for a deleted
+  counterpart.
+- Verified: 5-assertion suite (`/tmp/r4-tests-db38.sql`) + prior
+  suites = 115 PASS.
+
+## DB-52 — 939a063 — migration conventions doc (never copy the 004 RLS reset)
+
+- File: `docs/MIGRATION_CONVENTIONS.md` (docs only).
+- 004 drops every policy on 24 tables in a loop and only recreates
+  them afterwards; a mid-file failure would leave RLS enabled with
+  zero policies (deny-all, including managers). It cannot be fixed
+  without editing 004, which is already applied everywhere. Mitigation
+  documented: the Supabase CLI applies each migration file inside a
+  single transaction by default (the `-- pg-delta: transaction=false`
+  directive exists precisely to opt OUT of that wrapping — verified
+  against Supabase docs via browser search 2026-11-15), so a mid-file
+  failure rolls the whole file back. Rules for new work: never write a
+  drop-all-then-recreate loop again (drop and recreate one table's
+  policies together), do not assume the dashboard SQL editor wraps a
+  script the same way (confirm it, or apply through the CLI), do not
+  edit 004. The doc also consolidates the conventions rounds 1–4
+  established (never edit an applied migration; one logical piece per
+  migration; no destructive data repair in migrations per DB-50; NOT
+  VALID constraints validated in the same migration per DB-35; RLS +
+  policies + grants shipped together per DB-41; frozen-helper hash
+  updates in the same migration as the change per DB-61, with the
+  known gap that the hash does not cover DEFAULT expressions;
+  throwaway-cluster verification before committing; gym-timezone
+  'today' per DB-37).
+
+## DB-57 + DB-64 — 5026f91 — specialties are seed-only; coach specialties scoped to the coach's gym
+
+- File: `supabase/migrations/20261115250000_phase1d_specialty_scoping.sql`.
+- DB-57 writer decision: **seed-only**. The audit offered 'add a policy
+  plus a validated RPC, or document them as seed-only tables' —
+  seed-only is right because nothing in the app reads or writes these
+  tables: the frontend's specialty mechanism is the free-text
+  `coach_profiles.specialty` column, and the only writer anywhere is
+  `supabase/seeds/trainw_demo_seed.sql` (tags 'Strength &
+  Conditioning', 'Mobility'). No INSERT/UPDATE/DELETE policy is added
+  for either table, and under the DB-41 grant model authenticated holds
+  no write grant on them either. `specialty_tags` stays a GLOBAL
+  curated list (name citext UNIQUE, no gym_id); per-gym tags would need
+  a gym_id column plus policies + RPC + frontend wiring, noted as
+  future work.
+- DB-64: a BEFORE INSERT OR UPDATE trigger
+  `validate_coach_specialty_write` enforces
+  `coach_specialties.gym_id` = the coach's gym (users.gym_id, falling
+  back to coach_profiles.gym_id); NULL is filled in; a mismatch raises
+  `specialty_gym_mismatch`; a gym-less coach keeps NULL. The demo seed
+  is safe: its coach (Youssef Trabelsi) belongs to the gym its rows use.
+- Verified: 5-assertion suite (`/tmp/r4-tests-db57.sql`) + prior
+  suites = 120 PASS. **Test-harness note:** the throwaway cluster never
+  granted service_role table access (real Supabase does), so the DB-57
+  suite grants it in test setup to mirror production.
+
+## DB-59 — ef50720 — session history stays readable by its participants after the session is deleted
+
+- File: `supabase/migrations/20261115260000_phase1d_session_history_snapshot_policy.sql`.
+- The SELECT policy on `session_status_history` (now `_v18`) keeps the
+  manager branch and the live-session branch and adds a snapshot
+  branch: `(session_snapshot->>'client_id')::uuid = auth.uid() OR
+  (session_snapshot->>'coach_id')::uuid = auth.uid()`.
+  `log_session_status_event` stores `to_jsonb(NEW)`/`to_jsonb(OLD)`,
+  so the snapshot always carries the session's client/coach ids; the
+  branch reveals a row only to the exact client/coach named in it, and
+  rows with a null snapshot fall back to the live-session branch as
+  before.
+- Not decided here: a retention rule for orphaned history (rows whose
+  session is long deleted accumulate forever) — needs a retention
+  period decision.
+- Verified: 6-assertion suite (`/tmp/r4-tests-db59.sql`, booking setup
+  mirrors the DB-27 fixtures) + prior suites = 126 PASS.
+
+## DB-62 — 37661c1 — let the signup trigger fail loudly
+
+- File: `supabase/migrations/20261115270000_phase1d_signup_trigger_fail_loud.sql`.
+- `handle_new_user()` swallowed every error (`EXCEPTION WHEN OTHERS
+  THEN RAISE LOG...; RETURN NEW`), so a failed profile creation never
+  failed the signup. The `users_insert` half of DB-62 was already done
+  in round 2 (a self-insert may only create role='client' with gym_id
+  NULL); this migration removes the blanket handler, so an unexpected
+  error now fails the signup (the auth.users INSERT rolls back and the
+  caller sees the error). The audit's alternative — alert on the log
+  line — needs a monitoring setup that does not exist yet (P2-7).
+  Removing the handler is safe for legitimate signups: the users write
+  is an ON CONFLICT upsert, the profile write is guarded by IF NOT
+  EXISTS, and the profile's NULL gym_id cannot unique-violate (NULLs
+  are distinct in the (user_id, gym_id) unique index). The DB-50
+  data-repair audit already detects any auth user with no public row.
+- Verified: 4-assertion suite (`/tmp/r4-tests-db62.sql`: handler gone
+  from the source, signup still provisions, gym_owner self-insert
+  denied, gymless client self-insert allowed — the round-2 policy half
+  behaviorally tested for the first time) + prior suites = 130 PASS.
+- **Round-4 follow-on (P2-9):** the consent parse in this trigger was
+  first written with a scoped `EXCEPTION WHEN OTHERS` block, which
+  tripped the DB-62 source-text tripwire (any `WHEN OTHERS` in the
+  function fails DB62a). It was rewritten to validate with
+  `pg_input_is_valid()` before casting — no exception block at all —
+  and DB-62 passes 4/4 again. Lesson: keep this trigger free of
+  exception handlers entirely.
+
+## NX-10 — ddcc274 — update/delete/deactivate actions for clients, coaches, classes, attendance, roles, staff users (16 files)
+
+- Server actions follow the existing pattern (requirePermission → zod
+  parse → gym-scoped query → revalidatePath). Clients: update (name/
+  type); coaches: update (name/rating, NX-16 clamp) + delete (ON DELETE
+  RESTRICT message when classes reference the coach); classes: update
+  (incl. NX-04 coach check) + delete (enrollments cascade, attendance
+  class_id SET NULL) + unenroll one client; attendance: update
+  (status/class) + delete; roles: update (name + permissions JSON, flat
+  object of real booleans only — NX-17 alignment; owner role editable
+  only by an owner) + delete (refuses owner role, caller's own role,
+  roles still held by staff); staff users: deactivate (auth ban ~100y
+  via `ban_duration: "876000h"`), reactivate (`ban_duration: "none"`
+  — confirm at deploy, GoTrue admin API), delete (admin deleteUser,
+  cascades to public.users; refuses self and last gym owner). Six
+  row-action components wired into coaches/classes (incl.
+  per-enrollment ×)/attendance/roles pages following ClientRowActions;
+  `getRolesPageData` now reports `banned` per user via admin listUsers
+  (gated on `isSupabaseAdminConfigured()`, failures swallowed). Edit
+  (update) actions exist as server actions only — prefilled inline edit
+  forms are a UI follow-up (no edit-form pattern exists on any page yet).
+- Verified: esbuild transpile-only syntax check on all 16 files.
+- **Context (code as found):** the Next.js app runs on the archived
+  `database/archive/schema.sql`. `clients` has no `status` column in
+  that schema, yet the approve action, the public-clients route, and
+  `getClientsPageData` all assume one — a pre-existing schema gap,
+  P2-10 territory, not NX-10's to redesign.
+
+## NX-14 — 9758462 — password-reset flow (7 files)
+
+- `requestPasswordResetAction` (resetPasswordForEmail →
+  /auth/reset-password, rate-limited like login/signup 5/15min,
+  identical reply whether the email exists or not — no user
+  enumeration); `updatePasswordAction` (min 8, max 128, must match, via
+  updateUser on the session the reset page exchanges the link code
+  for); `/forgot-password` page + form; `/auth/reset-password` page
+  (exchanges the PKCE code, shows the form or an expired-link message);
+  "Forgot your password?" link on the login page; roles.ts NX-09 note
+  now points invited staff at the reset flow.
+- Dashboard config still needed at deploy: /auth/reset-password must
+  be allowlisted in Supabase (Authentication > URL Configuration >
+  Redirect URLs).
+- Verified: esbuild syntax check on all 7 files.
+
+## NX-24 — c64c0a4 — real Next.js dependencies, pinned; tsc + next build pass (5 files + package-lock.json)
+
+- package.json had zero dependencies. Pinned: next 15.5.29,
+  react/react-dom 19.3.1, @supabase/ssr 0.12.7, @supabase/supabase-js
+  2.119.0 (same as static frontend's CDN pin), zod 3.25.76,
+  lucide-react 1.73.0 (same as static pin), clsx 2.1.1, tailwind-merge
+  3.7.0; dev: typescript 5.9.3, @types/node 24.19.2, @types/react
+  19.3.0, @types/react-dom 19.3.0, tailwindcss 3.4.19 (v3 — config +
+  postcss are v3), postcss 8.5.33, autoprefixer 10.6.2. Deliberately
+  NOT the newest majors: next 16 (latest 16.4.6), zod 4 (latest 4.6.7),
+  typescript 7 (latest 7.0.2), tailwind 4 (latest 4.3.5) would need
+  migration work. Scripts added: next:dev / next:build / next:start /
+  typecheck. Existing build/dev scripts UNTOUCHED — they build the
+  static frontend Vercel deploys today; switching the deploy to Next
+  is the P2-10 decision. tsconfig: removed the stale root `middleware.ts`
+  include entry (file lives at src/middleware.ts, already covered by
+  src/**/*.ts). package-lock.json committed.
+- **Two real bugs tsc found (first full type-check ever run on this
+  app):** the users → roles embed does not type-check — the archived
+  schema's FK is composite (role_id, gym_id) → roles (id, gym_id),
+  which the generated Database type does not express as a relation, so
+  `role:roles(id, name)` typed as SelectQueryError. Fixed by joining
+  in JS from the already-loaded roles list (queries.ts) and by a
+  separate role-name lookup (roles.ts getStaffUserInGym /
+  countOwnersInGym).
+- Verified in a scratch copy (not the repo): npm install clean (119
+  packages), tsc --noEmit exit 0, next build exit 0 — all 16 routes
+  compile, including /auth/reset-password and /forgot-password.
+- **Cosmetic defect in this commit's message:** the backticked
+  `` `role:roles(id, name)` `` fragment was eaten by shell quoting
+  ("so typed as SelectQueryError"). Left as-is (no amends allowed).
+
+## NX-17 — ae3d158 — strict boolean permission checks (value === true)
+
+- **Round-2 notes claimed this was already clean — it was not:**
+  `Boolean(value)` was still in workspace.ts:38, queries.ts:110, and
+  the actual gate permissions.ts:24 `hasPermission` (`Boolean("false")`
+  is true, so a role whose permissions JSON was ever written with
+  string values would be granted a permission the DB-side
+  `has_permission` denies). All three sites now use `value === true`.
+  `normalisePermissions` in queries.ts exported for the NX-26 tests.
+- **Commit attribution quirk:** the NX-18 `requirePermission`
+  redirect change (to /forbidden) also landed in this commit because
+  workspace.ts was staged with both edits — the code is correct, only
+  the attribution is mixed; noted, not rewritten.
+
+## NX-18 — 77f7600 — dedicated /forbidden page
+
+- `requirePermission` sent denied users to /dashboard?forbidden=1, but
+  the dashboard itself requires `dashboard.view`, so a role without it
+  looped until the browser reported too many redirects. Denied users
+  now go to /forbidden (plain page, no permission, no workspace data —
+  gating it would recreate the loop); the dashboard's now-dead
+  ?forbidden=1 banner removed.
+
+## NX-27 — df65ee4 — login page redirects signed-in users to /dashboard
+
+- Via getUser() — later refined by NX-28 (see below) to send orphans
+  to /auth/recover instead.
+- **Round-2 notes claimed NX-27 "verified already clean" — false;**
+  the login page had no authenticated redirect until this session.
+
+## NX-29 — d796676 — client codes are display-only, never proof of identity
+
+- File: `docs/CLIENT_CODES.md`. Grep-verified: no flow accepts a bare
+  client code — Next app only displays codes, gate terminal sends an
+  opaque QR token, gate-checkin has no client_code reference at all.
+- **Lengthening the generator is moot on the chain:** the generator
+  (`generate_unique_client_code` + `set_client_code` trigger) lives
+  only in the archived schema.sql; the migration chain has no
+  client_code column, generator, or trigger (P2-10 schema gap).
+
+## NX-28 — 64ae9b6 — self-healing path for orphaned accounts (4 files)
+
+- A confirmed auth user whose provisioning died halfway (signup →
+  callback RPC failure) could sign in but was bounced to /login
+  forever — and NX-27's login redirect would have turned that into a
+  /login ↔ /dashboard loop. Now: `/auth/recover` page (signed-in user
+  with no workspace row; users WITH a workspace never see it) offering
+  re-run provisioning (`recoverWorkspaceAction`, same
+  `provision_new_gym` RPC the callback uses; gym name from the form
+  when signup metadata lacks it; guarded to redirect /dashboard when
+  the row already exists) or self-delete (`deleteOwnAccountAction`,
+  orphan-only — refuses when a workspace row exists, so a gym can never
+  be orphaned by a self-delete; needs the admin client). Login page: a
+  signed-in user goes to /dashboard only when they HAVE a workspace;
+  orphans go to /auth/recover.
+- Verified: esbuild syntax check on all 4 files. Live test (kill a
+  signup mid-provision, then recover) needs the deployed app +
+  Supabase (P1-13 item).
+
+## NX-25 — 07c3d97 — remove `as any` casts; generated types now carry real relationships (9 files)
+
+- Every `as any` in src/ is gone (25 lint errors → 0). Root causes,
+  both in the generated types: (1) `src/types/database.ts`
+  `TableDefinition` defaulted Relationships to a bare `Relationship[]`,
+  so the type listed NO relations at all and supabase-js typed every
+  embedded select as SelectQueryError — which is why the queries were
+  full of `(entry: any)` and `createServerSupabaseClient() as any`.
+  TableDefinition now takes relations as a 4th type argument, and every
+  table carries its real foreign keys from the archived schema
+  (including the composite ones: `classes_coach_gym_fk`,
+  `users_role_gym_fk`). The embeds now type-check. (2) The queries'
+  `(entry: any)`/`(item: any)` annotations and the actions' client
+  casts deleted; tsc passes with the real types. Also folded in: the
+  duplicated `normalisePermissions` (workspace.ts + queries.ts) is now
+  one exported function in permissions.ts; the two `{}` empty-object
+  types in database.ts became `Record<string, never>`; unused
+  NextResponse import removed from middleware.ts.
+- Verified in a scratch copy: tsc exit 0, eslint exit 0, vitest 25/25,
+  next build exit 0.
+
+## NX-26 — 43a4531 — CI with type-check, lint, smoke tests, production build (13 files)
+
+- vitest 3.2.7 + 25 smoke tests in 6 files, all passing with no
+  database and no network: permission gate (NX-17 strict-true cases),
+  rate limiter (allow/block/window-slide/IP parsing), auth zod schemas
+  (login/signup/reset/update/recover), CAPTCHA fail-open, GET
+  /api/health (no adminConfigured leak, NX-07), GET /api/gyms/search
+  (validation paths, generic 503, 30/min rate limit). Auth schemas
+  moved to `src/actions/auth-schemas.ts` so tests can import them
+  without pulling in next/headers or Supabase clients. eslint 9.39.5 +
+  eslint-config-next 15.5.29 + @eslint/eslintrc 3.3.7 (FlatCompat — the
+  15.x configs are legacy eslintrc, not flat arrays; the extensionless
+  imports the Next docs show do not resolve because the package ships
+  no `exports` map). `.github/workflows/ci.yml`: two jobs — next-app
+  (npm ci, typecheck, lint, test, next:build with dummy Supabase env)
+  and static-app (npm run verify). package-lock.json updated.
+- Verified in a scratch copy: npm ci clean, tsc exit 0, eslint exit 0,
+  vitest 25/25, next build exit 0, npm run verify passes. Live
+  Supabase paths (actions against a real DB, email delivery) stay
+  P1-13 items.
+
+## FE-27 — d9400e5 — dead-code purge (6 files)
+
+- (a) `tw-client-pilot.js` deleted (loaded by no HTML — verified by
+  grep; only the audit doc and the verify script listed it). It
+  duplicated tw-client-acc.js with a weaker `Math.random()` gate token
+  and a reset-password handler that toasted success without checking
+  the result. Removed from scripts/verify-trainw.js and from dist/.
+- (b) tw-client-acc.js: renderProgram/renderWeight/
+  renderPersonalRecordsTable were defined 3×/3×/2× (the audit said 3×
+  each — PRT is only twice). Kept the last definition of each (what
+  always ran) and deleted the first copies (lines 241–245). Runtime
+  behaviour unchanged by construction; the earlier copies were
+  mojibake-corrupted variants.
+- (c) trainw-core.js: `callEdge` (ai-proxy caller) deleted — exported
+  as `Trainw.api.edge` but called nowhere; the api export drops the
+  `edge` key.
+- (d) tw-gym-acc.js: `legacyInitDisabled()` deleted (defined, never
+  called).
+- (e) tw-gym-acc-v17.js `wrap()` replaced with explicit hooks: a
+  `window.TrainwGymHooks` registry + `runGymHooks()` in tw-gym-acc.js,
+  with hook calls at the end of loadClients/loadAnalytics/loadCoaches
+  (awaited) and setLang (fire-and-forget, as before); the v17 file only
+  registers its extras (`registerV17Hooks()`). The one openCoachModal
+  call site (tw-gym-acc.js:5434) now prefers `window.openCoachPanel`
+  when present, falling back to the base modal. Behaviour note: hooks
+  run at the end of the main body only, so a loader that bails early
+  (no gym/element) now skips its extras — the old wrapper ran them
+  anyway. Strictly more correct, no visible change.
+- Verified: node --check on all 5 touched files, grep confirms no
+  tw-client-pilot/callEdge/legacyInitDisabled/wrap() references remain
+  (except the historical audit doc), each renderer defined exactly
+  once, npm run verify passes. dist/ copies of the 4 edited JS files
+  synced (dist is gitignored and rebuilt at deploy; **the rest of dist
+  is stale since round 1** — pre-existing, fixed by the deploy-time
+  rebuild; the tw-coach-acc.js root-vs-dist diff is 40 lines of
+  round-2 code changes, no URL/key injection in JS files).
+
+## FE-09 + GT-05 — 3e91643 — QR tokens are opaque 128-bit random strings (3 files)
+
+- The gate QR token was `${userId}.${gymId}.${Date.now()}.${random}` in
+  cleartext. Now the client generates a single opaque token (16
+  crypto-random bytes, 32 hex chars, `randomGateToken()` in
+  tw-client-acc.js; the member/gym live only on the `gate_sessions`
+  row). The handler (`supabase/functions/gate-checkin/handler.mjs`)
+  rejects the legacy dotted format outright, drops the
+  `token.split('.')` parse and its cross-checks (the row's client_id
+  and gym_id are authoritative), and logs only a `qr:` + 8-char prefix
+  of the token instead of the full live bearer. The membership RPC call
+  also drops its explicit `p_reference_date` (DB-37 follow-up: the RPC
+  default is now the gym's today; the handler was passing the server's
+  UTC date). The terminal forwards the scanned text verbatim and needed
+  no change; the pilot file's Math.random token is already gone
+  (FE-27). The unique index on `gate_sessions.token` already existed
+  (`uq_gate_sessions_token`, 002:1248), so no migration was needed.
+  `docs/HARDWARE_INTEGRATION.md` updated (token is a 32-hex-char
+  opaque string; legacy dotted format rejected).
+- Verified: node --check on both files; the generator run standalone
+  produces 10,000 tokens, all 32 hex chars, no dots, no collisions;
+  grep confirms no token.split/tokenParts/legacy-format references
+  remain outside the historical audit doc. A live end-to-end scan still
+  needs the deployed edge function (P1-13).
+
+## FE-18 — 1a3075c — double-submit guards on the unguarded mutating actions (4 files)
+
+- The audit named cancelSession/submitSessionReview (client), savePlan
+  (coach), updateCoachApproval (pilot), and deleteSession/deleteClient/
+  deleteCoach (gym) as having no busy guard. All now use the
+  established `Trainw.ui.setBusy` pattern where a button exists, or a
+  module-level in-flight Set keyed on action + row id where the buttons
+  are rendered per row: client cancel/review (`cancel:<id>` /
+  `review:<id>`), gym deletes (`delete-session/client/coach:<id>`),
+  coach savePlan (both save buttons disabled for the whole save,
+  re-enabled in finally), pilot approval (per-profile Set + the clicked
+  button disabled). Every guard is released in a finally, so a failed
+  request never leaves the UI stuck.
+- **Repair during this piece:** the first coach edit nested a new
+  `try{` around the original try without a handler — node --check
+  caught it ("Missing catch or finally after try"); fixed by attaching
+  the finally to the original try instead.
+- Verified: node --check on all four files; `npm run verify` passes.
+  Note: the guards are client-side only. Server-side idempotency for
+  reviews (a unique index + upsert) is a separate hardening item, not
+  built here.
+
+## FE-17 — beae6c0 — clamp calcEndDate to the target month's last day, in UTC
+
+- File: `tw-gym-acc.js:3142` (`calcEndDate`, used at :3593 edit client
+  and :3734 new client submit to compute `membership_end_date`).
+- `setMonth()` overflowed Jan 31 + 1 month to Mar 2/3, and the old code
+  mixed local getters with toISOString() (UTC), shifting the date
+  around midnight in Africa/Tunis. All math is now in UTC on the
+  date-only value, and the day is clamped to the target month's last
+  day (Jan 31 + 1 month = Feb 28, Feb 29 in a leap year; Feb 29 + 1
+  year = Feb 28).
+- Verified: node --check; the function run standalone over 9 cases
+  (month-end, leap year, quarterly, annual, year rollover, basic tier
+  returns null) — all pass.
+
+## FE-30 — 926a59a — inferClientGymId only counts live gym ties
+
+- File: `tw-client-acc.js:41`.
+- The client gym was inferred from the newest assignment/session/
+  check-in row with no status filter, so a pending or ended coach
+  assignment — or a cancelled/completed session from a gym the member
+  left — could pick the wrong gym. The assignment query now requires
+  status='active' (the DB-45 pending model) and the sessions query only
+  counts pending/confirmed sessions. Check-ins are left as-is: a
+  check-in is evidence of access, and the server-side getContext check
+  is what actually authorises the gym.
+- Verified: node --check.
+
+## FE-26 — b4bcef7 — cap chat messages at 2,000 characters
+
+- Files: `tw-gym-acc.js`, `tw-client-acc.js`, `tw-coach-acc.js` (+
+  their HTML textareas),
+  `supabase/migrations/20261115280000_phase1d_message_length_cap.sql`.
+- The three chat send paths (gym sendMessage, coach sendCoachMessage,
+  client sendClientMessage) accepted unbounded text and inserted it
+  into messages.content (text, no length CHECK). Now each path blocks
+  an over-long message with a toast (never silently truncates), the
+  three textareas carry maxlength=2000, and a new validating CHECK on
+  messages (char_length(content) <= 2000) is the backstop for any other
+  writer. The RPC-based conversation lookup was skipped per the
+  audit's own 'if time permits' — the message insert already lands on
+  a gym-scoped, policy-checked table.
+- Verified: node --check on the three JS files; throwaway Postgres
+  cluster, full chain applies (46 OK, only the known by-design B5
+  failure), 2-assertion suite (`/tmp/r4-tests-fe26.sql`): a 2,000-char
+  message is accepted, a 2,001-char one is rejected by the CHECK; the
+  130 prior assertions still pass. Test-harness note: the message
+  gym-consistency trigger (`enforce_message_gym`, DB-53) requires a
+  `gym_memberships` row with status 'accepted'/'active' for both
+  parties (or the sender being the gym manager) — the suite seeds
+  those rows plus a roles row (gym_memberships.role_id is NOT NULL).
+
+## FE-24 — d115a92 — say in the invite UI that the invitee needs a Trainw account first
+
+- Files: `tw-gym-acc.js`, `tw-gym-acc.html`.
+- Staff invites call signInWithOtp({shouldCreateUser:false}), so the
+  invite only works when the person already has a Trainw account;
+  otherwise it fails with a vague error (mapped by
+  isInvitationAuthLookupError). The invite card now states the
+  prerequisite under its subtitle (fr/en/ar), so a manager learns it
+  before submitting instead of after a failed invite.
+- Verified: node --check; the key exists in all three language blocks
+  and the HTML carries the data-i18n binding.
+
+## FE-25 — fde5414 — explicit emailRedirectTo on password resets, generic errors
+
+- Files: `tw-login.js`, `tw-client-acc.js`, `tw-coach-acc.js`,
+  `tw-gym-acc.js`.
+- All four static-app resetPasswordForEmail calls (login
+  forgot-password, client reset, coach reset, gym changePassword) now
+  pass emailRedirectTo: origin + '/tw-login.html', so the recovery
+  link lands on the page that handles the recovery session (getContext
+  with recoveryRole) instead of whatever Supabase's dashboard default
+  is. The gym changePassword flow also stopped surfacing the raw auth
+  error message (which can name the account state) — it now shows the
+  generic error toast; the login forgot-password already used the
+  generic mapAuthError, and the client/coach buttons already swallowed
+  errors silently. The Next.js reset flow (NX-14) already passed its
+  redirect.
+- Deploy note: /tw-login.html must be allowlisted in Supabase
+  (Authentication > URL Configuration > Redirect URLs), same as the
+  NX-14 /auth/reset-password entry.
+- Verified: node --check on all four files; grep confirms no
+  resetPasswordForEmail call outside dist/ lacks emailRedirectTo.
+
+## FE-28 — 2e3ee4f — targeted i18n for the hardcoded strings + gate admin modal a11y
+
+- Files: `tw-gym-acc.js`, `gate-terminal.js`, `gate-terminal.html`.
+- Seven hardcoded French strings in tw-gym-acc.js now come from the T
+  dicts (fr/en/ar): the expiring-members stat label and its '14
+  prochains jours' delta, the schedule tab labels, the coach-search
+  hint and 'Recherche en cours' status, and the two credential-list
+  empty states. The gate admin modal is now a real dialog
+  (role=dialog, aria-modal, labelledby), its ambiguous keypad keys
+  carry aria-labels (Effacer/Valider), and openAdminModal traps Tab
+  inside the modal, closes on Escape, syncs aria-hidden, and restores
+  focus to the element that opened it.
+- Note: the audit's fifth cited string (:4265) could not be located by
+  its text — the strings found in the same functions were fixed
+  instead; no hardcoded occurrence of any of the named strings remains
+  outside the dicts.
+- Verified: node --check on tw-gym-acc.js and gate-terminal.js; grep
+  confirms no remaining hardcoded occurrence of the named strings
+  outside the T dicts.
+
+## FE-29 — 1e42a62 — gate terminal tells the truth about offline and dead modes
+
+- File: `gate-terminal.js`.
+- Three fixes: (1) a fetch/network failure in handleQrScan is no
+  longer rendered as camera_error — safeReason now maps 'Failed to
+  fetch' / NetworkError / 'Load failed' to a new network_error reason
+  ('Réseau indisponible — vérifiez la connexion'); (2) the online
+  indicator now reflects real connectivity (navigator.onLine) AND the
+  Realtime subscribe state, with window online/offline listeners, so an
+  offline terminal reads 'Hors ligne — pas de connexion' instead of
+  claiming Realtime is connected; (3) the RFID/fingerprint/face mode
+  buttons have no local handler — setMode only stopped the QR scanner
+  for them — so they are disabled with a title saying an external
+  reader is required, instead of implying they scan. GT-04's offline
+  allow-list stays out (needs ESP32 firmware, not in the repo).
+- Verified: node --check; the safeReason network patterns run
+  standalone over 8 cases (Chrome/Firefox/Safari messages, known
+  reasons, null) — all pass.
+
+## NX-12 — 995f12f — paginate the dashboard lists (50/page)
+
+- Files: `src/lib/pagination.ts` (new), `src/lib/__tests__/
+  pagination.test.ts` (new), `src/lib/queries.ts`,
+  `src/components/ui/pagination.tsx` (new), the five dashboard pages
+  (clients, coaches, classes, attendance, roles).
+- The five page-data queries fetched unbounded lists (a gym with
+  hundreds of members rendered them all). Each now takes a page param
+  (default 1, parsed and clamped by parsePageParam) and fetches one
+  page with .range() plus one extra row, so hasMore is known without a
+  count query. The five pages read ?page=N from searchParams (Next 15
+  async pattern) and render a prev/next Pagination component under the
+  list. The attendance page's old .limit(20) is now 50/page.
+- The form-select lookups inside getClassesPageData (coaches/clients)
+  and getAttendancePageData (classes/clients) stay unbounded on
+  purpose: they populate selects, not rendered lists, and PostgREST
+  already caps any single response at 1,000 rows. A searchable select
+  is a P2 UI item. The roles list itself is not paged (a gym has a
+  handful of roles); only the staff users list is.
+- Verified in a scratch copy: npm install clean, tsc --noEmit exit 0,
+  eslint exit 0, next build exit 0 (all five paged routes compile),
+  vitest 31/31 (25 prior + 6 new pagination tests).
+
+## P2-9 — 5f7deb5 — privacy basics: consent timestamp, data export, draft policies
+
+- Files: `supabase/migrations/20261115290000_phase1d_privacy_basics.sql`,
+  `tw-login.js`, `tw-login.html`, `src/actions/auth-schemas.ts`,
+  `src/actions/auth.ts`, `src/components/auth/signup-form.tsx`,
+  `src/lib/__tests__/auth-schemas.test.ts`,
+  `docs/PRIVACY_POLICY.md`, `docs/TERMS_OF_SERVICE.md`.
+- `client_profiles.consent_given_at` records when the user accepted
+  the privacy terms at signup. Both signup surfaces (static tw-login
+  and the Next.js gym-owner form) now require the checkbox and send
+  `consent_given_at` in the signup metadata; `handle_new_user()`
+  (rewritten verbatim from the DB-62 version, extracted
+  programmatically by `/tmp/build-p2-9.py`) stores it, validating with
+  `pg_input_is_valid()` before casting so no EXCEPTION block is needed
+  — DB-62's no-blanket-handler tripwire still passes (see DB-62 note
+  above). A future timestamp is clamped to now(). The column stays NULL
+  for pre-existing accounts and gym-invited users (the gym attests
+  their consent offline).
+- `export_member_data(uuid)`: SECURITY DEFINER RPC returning the
+  subject's Trainw data as one JSON document (profiles, memberships,
+  payments + events, sessions, bookings, check-ins, messages, reviews,
+  assignments, freezes, credential types). Self-export for anyone; a
+  manager may export a member of one of their gyms only; outsiders and
+  cross-gym managers are refused (`export_forbidden`). Biometric
+  credential material is never exported — type/label/dates only, no
+  `credential_data`. PUBLIC revoked, granted to authenticated.
+- `docs/PRIVACY_POLICY.md` + `docs/TERMS_OF_SERVICE.md`: French +
+  Arabic drafts, clearly marked BROUILLON / needs a lawyer before
+  publishing (Loi n° 2004-63, INPDP). Deletion itself is already
+  covered by the NX-10 delete actions.
+- **Three real defects the behavioral suite caught** (all fixed in the
+  migration before commit): (1) `membership_freezes` uses `user_id`,
+  not `client_id`; (2) `payment_events` has no `client_id` — it joins
+  through `payment_id` → payments; (3) the export's `client_profile`
+  scalar subquery fails when the subject has two profile rows (the
+  chain auto-creates a bare gym-less row per auth user) — the export
+  now returns `client_profiles` as an array. A fourth near-miss: the
+  P2-9 builder script regenerates the migration from scratch, so the
+  first two fixes (applied to the output file only) were lost on a
+  rebuild — they were moved into the builder before the final commit.
+- Verified: throwaway Postgres cluster, full chain applies (47 OK,
+  only the known by-design B5 failure), 6-assertion P2-9 suite
+  (`/tmp/r4-tests-p29.sql`: consent stored, self-export contents,
+  hash excluded, outsider refused, manager allowed, cross-gym refused)
+  + DB-62 4/4 + FE-26 2/2 on fresh clusters; scratch-copy tsc +
+  eslint + next build clean, vitest 32/32 (31 prior + 1 new consent
+  case). Test-harness note: the P2-9 fixtures follow the r4 pattern —
+  auth.users first (trigger auto-creates public.users), then gyms,
+  then UPDATE the public rows (gyms.manager_id FK requires the user
+  row to exist first).
+
+## P2-7 — 74bf6d7 — deploy runbook, backup + uptime scripts (code only)
+
+- Files: `docs/DEPLOY_RUNBOOK.md`, `scripts/backup-db.sh`,
+  `scripts/uptime-check.sh`.
+- Runbook: what deploys where (static frontend on Vercel, migrations
+  + edge functions on Supabase), migration apply rules (lexicographic
+  order, CLI single-transaction, the by-design B5 failure, the DB-51
+  rename caveat), the full deploy secrets checklist (Vercel env,
+  Supabase GUC pepper, edge secrets, CAPTCHA fail-open warning,
+  redirect-URL allowlisting), pre-launch checks incl. the P1-13
+  cross-tenant matrix, backup/restore and rollback procedures.
+- backup-db.sh: pg_dump to a custom-format dump outside the repo;
+  DATABASE_URL from the environment only, refuses to run without it.
+- uptime-check.sh: probes the production URL and the Supabase REST
+  endpoint; with SUPABASE_ANON_KEY it expects 200, without it a 401
+  counts as reachable.
+- Live decisions are separated in the runbook's §7 and NOT made here:
+  staging project, PITR, Sentry, an uptime monitor scheduler, P2-10.
+- Verified: bash -n on both scripts; uptime-check run live against
+  caylegavnekidhytlswo.supabase.co exits 0 (401 = reachable — the
+  first version wrongly assumed the REST endpoint answers 200 without
+  auth; fixed); the backup script refuses without DATABASE_URL as
+  designed.
+
+## P2-3 renewal — verified complete, no code change
+
+- Checked against the code (round-3 notes claimed it; verified this
+  round): the settlement trigger (`20261115100000`) extends
+  `membership_end_date` on a paid membership payment with renewal
+  semantics `GREATEST(end_date, period_start, today) + period_months`
+  — early renewal stacks on remaining time, lapsed renewal restarts
+  from today; the void path restores the exact pre-settlement end date
+  (`settled_from_end_date`). The freeze trigger shifts the end date.
+  All three access paths read the shared function: the gate
+  (`validate_member_credential` → `membership_is_active_for_access`,
+  gym's today after DB-37, called by the gate-checkin handler), the
+  manual check-in guard (`trg_check_ins_membership` →
+  `enforce_check_in_membership()`), and booking (`book_coach_session`
+  → `client_membership_is_active`). Nothing was missing; no commit.
+
+## Round-4 audit triage (every audit ID grepped against these notes)
+
+- IDs never mentioned in the notes before round 4: DB-36, FE-09/10/11/
+  12/15/17/18/24/28/29/30, GT-02/04/05, NX-12. Of those: FE-09/GT-05,
+  FE-17, FE-18, FE-24, FE-25, FE-26, FE-28, FE-29, FE-30, NX-12 are
+  done above. **Assessed, NOT code-fixable this round:** FE-10
+  (Realtime private channels — needs a Supabase JWT for the terminal,
+  a design decision), FE-11 (client-side role enforcement — code part
+  done via round-2 B2 trigger ignoring metadata; live tests remain in
+  P1-13), FE-12 (sessions in localStorage — short-term mitigation done
+  via XSS+CSP; BFF/HttpOnly cookies is L/design; refresh-token rotation
+  is a dashboard setting), GT-02 (per-device secret — the round-2
+  terminal session token substantially addresses it; verify against
+  handler.mjs), GT-04 (offline allow-list — L + ESP32 firmware, not in
+  repo), FE-15 (done in round 3 — single ledger revenue source).
+  DB-36 (no renewal logic) is effectively done via the round-3
+  settlement trigger + DB-37 + FE-17 (see P2-3 above).
+- **Round-2 notes made false claims before (NX-17, NX-27) — verify
+  claims against code, don't trust the notes.**
+
+## Deliberately skipped in round 4
+
+- DB-66 no-show/completion auto-settlement (policy undecided per audit
+  Q10 — refund-vs-credit-vs-forfeit is the user's call; the refund RPC
+  exists).
+- P2-10 — whether the Next.js app is the ship target at all. NOT
+  decided; flagged open throughout.
+- FE-10, FE-12 (design), GT-02 (verify), GT-04 (firmware), FE-11 live
+  tests — see triage above.
+- Session-history retention rule (DB-59 follow-up): orphaned history
+  rows accumulate; needs a retention period decision.
+- Consent checkbox on the public register-client flow (P2-9
+  follow-up): the archived schema's clients table has no consent
+  column; the gym attests consent offline for now.
+- `get_bookable_slots` generating slots in the gym timezone (DB-37
+  follow-up); DB-61 hash hardening for DEFAULT expressions (see DB-61
+  gap); soft-delete for messages on user deletion (DB-38 follow-up);
+  server-side review idempotency (FE-18 follow-up); per-gym specialty
+  tags (DB-57 follow-up); searchable selects for the NX-12 form
+  lookups (P2 UI item).
+- The Next.js edit forms (NX-10 follow-up): update actions exist as
+  server actions only; no prefilled inline edit form pattern exists on
+  any page yet.
+
+## Audit-vs-code mismatches found in round 4 (additions to the round-1/2 lists)
+
+- DB-35: the audit said 25 unvalidated constraints; the chain has 24
+  (payments_status_check was already validated).
+- DB-41: `polroles` for a PUBLIC policy is `{0}`, not an empty array.
+- DB-45: `sync_client_profile_assignment` (006) reassigned profile
+  rows across gyms and collided with the auto-created bare profile row
+  — a real pre-existing bug the verification caught and fixed.
+- DB-46: `media_assets` has no `is_public` column (the audit implied
+  both tables had one); the inline EXISTS publicity check could not see
+  `milestone_photos` rows at all because of that table's own SELECT
+  policy.
+- DB-61: the freeze set computed from pg_policy + pg_proc surfaced
+  helpers the audit did not name (get_my_portal, current_membership,
+  permission_codes_for_membership, caller_holds_permission_in_gym,
+  caller_manages_gym_direct, get_my_permissions).
+- FE-27: renderPersonalRecordsTable was defined twice, not three times.
+- FE-28: the audit's fifth cited string (:4265) could not be located
+  by its text.
+- NX-17/NX-27: round-2 notes claimed both were already clean — both
+  were false (see those sections).
+- NX-29: the client_code generator lives only in the archived
+  schema.sql; the migration chain has no client_code at all.
+- P2-9: `membership_freezes` uses `user_id` (not `client_id`) and
+  `payment_events` has no `client_id` (joins through payments).
+- The `clients` table in the archived schema HAS status/email/phone/
+  contact_verified (the type file shows them) even though round-2
+  notes said schema.sql's clients table lacks them — the type file is
+  hand-maintained and may diverge from the schema; regenerate from the
+  live DB at deploy time (per the callback route comment).
+
+## What still needs live testing / access / a user decision (round 4)
+
+- **Push:** round 4 is 38 local code commits on `phase1-security-fixes`,
+  NOT pushed. Push via the Git Data API script (fetch the remote tip
+  first — the script was fixed for incremental pushes in round 3),
+  then let the Vercel auto-build run.
+- **Supabase live work (unchanged from round 3):** apply the migration
+  chain + Phase 1 migrations to project `caylegavnekidhytlswo` via the
+  dashboard SQL editor in the browser (his login/2FA); check whether
+  the DB is empty first; set the deploy secrets (runbook §3); point
+  code config at the new project keys; rebuild dist. Note the
+  connector host-registration gap for
+  `caylegavnekidhytlswo.supabase.co`. Note the DB-51 rename caveat:
+  if any environment already recorded `Trainw_001_foundation.sql` as
+  applied, pair the rename with a migration-version repair.
+- **P1-13 live tests** on the new project (cross-tenant matrix), plus
+  the NX-28 recover flow (kill a signup mid-provision, then recover),
+  the FE-09 live end-to-end QR scan, and the FE-24/FE-25 live invite
+  + reset-link flows.
+- **Deploy secrets still unset:** DB GUC pepper, GATE_TERMINAL_PEPPER,
+  TURNSTILES_ENABLED, CAPTCHA keys (fail-open without the secret),
+  APP_ORIGINS, redirect-URL allowlisting for /tw-login.html and
+  /auth/reset-password.
+- **Decisions still open (unchanged):** P2-10 (Next.js ship target);
+  DB-66 auto-settlement policy; session-history retention; the FE-08
+  coach search embedded-users name filter (live verification).
+- **Environment quirks (round 4 additions):** `/tmp` is a 512M tmpfs —
+  a second `npm install` into a /tmp scratch copy failed with ENOSPC;
+  scratch copies for npm work must live on the overlay disk (e.g.
+  `~/workspace/.nx12-scratch`); both scratch copies were deleted after
+  use. `tar` extraction fails on root-owned repo files ("Cannot change
+  ownership to uid 0") in some destinations — use `cp -r` for scratch
+  copies instead.

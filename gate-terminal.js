@@ -33,6 +33,7 @@
     gym_mismatch: 'Terminal non autorisé pour cette salle',
     missing_token: 'QR code manquant',
     camera_error: 'Caméra indisponible',
+    network_error: 'Réseau indisponible — vérifiez la connexion',
     missing_gym_id: 'Gym ID manquant',
     missing_credential_data: 'Identifiant de badge manquant',
     invalid_type: 'Type de lecture invalide',
@@ -42,6 +43,7 @@
     invalid_terminal_session: 'Session du terminal expirée — saisissez le PIN',
     server_error: 'Erreur serveur — réessayez',
     rate_limited: 'Trop de tentatives — réessayez dans une minute',
+    credential_locked: 'Badge verrouillé — réessayez dans 15 minutes',
   };
 
   const TYPE_LABELS = {
@@ -150,10 +152,21 @@
     setText('terminal-clock', formatClock());
   }
 
-  function setOnlineStatus(isOnline) {
+  // FE-29: the indicator used to reflect only the Realtime subscribe
+  // state, so an offline terminal still showed 'Realtime connectée'
+  // until the socket noticed. Online now means the browser has a
+  // network connection AND the Realtime channel is subscribed.
+  let realtimeSubscribed = false;
+  function renderOnlineStatus() {
+    const networkOnline = navigator.onLine !== false;
+    const isOnline = networkOnline && realtimeSubscribed;
     const status = document.getElementById('terminal-status');
     if (status) status.classList.toggle('online', Boolean(isOnline));
-    setText('status-text', isOnline ? 'Realtime connectée' : 'Realtime hors ligne');
+    setText('status-text', !networkOnline ? 'Hors ligne — pas de connexion' : isOnline ? 'Realtime connectée' : 'Realtime hors ligne');
+  }
+  function setOnlineStatus(isOnline) {
+    realtimeSubscribed = Boolean(isOnline);
+    renderOnlineStatus();
   }
 
   function scheduleIdleReset() {
@@ -430,18 +443,51 @@
   function safeReason(message) {
     if (!message) return 'camera_error';
     const key = String(message).trim();
-    return REASON_LABELS[key] ? key : 'camera_error';
+    if (REASON_LABELS[key]) return key;
+    // FE-29: a fetch/network failure is not a camera failure. fetch()
+    // throws a TypeError whose message is 'Failed to fetch' (Chrome),
+    // 'NetworkError when attempting to fetch resource.' (Firefox) or
+    // 'Load failed' (Safari) — none of those is the camera.
+    if (/failed to fetch|networkerror|network request failed|load failed/i.test(key)) return 'network_error';
+    return 'camera_error';
   }
 
+  // FE-28: the admin modal traps keyboard focus while open (it is the
+  // PIN prompt, so Tab must not escape to the scanner behind it) and
+  // restores focus to the element that opened it.
+  let adminModalReturnFocus = null;
+  function adminModalKeydown(event) {
+    if (event.key === 'Escape') { closeAdminModal(); return; }
+    if (event.key !== 'Tab') return;
+    const modal = document.getElementById('admin-modal');
+    const focusables = Array.from(modal?.querySelectorAll('button:not([disabled])') || []);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
   function openAdminModal() {
     adminBuffer = '';
     setText('admin-error', '');
     refreshAdminDisplay();
-    document.getElementById('admin-modal')?.classList.remove('hidden');
+    const modal = document.getElementById('admin-modal');
+    if (!modal) return;
+    adminModalReturnFocus = document.activeElement;
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    modal.addEventListener('keydown', adminModalKeydown);
+    modal.querySelector('.admin-pad [data-key]')?.focus();
   }
 
   function closeAdminModal() {
-    document.getElementById('admin-modal')?.classList.add('hidden');
+    const modal = document.getElementById('admin-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+    modal.removeEventListener('keydown', adminModalKeydown);
+    adminModalReturnFocus?.focus?.();
+    adminModalReturnFocus = null;
   }
 
   function refreshAdminDisplay() {
@@ -544,11 +590,22 @@
   }
 
   function bindUi() {
+    // FE-29: the RFID/fingerprint/face buttons have no local handler —
+    // setMode only stops the QR scanner for them, and those modes only
+    // work if external hardware pushes access events. Until a reader is
+    // configured they are disabled rather than implying they scan.
     document.querySelectorAll('[data-mode]').forEach(button => {
+      const mode = button.getAttribute('data-mode');
+      if (mode && mode !== 'qr' && mode !== 'admin') {
+        button.disabled = true;
+        button.title = 'Nécessite un lecteur externe — non configuré';
+      }
       button.addEventListener('click', () => {
         void setMode(button.getAttribute('data-mode'));
       });
     });
+    window.addEventListener('online', renderOnlineStatus);
+    window.addEventListener('offline', renderOnlineStatus);
 
     document.getElementById('admin-close')?.addEventListener('click', closeAdminModal);
     document.getElementById('admin-modal')?.addEventListener('click', event => {

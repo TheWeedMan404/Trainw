@@ -322,7 +322,9 @@ export function createGateCheckinHandler(options) {
           gym_id: details.gym_id || requestedGymId || null,
           client_id: details.client_id || null,
           credential_type: 'qr',
-          credential_ref: token,
+          // FE-09: log only a prefix of the opaque token — the full token
+          // is a live bearer for 60s and must not sit in the access log.
+          credential_ref: `qr:${token.slice(0, 8)}`,
           access_granted: false,
           denial_reason: reason,
           device_id: deviceId || null,
@@ -342,6 +344,14 @@ export function createGateCheckinHandler(options) {
         return json({ access: false, reason }, status, corsHeaders);
       };
 
+      // FE-09/GT-05: tokens are single opaque 128-bit crypto-random
+      // strings. The legacy dotted format (userId.gymId.timestamp.random)
+      // is rejected outright — the member and gym come from the
+      // gate_sessions row, never from the token itself.
+      if (token.includes('.')) {
+        return denyQr(400, 'invalid_token');
+      }
+
       const { data: gateSession, error: gateSessionError } = await admin
         .from('gate_sessions')
         .select('id, client_id, gym_id, token, expires_at, used')
@@ -353,20 +363,6 @@ export function createGateCheckinHandler(options) {
         return denyQr(404, 'invalid_token');
       }
 
-      const tokenParts = token.split('.');
-      if (tokenParts.length < 4) {
-        return denyQr(400, 'invalid_token', { gym_id: gateSession.gym_id });
-      }
-
-      const tokenClientId = tokenParts[0];
-      const tokenGymId = tokenParts[1];
-
-      if (tokenClientId !== gateSession.client_id) {
-        return denyQr(403, 'invalid_token', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
-      }
-      if (tokenGymId !== gateSession.gym_id) {
-        return denyQr(403, 'gym_mismatch', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
-      }
       if (requestedGymId && requestedGymId !== gateSession.gym_id) {
         return denyQr(403, 'gym_mismatch', { gym_id: gateSession.gym_id, client_id: gateSession.client_id });
       }
@@ -394,7 +390,9 @@ export function createGateCheckinHandler(options) {
         {
           p_client_id: gateSession.client_id,
           p_gym_id: gateSession.gym_id,
-          p_reference_date: new Date().toISOString().slice(0, 10),
+          // DB-37: no p_reference_date — the RPC default is the gym's
+          // today. Passing the server's UTC date here would reintroduce
+          // the off-by-one the DB-37 migration fixed.
         },
       );
       if (membershipError) throw membershipError;

@@ -1,3 +1,5 @@
+import type { Json } from "@/types/database";
+
 export const PERMISSIONS = {
   attendanceManage: "attendance.manage",
   classesManage: "classes.manage",
@@ -21,5 +23,24 @@ export function hasPermission(
   permissions: PermissionMap | null | undefined,
   permission: PermissionKey,
 ) {
-  return Boolean(permissions?.[permission]);
+  // NX-17: strict true only. Boolean("false") is true — a role whose
+  // permissions JSON was written with string values (manual DB edit,
+  // bad migration, admin tool) would otherwise be granted a permission
+  // the DB-side has_permission denies.
+  return permissions?.[permission] === true;
+}
+
+// NX-17 / NX-26: the single normaliser for role permission JSON, used
+// by workspace.ts and queries.ts. Strict true only (same reason as
+// hasPermission). Exported for the smoke tests.
+export function normalisePermissions(
+  input: Json | null | undefined,
+): PermissionMap {
+  if (!input || Array.isArray(input) || typeof input !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [key, value === true]),
+  ) as PermissionMap;
 }

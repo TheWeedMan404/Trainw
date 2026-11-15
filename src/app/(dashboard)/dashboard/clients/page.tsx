@@ -3,15 +3,19 @@ import { ClientRowActions } from "@/components/forms/client-row-actions";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getClientsPageData } from "@/lib/queries";
+import { parsePageParam } from "@/lib/pagination";
 import { formatDateTime } from "@/lib/utils";
 import { requirePermission } from "@/lib/workspace";
 
-export default async function ClientsPage() {
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const context = await requirePermission(PERMISSIONS.clientsManage);
-  const clients = await getClientsPageData(context.gymId);
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const { clients, hasMore } = await getClientsPageData(context.gymId, page);
 
   return (
     <div className="space-y-6">
@@ -71,6 +75,7 @@ export default async function ClientsPage() {
               />
             )}
           </div>
+          <Pagination hasMore={hasMore} page={page} />
         </Card>
       </div>
     </div>

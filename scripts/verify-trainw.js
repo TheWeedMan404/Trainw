@@ -43,7 +43,6 @@ const jsFiles = [
   'trainw-tenant-utils.js',
   'trainw-translations.js',
   'tw-client-acc.js',
-  'tw-client-pilot.js',
   'tw-coach-acc.js',
   'tw-gym-acc-v17.js',
   'tw-gym-acc.js',

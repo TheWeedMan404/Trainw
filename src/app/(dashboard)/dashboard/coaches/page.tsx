@@ -1,15 +1,20 @@
 import { CoachForm } from "@/components/forms/coach-form";
+import { CoachRowActions } from "@/components/forms/coach-row-actions";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getCoachesPageData } from "@/lib/queries";
+import { parsePageParam } from "@/lib/pagination";
 import { formatDateTime } from "@/lib/utils";
 import { requirePermission } from "@/lib/workspace";
 
-export default async function CoachesPage() {
+export default async function CoachesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const context = await requirePermission(PERMISSIONS.coachesManage);
-  const coaches = await getCoachesPageData(context.gymId);
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const { coaches, hasMore } = await getCoachesPageData(context.gymId, page);
 
   return (
     <div className="space-y-6">
@@ -47,6 +52,7 @@ export default async function CoachesPage() {
                       Created {formatDateTime(coach.created_at)}
                     </p>
                   </div>
+                  <CoachRowActions coachId={coach.id} />
                 </div>
               ))
             ) : (
@@ -56,6 +62,7 @@ export default async function CoachesPage() {
               />
             )}
           </div>
+          <Pagination hasMore={hasMore} page={page} />
         </Card>
       </div>
     </div>

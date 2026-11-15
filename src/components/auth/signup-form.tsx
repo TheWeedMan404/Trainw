@@ -34,6 +34,13 @@ export function SignupForm() {
         <input id="password" name="password" placeholder="Minimum 8 characters" type="password" />
       </div>
 
+      <div className="flex items-start gap-2 text-sm text-slate-600">
+        <input id="consent" name="consent" required type="checkbox" />
+        <label htmlFor="consent">
+          I accept the Trainw privacy terms.
+        </label>
+      </div>
+
       {state.error ? (
         <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {state.error}

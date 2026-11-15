@@ -1,16 +1,22 @@
 import { StaffUserForm } from "@/components/forms/staff-user-form";
+import { RoleRowActions } from "@/components/forms/role-row-actions";
+import { StaffUserRowActions } from "@/components/forms/staff-user-row-actions";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getRolesPageData } from "@/lib/queries";
+import { parsePageParam } from "@/lib/pagination";
 import { formatDateTime } from "@/lib/utils";
 import { requirePermission } from "@/lib/workspace";
 
-export default async function RolesPage() {
+export default async function RolesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const context = await requirePermission(PERMISSIONS.rolesManage);
-  const { roles, users } = await getRolesPageData(context.gymId);
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const { hasMore, roles, users } = await getRolesPageData(context.gymId, page);
 
   return (
     <div className="space-y-6">
@@ -55,6 +61,9 @@ export default async function RolesPage() {
                         </span>
                       ))}
                   </div>
+                  <div className="mt-4 flex justify-end">
+                    <RoleRowActions roleId={role.id} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -72,13 +81,21 @@ export default async function RolesPage() {
                     <div>
                       <p className="font-medium text-slate-950">
                         {user.fullName || user.email}
+                        {user.banned ? " (deactivated)" : ""}
                       </p>
                       <p className="mt-1 text-sm text-slate-600">{user.email}</p>
                       <p className="mt-1 text-xs text-slate-500">
                         Created {formatDateTime(user.createdAt)}
                       </p>
                     </div>
-                    <StatusBadge label={user.roleName} />
+                    <div className="flex flex-col items-end gap-2">
+                      <StatusBadge label={user.roleName} />
+                      <StaffUserRowActions
+                        banned={user.banned}
+                        isSelf={user.id === context.userId}
+                        userId={user.id}
+                      />
+                    </div>
                   </div>
                 ))
               ) : (
@@ -88,6 +105,7 @@ export default async function RolesPage() {
                 />
               )}
             </div>
+            <Pagination hasMore={hasMore} page={page} />
           </Card>
         </div>
       </div>

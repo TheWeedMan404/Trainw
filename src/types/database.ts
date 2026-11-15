@@ -19,16 +19,28 @@ type Relationship = {
   referencedRelation: string;
 };
 
-type TableDefinition<Row, Insert, Update> = {
+// NX-25: TableDefinition takes the table's foreign keys as a 4th type
+// argument. It used to default Relationships to a bare Relationship[],
+// so the generated type listed NO relations at all and supabase-js
+// could not resolve ANY embedded select (every `client:clients(...)`
+// / `coach:coaches(...)` embed typed as SelectQueryError, which is why
+// the queries were full of `as any`). The relations below are taken
+// from database/archive/schema.sql (constraint names included).
+type TableDefinition<
+  Row,
+  Insert,
+  Update,
+  Rels extends Relationship[] = [],
+> = {
   Insert: Insert;
-  Relationships: Relationship[];
+  Relationships: Rels;
   Row: Row;
   Update: Update;
 };
 
 export interface Database {
   public: {
-    CompositeTypes: {};
+    CompositeTypes: Record<string, never>;
     Enums: {
       attendance_status: AttendanceStatus;
       class_type: ClassType;
@@ -73,7 +85,27 @@ export interface Database {
           id?: string;
           status?: AttendanceStatus;
           timestamp?: string;
-        }
+        },
+        [
+          {
+            columns: ["class_id"];
+            foreignKeyName: "attendance_class_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "classes";
+          },
+          {
+            columns: ["client_id"];
+            foreignKeyName: "attendance_client_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "clients";
+          },
+          {
+            columns: ["gym_id"];
+            foreignKeyName: "attendance_gym_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "gyms";
+          },
+        ]
       >;
       class_clients: TableDefinition<
         {
@@ -90,7 +122,21 @@ export interface Database {
           class_id?: string;
           client_id?: string;
           id?: string;
-        }
+        },
+        [
+          {
+            columns: ["class_id"];
+            foreignKeyName: "class_clients_class_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "classes";
+          },
+          {
+            columns: ["client_id"];
+            foreignKeyName: "class_clients_client_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "clients";
+          },
+        ]
       >;
       classes: TableDefinition<
         {
@@ -119,7 +165,21 @@ export interface Database {
           id?: string;
           name?: string;
           type?: ClassType;
-        }
+        },
+        [
+          {
+            columns: ["coach_id", "gym_id"];
+            foreignKeyName: "classes_coach_gym_fk";
+            referencedColumns: ["id", "gym_id"];
+            referencedRelation: "coaches";
+          },
+          {
+            columns: ["gym_id"];
+            foreignKeyName: "classes_gym_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "gyms";
+          },
+        ]
       >;
       clients: TableDefinition<
         {
@@ -157,7 +217,15 @@ export interface Database {
           phone?: string | null;
           status?: ClientStatus;
           type?: ClientType;
-        }
+        },
+        [
+          {
+            columns: ["gym_id"];
+            foreignKeyName: "clients_gym_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "gyms";
+          },
+        ]
       >;
       coaches: TableDefinition<
         {
@@ -180,7 +248,15 @@ export interface Database {
           id?: string;
           name?: string;
           rating?: number | null;
-        }
+        },
+        [
+          {
+            columns: ["gym_id"];
+            foreignKeyName: "coaches_gym_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "gyms";
+          },
+        ]
       >;
       gyms: TableDefinition<
         {
@@ -220,7 +296,15 @@ export interface Database {
           id?: string;
           name?: string;
           permissions?: Json;
-        }
+        },
+        [
+          {
+            columns: ["gym_id"];
+            foreignKeyName: "roles_gym_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "gyms";
+          },
+        ]
       >;
       users: TableDefinition<
         {
@@ -246,10 +330,24 @@ export interface Database {
           gym_id?: string;
           id?: string;
           role_id?: string;
-        }
+        },
+        [
+          {
+            columns: ["gym_id"];
+            foreignKeyName: "users_gym_id_fkey";
+            referencedColumns: ["id"];
+            referencedRelation: "gyms";
+          },
+          {
+            columns: ["role_id", "gym_id"];
+            foreignKeyName: "users_role_gym_fk";
+            referencedColumns: ["id", "gym_id"];
+            referencedRelation: "roles";
+          },
+        ]
       >;
     };
-    Views: {};
+    Views: Record<string, never>;
   };
 }
 

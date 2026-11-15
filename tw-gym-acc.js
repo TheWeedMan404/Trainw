@@ -3,6 +3,23 @@ const Trainw = window.TrainwCore;
 const sb = Trainw.createClient();
 Trainw.installGlobalErrorHandlers();
 
+// FE-27: explicit hook registry. The v17 add-on file used to monkey-patch
+// loadClients/loadAnalytics/loadCoaches/setLang/openCoachModal at runtime
+// (wrap()), which made behaviour order-dependent and unauditable. Add-on
+// code now registers extras here; each base loader runs its hooks at the
+// end of its own work. A loader that returns early (no gym, no element)
+// skips its hooks — there is nothing to refresh in that case.
+window.TrainwGymHooks = {
+  afterLoadAnalytics: [],
+  afterLoadClients: [],
+  afterLoadCoaches: [],
+  afterSetLang: []
+};
+async function runGymHooks(name) {
+  const hooks = (window.TrainwGymHooks && window.TrainwGymHooks[name]) || [];
+  for (const hook of hooks) await hook();
+}
+
 const GYM_LOGIN_HREF = '/login?role=gym_owner';
 
 let currentUser    = null;
@@ -23,6 +40,9 @@ let allClients     = [];
 let gymCoaches     = [];
 let gymClasses     = [];
 let accessDirectory = [];
+// FE-18: in-flight guard for per-row destructive actions (the delete
+// buttons are rendered per row, so the guard keys on action + row id).
+const inFlightActions = new Set();
 let roleMatrix = [];
 let permissionCatalog = [];
 let checkInsList   = [];
@@ -276,7 +296,7 @@ const T = {
     noCheckIns:"Aucun check-in aujourd'hui.", checkedIn:'Présent à',
     selectClient:'Sélectionner un client…', confirmCheckIn:'Confirmer le Check-In',
     checkInDone:'Check-in enregistré !', alreadyCheckedIn:"Déjà enregistré aujourd'hui.",
-    messagesTitle:'Messages', messagesSub:'Conversations avec vos clients',
+    messagesTitle:'Messages', messagesSub:'Conversations avec vos clients', messageTooLong:'Message trop long (max 2000 caractères).',
     typeMessage:'Écrivez un message…', sendMsg:'Envoyer',
     noMessages:'Aucune conversation. Sélectionnez un client pour commencer.', selectConv:'Sélectionnez une conversation',
     classesTitle:'Cours & Activités', classesSub:'Gérez les cours de votre salle',
@@ -287,7 +307,7 @@ const T = {
     noClasses:'Aucun cours. Créez votre premier cours !', deleteClass:'Supprimer',
     membershipStart:'Début Abonnement', membershipEnd:'Fin Abonnement', pricePaid:'Montant Payé (DT)',
     expiresIn:'Expire dans', expiredSince:'Expiré depuis', daysLeft:'jours', renewalNeeded:'Renouvellement requis',
-    expiringLabel:'Expire bientôt', expiredLabel:'Expiré', activeLabel:'Actif',
+    expiringLabel:'Expire bientôt', expiredLabel:'Expiré', activeLabel:'Actif', expiringSoonStat:'Expirent bientôt', expiringDelta:'14 prochains jours', sessionsTab:'Séances', classTemplatesTab:'Modèles de cours', coachSearchHint:'Cherchez un nom ou une spécialité pour trouver un coach existant.', searchingInProgress:'Recherche en cours…', credentialSelectClient:'Sélectionnez un client pour gérer ses badges.', noBadgesForClient:'Aucun badge enregistré pour {name}.', thisClient:'ce client',
     membersExpiring:'Membres à Renouveler', noExpiring:'Tous les abonnements sont à jour.',
     revenueReal:'Revenus Réels', revenueMonth:'Ce Mois',
     editSession:'Modifier', deleteSession:'Supprimer', editSessionTitle:'Modifier la Séance',
@@ -339,7 +359,7 @@ const T = {
     noCheckIns:'No check-ins today.', checkedIn:'Checked in at',
     selectClient:'Select a client…', confirmCheckIn:'Confirm Check-In',
     checkInDone:'Check-in recorded!', alreadyCheckedIn:'Already checked in today.',
-    messagesTitle:'Messages', messagesSub:'Conversations with your clients',
+    messagesTitle:'Messages', messagesSub:'Conversations with your clients', messageTooLong:'Message too long (max 2000 characters).',
     typeMessage:'Write a message…', sendMsg:'Send',
     noMessages:'No conversations. Select a client to start.', selectConv:'Select a conversation',
     classesTitle:'Classes & Activities', classesSub:'Manage your gym classes',
@@ -350,7 +370,7 @@ const T = {
     noClasses:'No classes yet. Create your first class!', deleteClass:'Delete',
     membershipStart:'Membership Start', membershipEnd:'Membership End', pricePaid:'Amount Paid (DT)',
     expiresIn:'Expires in', expiredSince:'Expired', daysLeft:'days', renewalNeeded:'Renewal needed',
-    expiringLabel:'Expiring soon', expiredLabel:'Expired', activeLabel:'Active',
+    expiringLabel:'Expiring soon', expiredLabel:'Expired', activeLabel:'Active', expiringSoonStat:'Expiring soon', expiringDelta:'Next 14 days', sessionsTab:'Sessions', classTemplatesTab:'Class templates', coachSearchHint:'Search a name or specialty to find an existing coach.', searchingInProgress:'Searching…', credentialSelectClient:'Select a client to manage their badges.', noBadgesForClient:'No badge registered for {name}.', thisClient:'this client',
     membersExpiring:'Members to Renew', noExpiring:'All memberships are up to date.',
     revenueReal:'Real Revenue', revenueMonth:'This Month',
     editSession:'Edit', deleteSession:'Delete', editSessionTitle:'Edit Session',
@@ -402,7 +422,7 @@ const T = {
     noCheckIns:'لا يوجد حضور اليوم.', checkedIn:'تسجيل في',
     selectClient:'اختر عميلاً…', confirmCheckIn:'تأكيد الحضور',
     checkInDone:'تم تسجيل الحضور!', alreadyCheckedIn:'تم التسجيل مسبقاً اليوم.',
-    messagesTitle:'الرسائل', messagesSub:'المحادثات مع العملاء',
+    messagesTitle:'الرسائل', messagesSub:'المحادثات مع العملاء', messageTooLong:'الرسالة طويلة جداً (الحد الأقصى 2000 حرف).',
     typeMessage:'اكتب رسالة…', sendMsg:'إرسال',
     noMessages:'لا توجد محادثات. اختر عميلاً للبدء.', selectConv:'اختر محادثة',
     classesTitle:'الدروس والأنشطة', classesSub:'إدارة دروس صالتك',
@@ -413,7 +433,7 @@ const T = {
     noClasses:'لا توجد دروس بعد. أنشئ أول درس!', deleteClass:'حذف',
     membershipStart:'بداية الاشتراك', membershipEnd:'نهاية الاشتراك', pricePaid:'المبلغ المدفوع (دت)',
     expiresIn:'ينتهي في', expiredSince:'منتهي منذ', daysLeft:'أيام', renewalNeeded:'يحتاج تجديد',
-    expiringLabel:'ينتهي قريباً', expiredLabel:'منتهي', activeLabel:'نشط',
+    expiringLabel:'ينتهي قريباً', expiredLabel:'منتهي', activeLabel:'نشط', expiringSoonStat:'تنتهي قريباً', expiringDelta:'الأيام الـ 14 القادمة', sessionsTab:'حصص', classTemplatesTab:'قوالب الحصص', coachSearchHint:'ابحث بالاسم أو التخصص للعثور على مدرب موجود.', searchingInProgress:'جارٍ البحث…', credentialSelectClient:'اختر عميلاً لإدارة شاراته.', noBadgesForClient:'لا توجد شارة مسجلة لـ {name}.', thisClient:'هذا العميل',
     membersExpiring:'أعضاء للتجديد', noExpiring:'جميع الاشتراكات سارية.',
     revenueReal:'الإيرادات الفعلية', revenueMonth:'هذا الشهر',
     editSession:'تعديل', deleteSession:'حذف', editSessionTitle:'تعديل الجلسة',
@@ -425,7 +445,7 @@ Object.assign(T.fr, {
   teamTab:'Équipe',
   rolesTab:'Rôles & Permissions',
   inviteMemberTitle:'Inviter un membre',
-  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.",
+  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.", inviteAccountFirst:"L'invité doit déjà avoir un compte Trainw — l'invitation échoue sinon.",
   fullNameLbl:'Nom complet',
   emailLbl:'Email',
   roleLbl:'Rôle',
@@ -545,7 +565,7 @@ Object.assign(T.en, {
   teamTab:'Team',
   rolesTab:'Roles & Permissions',
   inviteMemberTitle:'Invite a member',
-  inviteMemberSub:'Add a member to your team and prepare their staff profile during the invite flow.',
+  inviteMemberSub:'Add a member to your team and prepare their staff profile during the invite flow.', inviteAccountFirst:'The invitee must already have a Trainw account — otherwise the invite fails.',
   fullNameLbl:'Full name',
   emailLbl:'Email',
   roleLbl:'Role',
@@ -665,7 +685,7 @@ Object.assign(T.ar, Object.assign({}, T.fr, {
   teamTab:'Équipe',
   rolesTab:'Rôles & Permissions',
   inviteMemberTitle:'Inviter un membre',
-  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.",
+  inviteMemberSub:"Ajoutez un membre à l'équipe et préparez son profil dès l'invitation.", inviteAccountFirst:'يجب أن يكون لدى المدعو حساب Trainw مسبقاً — وإلا فستفشل الدعوة.',
 }));
 T.ar.staffTableStatus = T.fr.staffTableStatus;
 const t = k => T[currentLang]?.[k] || T.fr[k] || k;
@@ -896,49 +916,6 @@ function skeletonRows(n=4) {
 }
 
 // ── Init ──────────────────────────────────────────────────
-async function legacyInitDisabled() {
-  try {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) { window.location.href = GYM_LOGIN_HREF; return; }
-    currentUser = session.user;
-    const emailEl = document.getElementById('account-email');
-    if (emailEl) emailEl.value = currentUser.email || '';
-
-    const { data: profile } = await sb.from('users').select('gym_id, name').eq('id', currentUser.id).single();
-    if (profile?.gym_id) {
-      currentGymId = profile.gym_id;
-      const { data: gym } = await sb.from('gyms').select('name, address, phone, description, subscription_tier, price_monthly, price_quarterly, price_annual').eq('id', currentGymId).single();
-      if (gym) {
-        document.getElementById('sidebar-gym-name').textContent = gym.name || '—';
-        const f = id => document.getElementById(id);
-        if (f('gym-name-input'))    f('gym-name-input').value    = gym.name        || '';
-        if (f('gym-address-input')) f('gym-address-input').value = gym.address     || '';
-        if (f('gym-phone-input'))   f('gym-phone-input').value   = gym.phone       || '';
-        if (f('gym-desc-input'))    f('gym-desc-input').value    = gym.description || '';
-        if (f('gym-price-monthly'))   f('gym-price-monthly').value   = gym.price_monthly   ?? '';
-        if (f('gym-price-quarterly')) f('gym-price-quarterly').value = gym.price_quarterly ?? '';
-        if (f('gym-price-annual'))    f('gym-price-annual').value    = gym.price_annual    ?? '';
-        const tier = (gym.subscription_tier || 'free').toUpperCase();
-        const badge = document.getElementById('sub-tier-badge');
-        const name  = document.getElementById('sub-tier-name');
-        if (badge) { badge.textContent = tier; badge.className = 'sub-tier-badge tier-' + tier.toLowerCase(); }
-        if (name)  name.textContent = tier === 'PRO' ? 'Plan Pro' : t('freeTier');
-      }
-    } else {
-      document.getElementById('sidebar-gym-name').textContent = profile?.name || '—';
-    }
-
-    await loadGymCoaches();
-    updateSessionCategory();
-    await Promise.all([loadDashboardStats(), loadSchedule(), loadCoaches(), loadClients(), loadCheckIns()]);
-    await loadAnalytics();
-    applyTranslations();
-    animateCounters();
-  } catch(err) {
-    console.error('Init error:', err);
-    toast(t('errorMsg') + ': ' + err.message, 'err');
-  }
-}
 
 function animateCounters() {
   document.querySelectorAll('.stat-value').forEach(el => {
@@ -1845,7 +1822,7 @@ function ensureExpiringDashboardStatCard() {
   card = document.createElement('div');
   card.className = 'stat-card hidden';
   card.id = 'stat-expiring';
-  card.innerHTML = '<div class="stat-label" id="stat-expiring-label">Expirent bient&ocirc;t</div><div class="stat-value" id="stat-expiring-value">&mdash;</div><div class="stat-change" id="stat-expiring-delta">14 prochains jours</div><div class="stat-glow"></div>';
+  card.innerHTML = '<div class="stat-label" id="stat-expiring-label">' + Trainw.escapeHtml(t('expiringSoonStat')) + '</div><div class="stat-value" id="stat-expiring-value">&mdash;</div><div class="stat-change" id="stat-expiring-delta">' + Trainw.escapeHtml(t('expiringDelta')) + '</div><div class="stat-glow"></div>';
   const checkinsCard = document.getElementById('stat-checkins')?.closest('.stat-card');
   if (checkinsCard?.parentElement === grid) grid.insertBefore(card, checkinsCard);
   else grid.appendChild(card);
@@ -2118,7 +2095,7 @@ async function loadDashboardStats() {
     const valueEl = document.getElementById('stat-expiring-value');
     if (valueEl) valueEl.textContent = String(expiringCount);
     const labelEl = document.getElementById('stat-expiring-label');
-    if (labelEl) labelEl.textContent = 'Expirent bient\u00f4t';
+    if (labelEl) labelEl.textContent = t('expiringSoonStat');
     const deltaEl = document.getElementById('stat-expiring-delta');
     if (deltaEl) deltaEl.textContent = '14 prochains jours';
   }
@@ -2295,8 +2272,8 @@ function populateGymClassCoachSelector() {
 function renderScheduleTabs() {
   const sessionsButton = document.querySelector('[data-schedule-tab="sessions"]');
   const classesButton = document.querySelector('[data-schedule-tab="classes"]');
-  if (sessionsButton) sessionsButton.textContent = 'Seances';
-  if (classesButton) classesButton.textContent = 'Modeles de Cours';
+  if (sessionsButton) sessionsButton.textContent = t('sessionsTab');
+  if (classesButton) classesButton.textContent = t('classTemplatesTab');
 
   document.querySelectorAll('[data-schedule-tab]').forEach(button => {
     button.classList.toggle('active', button.dataset.scheduleTab === scheduleTab);
@@ -2780,6 +2757,9 @@ async function saveEditSession() {
 
 async function deleteSession(sessionId) {
   if (!confirm('Supprimer cette séance ? Action irréversible.')) return;
+  const key = `delete-session:${sessionId}`;
+  if (inFlightActions.has(key)) return;
+  inFlightActions.add(key);
   try {
     const { error } = await sb.from('sessions').delete().eq('id', sessionId).eq('gym_id', currentGymId);
     if (error) throw error;
@@ -2788,6 +2768,7 @@ async function deleteSession(sessionId) {
     await loadDashboardStats(); animateCounters();
     toast('Séance supprimée');
   } catch(err) { toast(t('errorMsg') + ': ' + err.message, 'err'); }
+  finally { inFlightActions.delete(key); }
 }
 async function submitNewSession() {
   const name=document.getElementById('sess-name').value.trim(), typeVal=document.getElementById('sess-type').value;
@@ -2915,6 +2896,7 @@ async function loadCoaches() {
   const outer = document.getElementById('carousel-track-outer');
   if (outer) outer.scrollLeft = 0;
   startCarouselAutoplay();
+  await runGymHooks('afterLoadCoaches');
 }
 
 function getCarouselCardWidth() {
@@ -3068,8 +3050,12 @@ async function saveEditCoach(){
 }
 async function deleteCoach(userId,profileId){
   if(!confirm('Supprimer ce coach ?')) return;
+  const key=`delete-coach:${userId}`;
+  if(inFlightActions.has(key)) return;
+  inFlightActions.add(key);
   try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('coach_profiles').delete().eq('id',profileId).eq('gym_id', currentGymId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;document.getElementById('coach-modal').classList.remove('show');await loadCoaches();await loadDashboardStats();animateCounters();toast('Coach supprimé');}
   catch(e){toast(`${t('errorMsg')}: ${e?.message||'Erreur'}`,'err');}
+  finally{inFlightActions.delete(key);}
 }
 
 // ── Clients ───────────────────────────────────────────────
@@ -3120,6 +3106,7 @@ async function loadClients() {
   renderClients(); populateCheckInSelector(); populateMessagesList(); populateSessionClientSelector(); renderCredentialClientList(); renderGateAccessLog(); renderGateSettingsCredentialsTable(); renderGateSettingsAccessLogTable(); updateGateTerminalPreview();
   if (selectedCredentialClientId) void loadClientCredentials();
   if (directoryResult.error) toast(t('errorMsg'), 'err');
+  await runGymHooks('afterLoadClients');
 }
 function renderClients(){
   const el=document.getElementById('clients-grid'); if(!el) return;
@@ -3152,14 +3139,26 @@ function renderClients(){
   });
   syncPermissionVisibility();
 }
+// FE-17: month-end clamping in UTC. The old setMonth() overflowed Jan 31
+// + 1 month to Mar 2/3, and mixed local getters with toISOString() (UTC),
+// shifting the date around midnight in Africa/Tunis. All math here is in
+// UTC on the date-only value, and the day is clamped to the target month's
+// last day (Jan 31 + 1 month = Feb 28/29).
 function calcEndDate(startStr, tier) {
   if(!startStr) return null;
-  const d = new Date(startStr);
-  if(tier==='monthly'||tier==='mensuel') d.setMonth(d.getMonth()+1);
-  else if(tier==='quarterly'||tier==='trimestriel') d.setMonth(d.getMonth()+3);
-  else if(tier==='annual'||tier==='annuel') d.setFullYear(d.getFullYear()+1);
+  let months = 0;
+  if(tier==='monthly'||tier==='mensuel') months=1;
+  else if(tier==='quarterly'||tier==='trimestriel') months=3;
+  else if(tier==='annual'||tier==='annuel') months=12;
   else return null; // basic / per-session = no expiry
-  return d.toISOString().split('T')[0];
+  const d = new Date(startStr);
+  if(Number.isNaN(d.getTime())) return null;
+  const targetMonth = d.getUTCMonth() + months;
+  const targetYear = d.getUTCFullYear() + Math.floor(targetMonth / 12);
+  const targetMonthInYear = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonthInYear + 1, 0)).getUTCDate();
+  const day = Math.min(d.getUTCDate(), lastDay);
+  return new Date(Date.UTC(targetYear, targetMonthInYear, day)).toISOString().split('T')[0];
 }
 
 function clearInlineError(element) {
@@ -3250,13 +3249,13 @@ function renderCoachSearchResults() {
   if (!statusEl || !resultsEl) return;
 
   if (!coachSearchTerm.trim()) {
-    statusEl.textContent = 'Cherchez un nom ou une specialite pour trouver un coach existant.';
+    statusEl.textContent = t('coachSearchHint');
     resultsEl.innerHTML = '';
     return;
   }
 
   if (coachSearchLoading) {
-    statusEl.textContent = 'Recherche en cours...';
+    statusEl.textContent = t('searchingInProgress');
     resultsEl.innerHTML = skeletonCards(2);
     return;
   }
@@ -3620,8 +3619,12 @@ async function saveEditClient(){
 }
 async function deleteClient(userId){
   if(!confirm('Supprimer ce client ? Action irréversible.')) return;
+  const key=`delete-client:${userId}`;
+  if(inFlightActions.has(key)) return;
+  inFlightActions.add(key);
   try{const{error:revokeError}=await sb.rpc('revoke_gym_membership_by_user',{p_user_id:userId,p_gym_id:currentGymId});if(revokeError)throw revokeError;const{error:profileError}=await sb.from('client_profiles').delete().eq('user_id',userId).eq('gym_id', currentGymId);if(profileError)throw profileError;const{error:userError}=await sb.from('users').delete().eq('id',userId);if(userError)throw userError;allClients=allClients.filter(c=>c.id!==userId);renderClients();await loadDashboardStats();animateCounters();toast('Client supprimé');}
   catch(e){toast(t('errorMsg')+': '+e.message,'err');}
+  finally{inFlightActions.delete(key);}
 }
 
 // ── CHECK-IN ──────────────────────────────────────────────
@@ -4568,12 +4571,12 @@ function renderCredentialList() {
   if (!listEl) return;
 
   if (!selectedClient) {
-    listEl.innerHTML = `<p class="empty-state">Sélectionnez un client pour gérer ses badges.</p>`;
+    listEl.innerHTML = `<p class="empty-state">${Trainw.escapeHtml(t('credentialSelectClient'))}</p>`;
     return;
   }
 
   if (!memberCredentialsList.length) {
-    listEl.innerHTML = `<p class="empty-state">Aucun badge enregistré pour ${Trainw.escapeHtml(selectedClient.name || 'ce client')}.</p>`;
+    listEl.innerHTML = `<p class="empty-state">${Trainw.escapeHtml(t('noBadgesForClient').replace('{name}', selectedClient.name || t('thisClient')))}</p>`;
     return;
   }
 
@@ -4935,6 +4938,8 @@ async function sendMessage() {
   const content = input?.value.trim();
   const btn = document.getElementById('btn-send-message');
   if (!content) return;
+  // FE-26: chat cap (the DB CHECK is the backstop).
+  if (content.length > 2000) { Trainw.ui.showToast(t('messageTooLong'), 'error'); return; }
 
   Trainw.ui.setBusy(btn, true);
   try {
@@ -5150,6 +5155,7 @@ async function loadAnalytics() {
 
   animateCounters();
   if (clientCountResult.error || coachCountResult.error || sessionsResult.error || paidThisMonth.error) toast(t('errorMsg'), 'err');
+  await runGymHooks('afterLoadAnalytics');
 }
 
 async function saveSettings() {
@@ -5252,11 +5258,12 @@ async function changePassword() {
   Trainw.ui.setBusy(btn, true);
   if (btn) btn.textContent = '...';
   try {
-    const result = await Trainw.api.run(sb.auth.resetPasswordForEmail(email), { context: 'send password reset' });
+    const result = await Trainw.api.run(sb.auth.resetPasswordForEmail(email, { emailRedirectTo: window.location.origin + '/tw-login.html' }), { context: 'send password reset', toastOnError: false });
     if (result.error) throw result.error;
     toast(t('pwReset'));
   } catch (error) {
-    toast(error.message || t('errorMsg'), 'err');
+    // FE-25: never surface the raw auth error (it can name the account state).
+    toast(t('errorMsg'), 'err');
   } finally {
     if (btn) btn.textContent = t('changePassword');
     Trainw.ui.setBusy(btn, false);
@@ -5431,7 +5438,7 @@ function bindUi() {
   // nothing (the old inline event.stopPropagation() behaviour).
   document.addEventListener('click', event => {
     const coachModal = event.target.closest('[data-coach-modal]');
-    if (coachModal) { openCoachModal(coachModal.dataset.coachModal); return; }
+    if (coachModal) { (window.openCoachPanel || openCoachModal)(coachModal.dataset.coachModal); return; }
     const bookCoach = event.target.closest('[data-book-coach]');
     if (bookCoach) { openBookSessionForCoach(bookCoach.dataset.bookCoach); return; }
     const sessionEdit = event.target.closest('[data-session-edit]');
@@ -5772,6 +5779,7 @@ function setLang(lang) {
   activeSettingsStaffTab = previousStaffTab;
   switchSettingsStaffTab(previousStaffTab);
   syncPermissionVisibility();
+  void runGymHooks('afterSetLang');
 }
 
 async function initPage() {

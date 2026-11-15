@@ -13,14 +13,9 @@ const METRIC_LABELS = [
   { key: "attendanceToday", label: "Attendance today" },
 ] as const;
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ forbidden?: string }>;
-}) {
+export default async function DashboardPage() {
   const context = await requirePermission(PERMISSIONS.dashboardView);
   const metrics = await getDashboardMetrics(context.gymId);
-  const params = await searchParams;
 
   return (
     <div className="space-y-6">
@@ -28,14 +23,6 @@ export default async function DashboardPage({
         description="Daily gym visibility across staff, people, classes, and attendance."
         title="Gym overview"
       />
-
-      {params.forbidden ? (
-        <Card className="border-amber-200 bg-amber-50">
-          <p className="text-sm font-medium text-amber-900">
-            Your role does not have permission to access that area.
-          </p>
-        </Card>
-      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {METRIC_LABELS.map((metric) => (
