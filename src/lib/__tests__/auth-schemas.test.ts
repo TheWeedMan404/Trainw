@@ -28,6 +28,21 @@ describe("loginSchema", () => {
       loginSchema.safeParse({ email: "owner@gym.tn", password: "short" }).success,
     ).toBe(false);
   });
+
+  // NX-07 (round 6): redirectTo must stay on-site. Absolute URLs and
+  // protocol-relative targets are open redirects and must fail the parse.
+  it("accepts a same-site redirect and rejects external targets", () => {
+    const base = { email: "owner@gym.tn", password: "s3cret-pass" };
+    expect(loginSchema.safeParse({ ...base, redirectTo: "/dashboard" }).success).toBe(true);
+    expect(loginSchema.safeParse({ ...base, redirectTo: undefined }).success).toBe(true);
+    expect(
+      loginSchema.safeParse({ ...base, redirectTo: "https://evil.example" }).success,
+    ).toBe(false);
+    expect(loginSchema.safeParse({ ...base, redirectTo: "//evil.example" }).success).toBe(false);
+    expect(
+      loginSchema.safeParse({ ...base, redirectTo: "/\\evil.example" }).success,
+    ).toBe(false);
+  });
 });
 
 describe("signupSchema", () => {

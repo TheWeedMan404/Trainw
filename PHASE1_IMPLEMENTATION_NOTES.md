@@ -2841,3 +2841,199 @@ transpile-only clean on all 14 touched TSX files.
   (SearchableSelect, edit forms) have only had a transpile-only
   esbuild check; `tsc --noEmit` + `next build` must run at deploy
   time (needs node_modules / network).
+
+---
+
+# Round 6 — audit closure pass (2026-11-15 ~04:04–06:00, head d206af9)
+
+Task: reconcile all 137 audit findings against the CURRENT code (not the
+notes), fix anything still open and code-doable, verify NX-24/NX-25
+properly, deliver `AUDIT_CLOSURE.md`. Local only — no push, no live DB,
+no history rewrites, no edits to existing migrations. Commits on top of
+round 5's `e000c15`: `78a63b6` (6 migrations), `b96c892` (NX-11),
+`f3152ba` (NX-15), `bd4c441` (NX-07/NX-15 residuals/NX-16), `60dce40`
+(AUDIT_CLOSURE.md).
+
+## Closure counts (verified programmatically against the audit report)
+
+115 FIXED+VERIFIED, 19 FIXED+NEEDS-LIVE-TEST, 2 OPEN-DECISION-NEEDED
+(DB-66, NX-03), 0 OPEN-LIVE-ONLY, 1 NOT-APPLICABLE (GT-04). All 7
+CRITICAL are FIXED+VERIFIED. Every one of the 137 IDs appears exactly
+once in AUDIT_CLOSURE.md (checked by script, no duplicates, none
+missing); severities follow the audit report's findings table.
+
+## Verification harness (round 6)
+
+- Throwaway local Postgres 16 cluster, rebuilt from the round-5 data
+  dir (`/tmp/r5-pgdata`, port 54399, socket /tmp). Harness + stubs +
+  suite kept at `~/workspace/.r6-scratch/` (`r6-harness.sh`,
+  `r6-tests.sql`, `supabase-stubs.sql`, `schema.txt`, `functions.txt`).
+  The Next.js scratch copy (`~/workspace/.r6-scratch/next-app`) was
+  deleted after verification.
+- Fresh apply on a new DB `trainw_fresh`: **58 OK, 2 FAIL — exactly the
+  two known by-design failures** (`20261115050000` B5 return-type;
+  `20261115300000` DB-61 non-portable hash), both repaired by later
+  migrations. All three asserts pass on the fresh DB
+  (`assert_rls_helpers_frozen()`, `assert_all_tables_have_rls()`,
+  `assert_no_unvalidated_constraints()`); 0 unvalidated constraints;
+  45 tables.
+- Behavioural suite `r6-tests.sql`: **161/161 assertions pass** (final
+  run 9), plus targeted probes for DB-42/43/44/47 (all pass). Fixtures:
+  gymA `...0a1` (ownerA `..001`), gymB `...0a2` (ownerB `..002`);
+  pepper GUC set in-session.
+- Next.js: `npm install` (418 packages) + `tsc --noEmit` clean +
+  `vitest` **33/33** (incl. a new NX-07 case) + `eslint` clean +
+  `next build` green, in a scratch copy on the overlay disk
+  (NOT /tmp — 512M tmpfs, npm install fails there with ENOSPC).
+
+## Test-writing conventions learned (hard-won, reuse next time)
+
+- RLS tests use `SET ROLE authenticated` + `SET test.auth_uid`, then
+  `RESET ROLE` + `RESET test.auth_uid` before superuser statements (a
+  stale auth_uid makes self-update guards treat superuser writes as
+  self-writes).
+- INSERT denials raise `insufficient_privilege`; UPDATE/DELETE denials
+  are silent 0 rows (use GET DIAGNOSTICS ROW_COUNT). Guard triggers
+  raise, so tests must accept either a raise or 0 rows as PASS.
+- Temp tables created by superuser need explicit
+  `GRANT ALL ... TO authenticated, service_role, anon` or RLS blocks
+  get "permission denied" on them.
+- `r6_check` must be SECURITY DEFINER to log while role is
+  authenticated. Assert functions return **void**, not boolean — wrap
+  in DO blocks.
+- `SELECT * INTO composite_var FROM fn_returning_composite` does not
+  populate fields as expected — use PERFORM + direct table checks.
+- Cross-gym reads as another user return NO ROW (not an error), so
+  scalar subqueries yield NULL — verify cross-gym facts as superuser.
+- Messages SELECT policy hides soft-deleted rows (`deleted_at IS
+  NULL`), so verify soft-delete stamps as superuser.
+- `SET ROLE` inside a DO block persists after the block — always RESET
+  after. VALUES-list uuid literals need `::uuid` casts.
+- `MIN(uuid)` does not exist in PG 16 — use ROW_NUMBER for dedup.
+
+## Holes the closure pass found and fixed (all verified by the suite)
+
+- **DB-14** — `gym_memberships_insert_v17b` let a `manage_staff` holder
+  directly INSERT an ACTIVE owner-role membership; `invite_gym_member`
+  and `set_membership_role` had no owner-role guard.
+  (`20261115360000`, `20261115370000`)
+- **DB-16** — a branding-only admin-portal user could INSERT a payment
+  (proven live in the suite). Payments/credentials/devices/check-in
+  deletes now also require the per-action permission.
+  (`20261115380000`) **Behaviour change:** default `staff` can no
+  longer record payments or enrol gate credentials/devices; owners can
+  grant `manage_payments` / `manage_access_control` from the roles UI.
+- **DB-40** — `invite_gym_member` raised "column reference
+  invite_email is ambiguous" on EVERY call: the invite flow was
+  completely broken. Fixed by qualifying the column.
+  (`20261115360000`)
+- **DB-36/DB-65** — voiding a payment for a member whose
+  pre-settlement `membership_end_date` was NULL left the end date at
+  the period start instead of NULL. Settle now stores sentinel
+  `DATE '0001-01-01'` for NULL; reverse restores NULL.
+  (`20261115390000`)
+- **DB-56** — the dedup unique index was never created (round 2 did
+  the CHECK + policies only). `uq_personal_records_client_exercise_achieved`
+  on `(client_id, exercise_name, achieved_at)`, ROW_NUMBER dedup first.
+  (`20261115400000`)
+- **DB-54** — the sensitive self-edit guard never fired (gated on
+  `manages_gym()`, true for all admin-portal staff). Now gates on
+  `has_permission('manage_staff', gym_id)`. (`20261115410000`)
+- **NX-11** — `next.config.ts` had no security headers at all. Added
+  `headers()` mirroring vercel.json; `script-src` keeps
+  `'unsafe-inline'` (Next.js inlines its bootstrap scripts; a nonce
+  via middleware would be needed to drop it — documented in the file).
+  Headers confirmed in `.next/routes-manifest.json`. (b96c892)
+- **NX-15** — `getErrorMessage` alone did not close it: 23 direct
+  `.message` returns still existed across roles/clients/attendance/
+  classes/coaches. All replaced with `getErrorMessage(error, <generic>)`;
+  grep proves zero direct returns remain in `src/`. (f3152ba, bd4c441)
+- **NX-07** — login `redirectTo` was an unvalidated string (open
+  redirect); callback `safeNext` accepted `//evil.com`. Schema now
+  refines to same-site relative paths; callback rejects `//` and
+  backslash targets. New vitest case (5 assertions). (bd4c441)
+- **NX-16** — class capacity accepted 0, negatives, fractions (the DB
+  CHECK exists only for sessions, not classes). Both class schemas now
+  refine capacity to a whole number ≥ 1 (null = unlimited, unchanged);
+  create-name `max(100)` added to classes/clients/coaches + signup
+  `fullName`/`gymName`. Rating clamp was already server-side.
+  (bd4c441) Note: the capacity refine is verified by code check + tsc
+  + build, not by a vitest case (the schemas are module-private and
+  pull server imports).
+
+## What round 6 deliberately did NOT do
+
+- DB-66 / NX-03 (P2-10) — the user's call.
+- Void-reason `window.prompt` (`tw-gym-acc.js:1985`) — left as is. No
+  confirm-modal helper exists in the app (the convention is native
+  `window.confirm`, used in 8 places), so replacing it means building
+  a new modal with a text input in the payments flow — not
+  quick-and-low-risk without a DOM test harness, and the native prompt
+  works correctly today (reason is mandatory, stored as `void_reason`).
+- FE-12 BFF/HttpOnly sessions — deliberate design decision (L effort);
+  mitigation is dashboard settings, to be verified live.
+- GT-04 offline allow-list — needs ESP32 firmware that is not in this
+  repo; turnstiles are off by user decision.
+- No push (parent pushes, base = remote tip `234cc893`).
+
+## Corrections to earlier rounds' notes (found by this pass)
+
+- Round 5's notes wrongly listed NX-24, NX-25, NX-14, NX-28, DB-51
+  and FE-27(e) as skipped — round 4 had done all of them; NX-14/NX-28
+  were "not live-verified", the rest were simply wrong.
+- Round 2's notes wrongly claimed NX-17 and NX-27 were already clean
+  (fixed in round 4) and described NX-11 as "all dashboard pages pass
+  context.gymId" — that is NX-04, not NX-11 (security headers); NX-11
+  was genuinely open until round 6.
+- Round 3's "reversal restores it exactly" was false for members whose
+  pre-settlement end date was NULL (fixed in round 6, DB-36).
+
+## Residual notes (not findings)
+
+- DB-46: a same-gym client can see other members' private profile
+  media (holds `manage_media` by default). Same-gym only; tightening
+  needs a product decision.
+- FE-08: the coach-search embedded-users name filter still needs live
+  verification.
+- GT-08: one check-in per day remains the policy; lunch-time re-entry
+  needs a product decision.
+- The `tier.toUpperCase()` interpolation in the client-card renderer is
+  NOT an XSS hole: `membership_tier` is CHECK-constrained to 7 fixed
+  values (`client_profiles_membership_tier_check`).
+
+## What still needs live testing / access / a user decision (round 6, unchanged + additions)
+
+- **Supabase live work (unchanged):** apply the migration chain +
+  Phase 1 migrations to project `caylegavnekidhytlswo` via the
+  dashboard SQL editor; check whether the DB is empty first; set the
+  deploy secrets (runbook §3) + the §8 dashboard settings (Realtime
+  Authorization, refresh-token rotation, 1h JWT expiry); point code
+  config at the new project keys. The live apply must continue past
+  the by-design failures in `20261115050000` (B5) and
+  `20261115300000` (DB-61) — both are repaired by later migrations.
+  Round 6 adds 6 more files (through `20261115410000`).
+- **Credential rotation (live):** the two test accounts
+  (`coachtestv17@gmail.com`, `clienttestv17@gmail.com`) and demo
+  accounts (`admin@lakeclub.tn`, `reception@lakeclub.tn`) still carry
+  the published passwords until rotated in Supabase Auth (DB-08/DB-09).
+- **Edge-function deploy + dashboard settings:** deploy `gate-checkin`,
+  `gate-terminal-auth`, `gate-feed`, `ai-proxy`; confirm `verify_jwt`
+  per `supabase/config.toml` in the dashboard (GT-09); apply runbook
+  §8 settings (the FE-12 mitigation).
+- **P1-13 live tests** on the new project (cross-tenant matrix), plus
+  the FE-10 terminal flow, the GT-02 live check, the NX-28 recover
+  flow, the FE-09 live end-to-end QR scan, the FE-24/FE-25 live invite
+  + reset-link flows, and the NX-01/02/05/08/09/10/14 flows.
+- **Decisions still open (unchanged):** P2-10 (Next.js ship target —
+  gates live verification of 9 NX findings); DB-66 auto-settlement
+  policy; session-history retention; the FE-08 coach search
+  embedded-users name filter (live verification).
+- **Deploy secrets still unset:** DB GUC pepper,
+  GATE_TERMINAL_PEPPER, TURNSTILES_ENABLED, CAPTCHA keys (fail-open
+  without the secret), APP_ORIGINS, redirect-URL allowlisting for
+  /tw-login.html and /auth/reset-password.
+- **Accountant check:** verify the TEIF e-invoice field list before
+  the first real invoice.
+- **Full type-check + `next build`:** now DONE in round 6 (tsc clean,
+  vitest 33/33, eslint clean, next build green, in a scratch copy).
+  Re-run at deploy time after any further change.

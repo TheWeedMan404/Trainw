@@ -16,9 +16,15 @@ const createClassSchema = z.object({
 
       const parsed = Number(value);
       return Number.isNaN(parsed) ? null : parsed;
+    })
+    // NX-16 (round 6): capacity must be a whole number >= 1 when given.
+    // The old schema accepted 0, negatives and fractions and left the
+    // rejection to a DB CHECK that exists only for sessions, not classes.
+    .refine((value) => value === null || (Number.isInteger(value) && value >= 1), {
+      message: "Capacity must be a whole number of at least 1.",
     }),
   coachId: z.string().uuid(),
-  name: z.string().min(2),
+  name: z.string().min(2).max(100),
   type: z.enum(["private", "group", "supervising"]),
 });
 
@@ -68,7 +74,7 @@ export async function createClassAction(
     });
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to create the class.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to create the class.") };
@@ -135,7 +141,7 @@ export async function enrollClientInClassAction(
         };
       }
 
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to enroll the client.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to enroll the client.") };
@@ -155,6 +161,10 @@ const updateClassSchema = z.object({
 
       const parsed = Number(value);
       return Number.isNaN(parsed) ? null : parsed;
+    })
+    // NX-16 (round 6): same bound as createClassSchema — whole number >= 1.
+    .refine((value) => value === null || (Number.isInteger(value) && value >= 1), {
+      message: "Capacity must be a whole number of at least 1.",
     }),
   classId: z.string().uuid(),
   coachId: z.string().uuid(),
@@ -209,7 +219,7 @@ export async function updateClassAction(
       .maybeSingle();
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to update the class.") };
     }
     if (!data) {
       return { error: "That class no longer exists in your workspace." };
@@ -253,7 +263,7 @@ export async function deleteClassAction(
       .eq("gym_id", context.gymId);
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to delete the class.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to delete the class.") };
@@ -303,7 +313,7 @@ export async function unenrollClientFromClassAction(
       .eq("client_id", parsed.data.clientId);
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to remove the client.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to remove the client.") };

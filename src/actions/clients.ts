@@ -9,7 +9,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/workspace";
 
 const createClientSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().min(2).max(100),
   type: z.enum(["gym", "individual"]),
 });
 
@@ -36,7 +36,7 @@ export async function createWorkspaceClientAction(
     });
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to create the client.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to create the client.") };
@@ -83,7 +83,7 @@ export async function updateWorkspaceClientAction(
       .maybeSingle();
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to update the client.") };
     }
     if (!data) {
       return { error: "That client no longer exists in your workspace." };
@@ -126,7 +126,7 @@ export async function approveWorkspaceClientAction(
       .maybeSingle();
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to approve the client.") };
     }
     if (!data) {
       return { error: "That registration is no longer pending." };
@@ -163,7 +163,7 @@ export async function deleteWorkspaceClientAction(
       .eq("gym_id", context.gymId);
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to delete the client.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to delete the client.") };

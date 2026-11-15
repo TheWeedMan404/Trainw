@@ -75,6 +75,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const safeNext = next.startsWith("/") ? next : "/dashboard";
+  // NX-07 (round 6): `next` must be a same-site relative path. The old
+  // check accepted "//evil.com" (protocol-relative), which would redirect
+  // the user off-site after the auth callback.
+  const safeNext =
+    next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")
+      ? next
+      : "/dashboard";
   return NextResponse.redirect(getAbsoluteUrl(safeNext));
 }

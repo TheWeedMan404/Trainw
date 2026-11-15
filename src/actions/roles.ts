@@ -86,7 +86,7 @@ export async function createStaffUserAction(
   });
 
   if (authError || !invitedUser.user) {
-    return { error: authError?.message || "Unable to invite the staff member." };
+    return { error: getErrorMessage(authError, "Unable to invite the staff member.") };
   }
 
   try {
@@ -100,7 +100,7 @@ export async function createStaffUserAction(
 
     if (userError) {
       await admin.auth.admin.deleteUser(invitedUser.user.id);
-      return { error: userError.message };
+      return { error: getErrorMessage(userError, "Unable to create the staff member.") };
     }
   } catch (error) {
     await admin.auth.admin.deleteUser(invitedUser.user.id);
@@ -266,7 +266,7 @@ export async function updateRoleAction(
       .eq("gym_id", context.gymId);
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to update the role.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to update the role.") };
@@ -328,7 +328,7 @@ export async function deleteRoleAction(
     .eq("gym_id", context.gymId);
 
   if (countError) {
-    return { error: countError.message };
+    return { error: getErrorMessage(countError, "Unable to delete the role.") };
   }
   if ((count ?? 0) > 0) {
     return {
@@ -344,7 +344,7 @@ export async function deleteRoleAction(
       .eq("gym_id", context.gymId);
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to delete the role.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to delete the role.") };
@@ -404,7 +404,7 @@ export async function deactivateStaffUserAction(
   });
 
   if (error) {
-    return { error: error.message };
+    return { error: getErrorMessage(error, "Unable to deactivate the staff member.") };
   }
 
   revalidatePath("/dashboard/roles");
@@ -442,7 +442,7 @@ export async function reactivateStaffUserAction(
   });
 
   if (error) {
-    return { error: error.message };
+    return { error: getErrorMessage(error, "Unable to reactivate the staff member.") };
   }
 
   revalidatePath("/dashboard/roles");
@@ -491,7 +491,7 @@ export async function deleteStaffUserAction(
   const { error } = await admin.auth.admin.deleteUser(parsed.data.userId);
 
   if (error) {
-    return { error: error.message };
+    return { error: getErrorMessage(error, "Unable to delete the staff member.") };
   }
 
   revalidatePath("/dashboard/roles");

@@ -9,7 +9,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { requirePermission } from "@/lib/workspace";
 
 const createCoachSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().min(2).max(100),
   rating: z
     .union([z.string().length(0), z.string()])
     .optional()
@@ -49,7 +49,7 @@ export async function createCoachAction(
     });
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to create the coach.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to create the coach.") };
@@ -108,7 +108,7 @@ export async function updateCoachAction(
       .maybeSingle();
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to update the coach.") };
     }
     if (!data) {
       return { error: "That coach no longer exists in your workspace." };
@@ -164,7 +164,7 @@ export async function deleteCoachAction(
             "This coach still has classes. Reassign or delete those classes first.",
         };
       }
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to delete the coach.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to delete the coach.") };

@@ -68,7 +68,7 @@ export async function createAttendanceAction(
     });
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to save attendance.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to save attendance.") };
@@ -132,7 +132,7 @@ export async function updateAttendanceAction(
       .maybeSingle();
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to update attendance.") };
     }
     if (!data) {
       return { error: "That attendance record no longer exists in your workspace." };
@@ -176,7 +176,7 @@ export async function deleteAttendanceAction(
       .eq("gym_id", context.gymId);
 
     if (error) {
-      return { error: error.message };
+      return { error: getErrorMessage(error, "Unable to delete attendance.") };
     }
   } catch (error) {
     return { error: getErrorMessage(error, "Unable to delete attendance.") };
