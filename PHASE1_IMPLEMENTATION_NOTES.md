@@ -3259,3 +3259,198 @@ row counts after); delete the auth users via the Admin API
 their `public.users` rows via the sync trigger — verify); delete
 `test-signup@trainw.live` if present. Passwords for the test accounts are in
 `/tmp/live-test-users.json` (0600, not committed).
+
+---
+
+## Round 7 — P1-13 follow-ups + the two launch decisions (2026-11-15)
+
+Commits (local only, NOT pushed — parent pushes): `cd19191` (P2-10 src/ deletion),
+`d5af77c` (DB-66 credits + table pepper), `f974126` (Phase 1h chain-order repair).
+Docs: `AUDIT_CLOSURE.md` updated in the same round (see footer).
+
+### 1. P2-10 — DELETE src/ (commit cd19191)
+
+User decision 2026-11-15 08:12: ship vanilla only. Removed the whole Next.js app
+(93 files: `src/` + Next-only `public/` favicons + `next.config.ts`,
+`next-env.d.ts`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.js`,
+`vitest.config.ts`, `eslint.config.mjs`, `package-lock.json`).
+`package.json` trimmed to static-only scripts (build/dev/preview/verify, no
+dependencies); CI keeps only the static-app job. Docs updated (runbook §1/§3/§4/§7,
+CLIENT_CODES.md, README.md): CAPTCHA keys no longer needed for launch.
+Verified: `node env-config.js` generates dist and `npm run verify` passes
+("Trainw verify: all checks passed") — dummy values must be non-placeholder
+(`https://dummy123.supabase.co`, `dummy-anon-key-xyz123`).
+Consequence: all 29 NX findings are now SUPERSEDED (19 verified-in-code + NX-03
++ the 9 already superseded); they can no longer be live-tested.
+
+### 2. DB-66 — CREDIT (migration 20261116090000, commit d5af77c)
+
+Design (ledger-style, like the payments ledger):
+- `member_credits` — gym, client, amount, amount_remaining, source session +
+  source payment, status available/fully_applied/expired, created_by, timestamps.
+  Partial unique index on source_session_id = double-credit guard. RLS SELECT-only
+  for managers + owning client; NO write policies for app roles (only RPCs write).
+- `member_credit_applications` — append-only audit (credit, payment, amount).
+- `mark_session_no_show` extended: inserts the credit atomically in the same
+  transaction. Credit = net collected = payment.amount_paid − amount_refunded,
+  only when the session's payment is 'paid'. Unpaid pending sessions and free
+  sessions credit nothing. Sessions marked no-show before this migration get no
+  credit; no backfill.
+- `apply_member_credit_to_session(p_session_id)` — applies available credits FIFO
+  to the session's PENDING payment (amount_paid grows, status → 'paid' when fully
+  covered; the ledger guard explicitly allows amount changes on pending rows;
+  the settlement trigger ignores session payments).
+- `get_member_credit_balance(p_client_id, p_gym_id)` — self or manager.
+Frontend hook is a follow-up: after `book_coach_session`, call the apply RPC;
+the balance helper drives the "you have X TND credit" display.
+
+Local verification (throwaway cluster, see harness notes below): **33/33
+assertions pass** — no-show credits 80; idempotent re-mark; unpaid + free
+sessions credit nothing; balance self/manager/other-gym; full apply (80/80,
+payment paid, credit fully_applied, application row); partial apply (50 of 80,
+payment stays pending owed 30); cross-gym apply forbidden (client + manager);
+apply with no credit → 0; direct INSERT denied by RLS; no forged credit;
+coach marks own no-show → credits; end-to-end via `book_coach_session`.
+
+Live verification (project caylegavnekidhytlswo, 2026-11-15, harness
+`/tmp/live-r7.py`, report `/tmp/live-r7-report.json`): **14/14 PASS** —
+fixtures (12 users, 2 gyms); pepper set; coachA 80/session + availability;
+no-show call; credit 80 available; no double-credit on re-mark; apply pays
+the rebooking in full (applied 80, owed 0); payment paid by credit; balance 0;
+credential enrol (201) + hashed/cleared/ref-truncated; validate grants access
+(days_left 30); cross-gym validate denied; balance RPC as the client.
+Note: the live harness is resumable (reuses today's no-show + credit if a run
+already created them) and uses 14:00 tomorrow for the rebooking — coachA
+already holds a confirmed session tomorrow 10:00 from P1-13.
+
+### 3. Pepper off the GUC (migration 20261116080000, commit d5af77c)
+
+The pepper GUC `trainw.member_credential_pepper` CANNOT be set via the
+Management API (ALTER DATABASE/ROLE denied 42501; the config endpoint rejects
+custom GUCs), so credential enrolment/validation failed closed live.
+- `public.app_secrets` — key PK, value, timestamps. RLS ON with NO policies:
+  every app role denied; only owner postgres + SECURITY DEFINER functions read
+  it; service_role bypasses RLS (operator path).
+- `hash_member_credential` rewritten as SECURITY DEFINER reading the pepper
+  from `app_secrets` (key `member_credential_pepper`), still fails closed when
+  the row is missing; uses `extensions.hmac` (Supabase layout).
+- `member_credential_pepper()` (GUC reader) DROPPED.
+- The pepper VALUE was generated fresh (32 random bytes, hex) and set live via
+  the API only — NEVER in any migration, file, or commit, never printed.
+  Live verification: enrol + validate work (see §2 live results).
+- Runbook §3 updated: the value lives ONLY in the live DB. Back it up —
+  `pg_dump` includes `app_secrets`; if the DB is lost without a dump, every
+  enrolled credential must be re-enrolled. Rotating the pepper invalidates
+  all existing credential hashes.
+
+### 4. Phase 1h — chain-order repair (commit f974126)
+
+Found while building the round-7 local harness: the 1g commit (8873d82) broke
+FRESH chain applies (the live DB never saw it — live applied before 1g, and
+15190000 was applied as a patch afterwards):
+- 1g added `public.gym_today()` calls to `20261115110000`, `20261115190000`,
+  `20261115210000`, but `gym_today` is only created in `20261115230000`
+  (SQL-language functions are validated at CREATE, so all three files failed).
+  Fix: `gym_timezone`/`gym_today` are now also defined in `20261115110000`
+  (verbatim copies of the canonical definitions; `gyms.timezone` exists since
+  the foundation); `20261115230000` redefines them identically.
+- 1g changed `membership_is_active_for_access`'s freeze clause (raw
+  p_reference_date → COALESCE with gym_today) without updating the DB-61
+  frozen hashes in `20261115210000` / `20261115230000` / `20261115330000`.
+  Hashes recomputed empirically from the current bodies (same md5 formula as
+  each file): 15210000 `080cc52b8697f1dd16d6ec97a70ca127`, 15230000
+  `45fdc7f004152f175c06411c6c660a29`, 15330000 `3a70bd4a318b5ee8b55ce0473161e5a8`.
+  `20261115300000` is UNTOUCHED: its formula is non-portable by design
+  (proargdefaults::text embeds OIDs) and `20261115330000` is its repair.
+Final definitions are unchanged; the live DB is unaffected (only the two new
+migrations were applied live — the edited old files were NOT re-applied live,
+which would have regressed intermediate definitions).
+Fresh chain now applies **61 OK + the 2 known by-design failures**
+(`20261115050000` B5 return-type, `20261115300000` DB-61 non-portable hash).
+
+### 5. Password-reset retest — still 429
+
+Retested 2026-11-15 ~08:00 via `/tmp/r7-reset-test.py` (anon key via sb-api.py,
+never printed; one call, no hammering): still **429
+`over_email_send_rate_limit`** — project-wide default-mailer limit, window not
+cleared since P1-13. Custom SMTP is the user's decision; NOT set up.
+The default mailer does not suffice for testing password reset.
+
+### 6. ai-proxy / ANTHROPIC_API_KEY — blocker, no key sought
+
+`supabase/functions/ai-proxy/index.ts`: needs edge secret **`ANTHROPIC_API_KEY`**
+(line 177: `Deno.env.get('ANTHROPIC_API_KEY')`); model
+**`claude-haiku-4-5-20251001`** (Claude Haiku 4.5, line 210), max_tokens 1024,
+Messages API, `anthropic-version: 2023-06-01`. The user has no Anthropic API
+access — AI features are blocked until he gets one.
+
+### Local test harness (round 7) — environment notes for future rounds
+
+This VM has NO Postgres installed and no usable apt cache at the time.
+- `apt-get update` took 8m11s over the egress proxy (10.5 MB @ ~21 kB/s);
+  the EDB binary tarball 403s. Source build was faster and is now the
+  documented route: postgresql-16.4 tarball from ftp.postgresql.org,
+  extract with `--no-same-owner` (uid-1107 ownership fails in this
+  user-namespace container), `./configure --prefix=$HOME/workspace/.r7-scratch/pgsql
+  --with-openssl --without-readline --without-icu --without-libxml
+  --without-libxslt --without-ldap --without-pam`, `make -j4 && make install`,
+  plus `make -C contrib/{pgcrypto,btree_gist,citext} install`.
+- `--without-openssl` DOES NOT WORK: pgcrypto's Makefile compiles openssl.c
+  unconditionally and references `EVP_cast5_cbc`; without libcrypto linked the
+  .so fails to load (`undefined symbol`). Build WITH openssl (libssl-dev
+  headers are present; libcrypto.so.3 exports the symbol). After changing the
+  flag, `make clean` first — stale .o files cause duplicate-symbol link
+  failures (fe-secure.o vs fe-secure-openssl.o).
+- `initdb` refuses root: run the server as `nobody` (uid 65534;
+  `setpriv`/`runuser` work, `chown` to nobody does NOT — create the datadir
+  AS nobody). Datadir `/tmp/r7-pgdata` (tmpfs is fine — the cluster is small);
+  socket in /tmp; port 54400; DB trainw_r7.
+- The exec shell runs `umask 0007`, so a fresh `make install` leaves the
+  install tree group-only: the nobody server then cannot read
+  `share/timezone/*` (`pg_timezone_names` empty, "time zone Africa/Tunis not
+  recognized"). Fix: `chmod -R o+rX` on the pgsql tree AFTER every install,
+  then restart the server.
+- Harness: `~/workspace/.r7-scratch/` — `r7-harness.sh` (port 54400),
+  `r7-tests.sql` (33 assertions), `supabase-stubs.sql` (r6 stubs PLUS an
+  `extensions` schema with pgcrypto installed there — mirrors Supabase, so
+  `extensions.hmac`/`extensions.gen_random_bytes` resolve locally exactly as
+  on live; the chain's `CREATE EXTENSION IF NOT EXISTS pgcrypto` then no-ops).
+  Test bugs fixed this round (not product bugs): four assertions compared
+  jsonb `->>` text `'80'`/`'50'`/`'0'` against numeric(10,2) values that
+  render `'80.00'`/`'50.00'`/`'0.00'` — now compared as `::numeric`.
+
+### Closure recount after round 7 (AUDIT_CLOSURE.md, head f974126)
+
+**106 FIXED+VERIFIED, 1 NEEDS-LIVE-TEST (GT-03), 0 DECISION MADE,
+29 SUPERSEDED, 1 NOT-APPLICABLE = 137.** By severity: CRITICAL 7 verified;
+HIGH 33 verified, 1 needs-live, 5 superseded; MEDIUM 42 verified, 11
+superseded, 1 N/A; LOW 24 verified, 13 superseded.
+The drop 124 → 106 is NOT a regression — 19 NX findings verified in code are
+now moot because the app was deleted. DB-66 → FIXED+VERIFIED (built + locally
+tested + live-tested). All 29 NX findings SUPERSEDED.
+
+### Live test-data inventory — round-7 additions (do NOT delete)
+
+On top of the P1-13 inventory: coachA `price_per_session` = 80 + availability
+all week 08:00–20:00; payments +2 (1 paid 80 session payment, 1 pending→paid
+80 rebooking payment); sessions +2 (today 09:00 no-show, tomorrow 14:00
+confirmed/pending→paid); member_credits ×1 (fully_applied, 80, source = the
+no-show session); member_credit_applications ×1 (80); member_credentials ×1
+(clientA RFID `R7LIVEBADGE001`, label "R7 live badge"); `app_secrets` ×1
+(`member_credential_pepper` — the VALUE is live-only, never recorded here).
+ClientA's check_ins + gate_access_log rows for today were deleted before the
+credential validation test (P1-13 leftovers that would have masked the result
+as duplicate_checkin_today).
+
+### Still open after round 7
+
+- `ANTHROPIC_API_KEY` (ai-proxy fails closed without it — he has no Anthropic
+  API access; AI features blocked until he gets one).
+- GT-03 gate throttle deliberately NOT hammered live (local suite proves the
+  limiter; a live throttle test is still owed if wanted).
+- Password-reset delivery blocked by the default-mailer rate limit (429) —
+  retry after the window, consider custom SMTP before real users.
+- Realtime `private_only` needs a code change first.
+- Production deploy only on his word; accountant check on TEIF fields.
+- Frontend hook for the credit flow (call `apply_member_credit_to_session`
+  after `book_coach_session`; balance display) — not built yet.

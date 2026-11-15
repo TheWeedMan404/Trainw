@@ -87,6 +87,39 @@ CREATE INDEX IF NOT EXISTS idx_membership_freezes_member
   ON public.membership_freezes (gym_id, user_id, start_date);
 
 -- ----------------------------------------------------------------------------
+-- 1b. Gym-local "today" (Phase 1h chain-order repair, 2026-11-15).
+--     The freeze clause below (and the 1g repairs in 20261115190000 /
+--     20261115210000) call public.gym_today(p_gym_id), but gym_today is
+--     only created in 20261115230000 — so a FRESH chain apply failed on
+--     these files (the live DB never saw it: the live apply ran before
+--     the 1g edit, and 20261115190000 was applied as a patch afterwards).
+--     gyms.timezone exists since the foundation (001), so the helpers
+--     can be defined here. Bodies are verbatim copies of the canonical
+--     definitions in 20261115230000, which redefines them identically.
+-- ----------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.gym_timezone(p_gym_id uuid)
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    NULLIF(BTRIM((SELECT g.timezone FROM public.gyms g WHERE g.id = p_gym_id)), ''),
+    'Africa/Tunis'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.gym_today(p_gym_id uuid)
+RETURNS date
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT (now() AT TIME ZONE public.gym_timezone(p_gym_id))::date;
+$$;
+
+-- ----------------------------------------------------------------------------
 -- 2. Gate check: a frozen membership is not active (DB-36 / P2-3).
 --    Body kept verbatim from 20261115010000 (B1) plus the freeze clause.
 -- ----------------------------------------------------------------------------

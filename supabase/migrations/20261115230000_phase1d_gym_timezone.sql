@@ -43,6 +43,12 @@
 --     here, but generating slots in the gym timezone is a follow-up
 --     (see the notes file).
 --
+-- Phase 1h (2026-11-15): the 1g commit changed
+-- membership_is_active_for_access's freeze clause (raw p_reference_date
+-- -> COALESCE with gym_today) without updating this file's frozen hash
+-- for it, so a fresh chain apply failed here. Hash recomputed from the
+-- current body: 45fdc7f004152f175c06411c6c660a29.
+--
 -- FREEZE NOTE (DB-61): membership_is_active_for_access and
 -- client_membership_is_active are frozen helpers. Their definitions
 -- change here, so the frozen hashes are updated at the end of this
@@ -1229,7 +1235,7 @@ BEGIN
       ('is_same_gym_user(p_user_id uuid)', '61dbb3359536ba80c501284444e42385'),
       ('lock_booking_key(p_key text)', 'a0ec8b10f159f279d43aa05163710ccd'),
       ('manages_gym(p_gym_id uuid)', '3d67f24e1a9ad1d2a21852e2dece2911'),
-      ('membership_is_active_for_access(p_client_id uuid, p_gym_id uuid, p_reference_date date)', '06a8b80290e21538edd63c67e7d77d29'),
+      ('membership_is_active_for_access(p_client_id uuid, p_gym_id uuid, p_reference_date date)', '45fdc7f004152f175c06411c6c660a29'),
       ('permission_codes_for_membership(p_membership_id uuid)', 'b4307205e32ac9d478656510daf95349'),
       ('safe_uuid(p_value text)', 'ad93f96932948e740ac01cf02c010ea2'),
       ('storage_object_is_public(p_bucket text, p_path text)', 'b92dad2a3ee8cce1ad4ac22e05566231'),

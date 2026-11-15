@@ -9,7 +9,7 @@ user can make are listed at the end, separated from the procedure.
 | Piece | Target | How |
 | --- | --- | --- |
 | Static frontend (`tw-*.html`, `trainw-core.js`, `gate-terminal.*`) | Vercel project `trainw` | Push to `main` (or the release branch) → Vercel builds with `node env-config.js` → output `dist/` |
-| Next.js app (`src/`) | **Not deployed today** | P2-10 decision (whether the Next.js app is the ship target at all) — do not switch the Vercel build to it without the user's word |
+| Next.js app (`src/`) | **Deleted 2026-11-15 (P2-10)** | Ship vanilla only; the Next.js app no longer exists in this repo. |
 | Supabase migrations (`supabase/migrations/`) | Supabase project `Trainw` (`caylegavnekidhytlswo`, eu-west-2) | Applied manually — see §2 |
 | Edge functions (`supabase/functions/`) | Same Supabase project | `supabase functions deploy <name>` (needs the Supabase CLI + a login) |
 
@@ -47,25 +47,35 @@ most of them.
   (the gate terminal shows a disabled screen while off)
 
 **Supabase — SQL / dashboard:**
-- DB GUC `trainw.member_credential_pepper` — the pepper for the
-  HMAC-SHA256 credential hashes (DB-07). Set it with
-  `ALTER DATABASE postgres SET trainw.member_credential_pepper = '...'`.
-  Without it, credential writes fail closed.
+- Member-credential pepper (DB-07) — the pepper for the HMAC-SHA256
+  credential hashes now lives in the `public.app_secrets` table, key
+  `member_credential_pepper` (migration `20261116080000`; the old DB
+  GUC `trainw.member_credential_pepper` cannot be set via the
+  Management API and is no longer read). Set it once, via SQL, with a
+  fresh random 32-byte hex value:
+  `INSERT INTO public.app_secrets (key, value) VALUES
+  ('member_credential_pepper', '<random 32-byte hex>') ON CONFLICT
+  (key) DO UPDATE SET value = EXCLUDED.value;`
+  Never commit the value anywhere. **Back it up:** the value lives
+  only in the live database — a `pg_dump` (§5) includes the
+  `app_secrets` table, so keep the dumps; if the database is lost
+  without a dump, the pepper is lost and every enrolled credential
+  must be re-enrolled (hashes cannot be recomputed). Rotating the
+  pepper invalidates all stored hashes: every member must re-enrol.
 - `/tw-login.html` allowlisted in Authentication → URL Configuration →
   Redirect URLs (FE-25 password-reset flow), plus
-  `/auth/reset-password` for the Next.js flow (NX-14) if that app ever
-  ships.
+  `/auth/reset-password` (set live during P1-13 for the deleted
+  Next.js flow; unused now, harmless to keep).
 
 **Supabase — edge function secrets:**
 - `GATE_TERMINAL_PEPPER` — PIN hashing for `gate-terminal-auth`
 - `APP_ORIGINS` — allowed origins for the `ai-proxy` (round 1);
   without it the proxy rejects every call
 
-**Next.js app only (if P2-10 ever ships it):**
-- `CAPTCHA_SECRET_KEY` + `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` — CAPTCHA
-  **fails open** without the secret; do not go live without it
-- `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` (same
-  values as the static app)
+**Next.js app — deleted (P2-10, 2026-11-15).** The hCaptcha keys
+(`CAPTCHA_SECRET_KEY` + `NEXT_PUBLIC_HCAPTCHA_SITE_KEY`) are no
+longer needed for launch: they only served the deleted app's public
+registration flow. Do not set them up unless the app is ever rebuilt.
 
 **Not a secret, but a setting:** the Supabase dashboard's CAPTCHA and
 rate-limit settings for auth (FE-25), and the email templates' redirect
@@ -76,18 +86,16 @@ URLs.
 Run these on the staging/preview deployment before any pilot:
 
 1. `npm run verify` (static app checks) — must pass.
-2. `npm run typecheck && npm run lint && npm run test` in the
-   Next.js app (if it is being shipped) — must pass.
-3. Live-test the cross-tenant matrix (P1-13): a member of gym A
+2. Live-test the cross-tenant matrix (P1-13): a member of gym A
    cannot read or write gym B's members, payments, sessions, or
    messages; a coach sees only assigned clients; an outsider sees
    nothing.
-4. End-to-end: signup → confirm email → create gym → invite a coach
+3. End-to-end: signup → confirm email → create gym → invite a coach
    → member signup → payment settles → membership end date extends →
    gate QR grants access → freeze shifts the end date.
-5. Check the deploy secrets in §3 are all set (a missing pepper or
-   CAPTCHA secret fails open or fails closed — neither is acceptable
-   to discover in front of a gym).
+4. Check the deploy secrets in §3 are all set (a missing pepper
+   fails closed — neither is acceptable to discover in front of a
+   gym).
 
 ## 5. Backup and restore
 
@@ -130,7 +138,8 @@ Run these on the staging/preview deployment before any pilot:
 - **Uptime monitor:** `scripts/uptime-check.sh` is the probe; it
   still needs a scheduler (cron, UptimeRobot, Better Stack, …) to
   actually page someone.
-- **P2-10:** whether the Next.js app is the ship target at all.
+- **P2-10:** decided 2026-11-15 — DELETE `src/`, ship vanilla only
+  (deletion done in round 7).
 
 ## 8. Dashboard settings (FE-10 / FE-12 — set before the first pilot)
 

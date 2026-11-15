@@ -10,6 +10,11 @@
 -- DB-61 assert passed on the cluster it was built on and fails on any
 -- other fresh cluster (found by the rebuilt round-5 harness).
 --
+-- Phase 1h (2026-11-15): the 1g commit changed
+-- membership_is_active_for_access's freeze clause (raw p_reference_date
+-- -> COALESCE with gym_today) without updating this file's frozen hash
+-- for it, so a fresh chain apply failed here. Hash recomputed from the
+-- current body: 3a70bd4a318b5ee8b55ce0473161e5a8.
 -- This migration re-creates assert_rls_helpers_frozen() hashing
 -- pg_get_function_arguments(p.oid) instead — the signature WITH its
 -- defaults deparsed as SQL text (e.g. `p_user_id uuid DEFAULT
@@ -57,7 +62,7 @@ BEGIN
       ('is_same_gym_user(p_user_id uuid)', 'e8b9e07504322b98eac5338a1900bcd1'),
       ('lock_booking_key(p_key text)', '1b57ece9e3c825e63b36f45156b17932'),
       ('manages_gym(p_gym_id uuid)', '8676e1319e130ead20fce0d5a031cc92'),
-      ('membership_is_active_for_access(p_client_id uuid, p_gym_id uuid, p_reference_date date)', 'c90ab575fa0a984e2a269b4eaa7ba80c'),
+      ('membership_is_active_for_access(p_client_id uuid, p_gym_id uuid, p_reference_date date)', '3a70bd4a318b5ee8b55ce0473161e5a8'),
       ('permission_codes_for_membership(p_membership_id uuid)', '5b42f83662c766785b184c3908788c88'),
       ('safe_uuid(p_value text)', '61a80c4c69579d049678f74fdf363ef1'),
       ('storage_object_is_public(p_bucket text, p_path text)', '90ac3d12c8dd7c2bb4c5c3abb32695a9'),

@@ -2,7 +2,7 @@
 
 Trainw V17 is the original Trainw static product bundle: landing page, role chooser, login/signup, gym dashboard, coach dashboard, client dashboard, and gate terminal.
 
-The active app is the static Trainw frontend in the repository root. The experimental Next.js rewrite is not part of the deploy path.
+The active app is the static Trainw frontend in the repository root. The experimental Next.js rewrite (`src/`) was deleted 2026-11-15 (P2-10: ship vanilla only) and is not part of the deploy path.
 
 ## Run locally
 
