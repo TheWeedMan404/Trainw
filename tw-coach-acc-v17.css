@@ -411,6 +411,13 @@
   line-height: 1.4;
 }
 
+.coach-gym-switcher-name {
+  display: block;
+  font-family:'Bebas Neue',sans-serif;
+  font-size:20px;
+  color:var(--ac);
+}
+
 .coach-gym-switcher-select {
   width: 100%;
 }

@@ -198,6 +198,10 @@
   }
 
   function dateOnly(value) {
+    // A null/empty date is "no date", not the epoch: new Date(null) is
+    // 1970-01-01, which once made a plan-less client read as expired
+    // since 1970 (see the membership banner in tw-client-acc.js).
+    if (value === null || value === undefined || value === '') return '';
     const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
     if (Number.isNaN(date.getTime())) return '';
     const year = date.getFullYear();

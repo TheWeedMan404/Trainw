@@ -5284,7 +5284,7 @@ async function loadAnalytics() {
   }
 
   animateCounters();
-  if (clientCountResult.error || coachCountResult.error || sessionsResult.error || paidThisMonth.error) toast(t('errorMsg'), 'err');
+  if (directoryResult.error || coachCountResult.error || sessionsResult.error || profileResult.error) toast(t('errorMsg'), 'err');
   await runGymHooks('afterLoadAnalytics');
 }
 
@@ -5601,15 +5601,25 @@ function bindUi() {
   });
 
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
-    try {
-      clearGymRealtimeSubscriptions();
-      const result = await Trainw.api.run(sb.auth.signOut({ scope: 'global' }), { context: 'gym sign out' });
-      if (result.error) throw result.error;
-      localStorage.removeItem('trainw_active_gym');
-      window.location.href = GYM_LOGIN_HREF;
-    } catch (error) {
-      toast(error.message || t('errorMsg'), 'err');
-    }
+    // Sign-out must never wait on the server round-trip: a global-scope
+    // revocation can hang or fail on a flaky network, leaving the user
+    // stuck on the dashboard (or signed in behind an error toast). Revoke
+    // server-side in the background, end the local session at once, and
+    // navigate immediately. Double clicks are ignored.
+    if (window.__trainwSigningOut) return;
+    window.__trainwSigningOut = true;
+    clearGymRealtimeSubscriptions();
+    localStorage.removeItem('trainw_active_gym');
+    sb.auth.signOut({ scope: 'global' }).catch(function (error) {
+      console.error('[Trainw] sign out', error);
+    });
+    // Local sign-out only clears this browser's session (no network
+    // call), so it resolves at once — await it so the session is
+    // certainly gone before the login page loads.
+    await sb.auth.signOut({ scope: 'local' }).catch(function (error) {
+      console.error('[Trainw] sign out', error);
+    });
+    window.location.href = GYM_LOGIN_HREF;
   });
 
   document.querySelectorAll('.lang-btn, .lang-option-btn').forEach(button => {

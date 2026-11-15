@@ -17,6 +17,7 @@ body::before { content:''; position:fixed; inset:0; pointer-events:none; z-index
 .client-info { padding:0 24px 20px; border-bottom:1px solid var(--bd); margin-bottom:20px; }
 .client-name { font-family:'Bebas Neue',sans-serif; font-size:20px; color:var(--ac); margin-bottom:4px; }
 .client-label { font-family:'DM Mono',monospace; font-size:11px; color:var(--mt); text-transform:uppercase; letter-spacing:1px; }
+.gym-name { font-family:'Bebas Neue',sans-serif; font-size:20px; color:var(--ac); margin-bottom:4px; }
 .nav-item { padding:14px 24px; cursor:pointer; transition:.2s; border-left:3px solid transparent; font-size:15px; font-weight:500; color:var(--txt); display:flex; align-items:center; gap:12px; position:relative; }
 .nav-item:hover { background:var(--s2); border-left-color:var(--ac); }
 .nav-item.active { background:var(--s2); border-left-color:var(--ac); color:var(--ac); }
