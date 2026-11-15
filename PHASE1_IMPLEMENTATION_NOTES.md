@@ -3514,3 +3514,265 @@ Open: nothing in code. The P1-13 live-test agent's results and the two
 launch decisions (DB-66 CREDIT, P2-10 delete src/) are recorded in the
 round-7 appendix; this round closes the "frontend hook" open item listed
 there.
+
+## Round 9 — Production signup: owner / client / coach onboarding + join flow (2026-11-15)
+
+User authorised production readiness 2026-11-15 ~10:41 ("Make it production
+ready, people can sign up and sign either as gym owners, clients or coaches..
+each with their own dashboard and info. Data returns to db for future use.").
+Commits (local, branch phase1-security-fixes): `3fcb81b` (signup + join flow),
+`6e9cf8d` (anon revoke). The parent pushes; the squash-merge into `main` is
+staged, not run — see "Production deploy (staged)" below.
+
+### Step 1 — flow audit (verified against code AND the live DB)
+
+Three stacked breaks, all in onboarding (dashboards themselves work once a
+membership exists — client/coach/gym dashboards load their own data, and
+P1-13 proved cross-gym isolation):
+
+1. **Owner signup BROKEN.** `handle_new_user()` creates every signup as a
+   bare client, and `bootstrap_authenticated_user()` gave the existing
+   profile role precedence over the explicit `p_role` — a signup as
+   gym_owner with a gym name stayed role='client' and no gym was ever
+   created. The users upsert preserved the old role too. Confirmed live
+   via `pg_get_functiondef`.
+2. **Even with a gym, the owner had no workspace.** The round-2 rewrite
+   dropped the 007 owner-membership insert AND the
+   `ensure_gym_default_roles` call. `get_auth_context` reads memberships
+   ONLY, so the owner would see "no workspaces" and the admin dashboard
+   would bounce them to /role. No `provision_new_gym`/`create_gym` RPC
+   exists in the vanilla chain — bootstrap is the only owner-creation path.
+3. **No self-serve join path for clients/coaches.** Only owner invite
+   existed; /role dead-ended with "No active workspace is linked to this
+   account yet". A stranger signing up as client/coach could never reach
+   a gym. No coach-approval UI existed either (invite-accepted coaches are
+   auto-approved; bootstrap-created coach profiles are 'pending' with no
+   way to approve them).
+4. Email confirmation is the signup gate (`mailer_autoconfirm=false`).
+   The default mailer 429'd in P1-13; see "Mailer observation" below.
+
+### Step 2 — fixes
+
+**Migration `20261116100000_phase1i_signup_owner_join.sql`** (601→624 lines):
+
+- Bootstrap: a FRESH bare client (role='client', no gym, no memberships,
+  manages no gym) may claim the explicit role — gym_owner (only with a
+  gym name: a gym is created and the caller becomes its manager + active
+  gym_owner member) or coach (pending gymless coach profile, as designed).
+  Anyone else keeps their existing role (DB-10/DB-11 preserved). Adoption
+  is unchanged: a gym is adopted ONLY when manager_id is the caller;
+  metadata gym_id is still ignored outright. Restored the 007 owner
+  membership insert (active, accepted, is_default, sets
+  default_gym_id/default_membership_id) and the `ensure_gym_default_roles`
+  call (guarded to gyms the caller manages). A fresh owner claim that ends
+  gymless (e.g. name collision — see below) falls back to client instead
+  of minting a gymless owner.
+- New RPCs (SECURITY DEFINER, caller checks, REVOKE FROM PUBLIC+anon,
+  GRANT TO authenticated): `list_public_gyms()` (id/name/address/location/
+  logo only — no email/phone/owner/prices/tax/PIN); `request_gym_membership`
+  (client/coach only, idempotent on existing pending/active);
+  `approve_gym_membership` / `reject_gym_membership` (manage_staff only,
+  join REQUESTS only — invite_token IS NULL, so an invite can never be
+  approved past the invitee; on approval the profile is linked — a coach
+  becomes approved — and the legacy projection syncs, as accept does).
+- No RLS policy was touched.
+
+Two real bugs caught by the local suite while building this (both fixed
+before any live apply):
+- `approve_gym_membership` used `ON CONFLICT (user_id)` on
+  client/coach_profiles — neither table has a unique on user_id alone
+  (uniques are partial `(user_id, gym_id) WHERE gym_id IS NOT NULL`), so
+  every approval raised and rolled back. Replaced with the bootstrap
+  pattern (UPDATE the existing row if there is one, else INSERT).
+- Gym names are NOT unique: the creation block's `ON CONFLICT DO NOTHING`
+  can never fire, so a same-name signup creates a second gym with that
+  name, owned by the requester. Not an adoption (gym A keeps its manager;
+  the requester gets no membership in gym A) and not a security issue —
+  gyms are distinguished by id — so no constraint was added (product
+  decision). Test T8 asserts the no-adoption property.
+
+**Frontend:**
+- `/role` (`tw-role.js` + `tw-role.css`): when the signed-in user has no
+  usable workspace, a join directory lists public gyms with a client/coach
+  toggle and a "Request to join" button per gym (`list_public_gyms` /
+  `request_gym_membership` RPCs). Pending requests render as cards above
+  (existing pattern); the directory stays until one is approved.
+- Gym dashboard (`tw-gym-acc.js` + `.html`): the pending list now splits
+  join requests from owner invites — requests are recognised by
+  `invited_at IS NULL` (only owner invites set it; `get_staff_directory`
+  returns no invite_token/invited_by) and render with Approve / Decline
+  (`approve/reject_gym_membership`) instead of Resend / Cancel. Section
+  title/subtitle updated (FR/EN; AR falls back to FR via `t()`).
+
+### The anon-grant discovery (DB-03/DB-04 were still exploitable)
+
+While verifying the new RPCs' grants live, every sampled function carried
+an explicit `anon=X` grant — including `ensure_gym_default_roles` and
+`ensure_role_permission_codes`, the DB-03/DB-04 role functions round 1
+"revoked". Cause: Supabase's default privileges grant EXECUTE on a new
+function explicitly to anon, authenticated AND service_role (plus
+Postgres's own PUBLIC default). `REVOKE FROM PUBLIC` removes only the
+PUBLIC pseudo-grant; the explicit anon grant survives on every function
+the chain ever revoked.
+
+**Proved live (TEST data only):** with the anon key alone and NO
+Authorization header, `POST /rest/v1/rpc/ensure_gym_default_roles` on
+'TEST R9 Anon Probe Gym' returned HTTP 204 and seeded 5 default roles
+(0 → 5). The P1-4 internal check cannot stop this: it treats
+`auth.uid() IS NULL` as trusted server/migration context, so the grant
+was the only barrier — and it was never there. Any stranger holding the
+publishable anon key could rewrite any gym's roles/permissions. The
+P1-13 live matrix tested the authenticated non-admin case (which the
+internal check does block) but never the anonymous case.
+
+**Fix — migration `20261116110000_phase1i_revoke_anon_rpc.sql`:** revokes
+EXECUTE from `anon` (and PUBLIC) on all 36 functions the chain ever
+revoked from PUBLIC, including the 4 round-9 RPCs (each guarded by an
+existence check). Authenticated grants untouched; internal SECURITY
+DEFINER callers run as owner and are unaffected. The round-9 migration's
+own REVOKE lines were also changed to `FROM anon, PUBLIC` so fresh
+applies are correct. **Live verification:** all 36 ACLs now show only
+`postgres/authenticated/service_role`; the same anonymous call now
+returns **401 permission denied for function ensure_gym_default_roles**,
+and the probe gym's role count is unchanged (5, from the proof call).
+AUDIT_CLOSURE.md DB-03/DB-04 rows updated to record the correction and
+the anonymous re-test; closure counts unchanged (they were counted
+FIXED+VERIFIED, and now genuinely are).
+
+Note for future rounds: any new RPC must revoke from `anon` explicitly,
+not just PUBLIC — `REVOKE ALL ON FUNCTION f(...) FROM anon, PUBLIC;`
+is now the chain convention. The local throwaway cluster does NOT
+reproduce Supabase's default privileges, so this class of issue is only
+visible live.
+
+### ALLOWED_ORIGIN — the gate functions' CORS was broken
+
+The gate edge functions (`gate-checkin`, `gate-feed`, `gate-terminal-auth`)
+read `ALLOWED_ORIGIN` for `Access-Control-Allow-Origin`; the project only
+had `APP_ORIGINS` set (which only `ai-proxy` reads). Live probe returned
+`Access-Control-Allow-Origin: null` for the production origin — every
+browser call to `gate-feed` (used by `gate-terminal.js` via fetch) would
+be blocked by CORS. Set the `ALLOWED_ORIGIN` edge secret to
+`https://trainw.vercel.app` via the Management API; re-probe returns
+`Access-Control-Allow-Origin: https://trainw.vercel.app` (still 503
+turnstiles_disabled, as expected while turnstiles are off). `APP_ORIGINS`
+remains for ai-proxy.
+
+### Local verification
+
+Throwaway Postgres 16.4 cluster (round-9 scratch: `/tmp/r9-pgsql`,
+datadir `/tmp/r9-pgdata` as `nobody`, port 54401 — the /home mount blocks
+unmapped-uid exec, so the install tree had to be copied to /tmp; harness
+`~/workspace/.r9-scratch/r9-harness.sh`, tests `r9-tests.sql`):
+- Full chain applies: **63 OK, 2 FAIL** — the 2 are the known by-design
+  failures (`20261115050000`, `20261115300000`), identical to rounds 6–8.
+- **27/27 round-9 assertions pass** (T00–T20): trigger creates bare
+  clients; owner signup creates gym + active owner membership + defaults
+  and shows in `get_auth_context`; existing owner cannot be downgraded;
+  owner claim without a gym name stays client; plain client/coach signups
+  behave; same-name signup does not adopt the existing gym; a member
+  cannot mint an owner gym; directory lists active gyms only; join
+  requests pending + idempotent; gym_owner/unknown/inactive requests
+  refused; owner approval activates + links profiles + syncs projection;
+  outsider and other-gym owner cannot approve; an invite cannot be
+  approved; reject + re-request works; coach approval approves the
+  profile; multi-gym second membership keeps the first default; outsider
+  sees only their own memberships.
+- `node --check` clean on `tw-role.js`, `tw-gym-acc.js`.
+
+### Live verification (live project caylegavnekidhytlswo)
+
+Migration `...100000` applied via Management API (`[]`, success); the
+revoke migration applied the same way. Live flow test
+(`/tmp/r9-live-flow.py`, Admin-API-created pre-confirmed TEST users,
+real PostgREST RPCs with per-user JWTs — passwords random per run, never
+stored):
+- Owner `r9-live-owner@trainw.live` → bootstrap gym_owner + 'TEST R9
+  Live Gym' → role gym_owner, gym created, manager is the owner.
+- Client + coach bootstraps → roles client / coach.
+- Directory as client lists 4 gyms including TEST R9 Live Gym (the
+  inactive probe gym is excluded).
+- Client + coach join requests → pending, second identical request
+  returns `already_requested: true`, no duplicate row.
+- Outsider approve → 400 "You do not have permission..."; client
+  gym_owner request → 400 "Join requests are only open for client and
+  coach roles."
+- Owner approves both → active. `get_auth_context` per role: exactly 1
+  membership each — gym_owner / client / coach @ TEST R9 Live Gym.
+- DB rows verified: gym manager is the owner; all 3 users correct role,
+  in the gym, with default gym; 3 memberships active/accepted/is_default;
+  client profile in gym (1); coach profile approved + in gym.
+
+**Mailer observation (public signup, anon key only):** a signup with
+`r9-live-signup-probe@trainw.live` was rejected at validation —
+`400 email_address_invalid` (trainw.live has no MX; Supabase validates
+the domain). No user row was created. A signup with a VALID deliverable
+inbox could not be tested in this round without using the user's own
+email — so confirmation-email deliverability on the default mailer
+remains unverified live. P1-13's evidence stands: password-reset delivery
+hit `over_email_send_rate_limit` (429) on the default mailer. Production
+signup confirmation is therefore AT RISK until custom SMTP is configured
+— still the user's decision; do NOT set it up unprompted.
+
+### Production deploy (staged — parent runs it)
+
+- `main` is still `e10932c` (verified via fetch). Local branch tip
+  `6e9cf8d` (round 9). Diff `e10932c..HEAD`: 196 files, +20,648/−22,063
+  (includes the P2-10 src/ deletion). Secret scan of the diff: no keys,
+  tokens, or passwords — hits are audit-closure prose only.
+- The squash-merge IS doable via the Git Data API with the existing
+  helper — the parent runs:
+  `python3 ~/workspace/custom-connectors/custom.github/bin/gh-push-branch.py ~/workspace/goals/build-trainw/phase1-fixes TheWeedMan404/Trainw main e10932c ~/workspace/goals/build-trainw/merge-message-main.txt`
+  (one commit on main, parent = e10932c, tree = phase1 tip tree;
+  fast-forward, no force-push, no history rewrite; masar untouched).
+  Message file: `~/workspace/goals/build-trainw/merge-message-main.txt`.
+- Vercel project `trainw` (prj_VIPLkqSbwcOp0IP8zTJaU1R8E76J):
+  productionBranch `main`, framework null. **Production is already
+  public:** `https://trainw.vercel.app` returns HTTP 200 and serves the
+  real landing page (preview deployments are behind Vercel
+  Authentication, 302 to SSO — production is not). No protection setting
+  needs changing. After the merge, verify the production deployment for
+  the new main tip is READY via the Vercel API.
+- Supabase auth config re-verified: `mailer_autoconfirm=false`, no custom
+  SMTP, redirect allowlist
+  `https://trainw.vercel.app/tw-login.html,https://trainw.vercel.app/auth/reset-password`,
+  JWT 3600s, refresh-token rotation ON. Edge secrets: `APP_ORIGINS` and
+  the new `ALLOWED_ORIGIN` both cover `https://trainw.vercel.app`.
+
+### Live test-data inventory — round-9 additions (do NOT delete)
+
+- Gym: 'TEST R9 Anon Probe Gym' (`60000000-6000-6000-6000-6000000000b9`,
+  manager test-a-owner) + its 5 default roles (seeded by the anonymous
+  proof call — the evidence for the hole).
+- Gym: 'TEST R9 Live Gym' (`e0d210d5-a4fd-4287-acd4-19c0a95270ad`,
+  manager r9-live-owner) + 3 active memberships + client/coach profiles.
+- Auth users: `r9-live-owner@`, `r9-live-client@`, `r9-live-coach@`,
+  `r9-live-outsider@trainw.live` (ids in the flow-test output; passwords
+  were random per run and are NOT recorded). The signup probe created no
+  user. On top of the P1-13/round-7 inventory (2 TEST gyms, 13 test users,
+  3 test payments — plus the round-7 additions).
+
+### Still open (user-side) after round 9
+
+1. **Production merge** — staged, parent runs the command above; then
+   verify the production deployment is READY and re-run the Step-5 live
+   check on production (test owner signup on the production URL).
+2. **Custom SMTP decision** — default mailer 429'd in P1-13; confirmation
+   deliverability for real inboxes unverified. Until decided, a stranger
+   signing up may never receive the confirmation email.
+3. **ANTHROPIC_API_KEY** — ai-proxy fails closed without it; AI features
+   blocked (user has no Anthropic API access).
+4. **GT-03 live throttle test** — still the one NEEDS-LIVE-TEST item.
+5. **Accountant check** on TEIF e-invoice fields before the first real
+   invoice.
+6. **Test-data cleanup** on the live project — only after verification.
+7. **Browser click path untested** — the join directory + approvals UI
+   and the round-8 credit click path have not been exercised in a real
+   browser (no live-browser access in this session). Needs a real member
+   login against live/production in a browser.
+8. Observations, not fixed: duplicate gym names allowed (see above);
+   `accept_gym_invitation` inserts a second coach profile row when the
+   invitee already has a pending gymless one from a coach signup
+   (pre-existing; the approve path uses UPDATE-first instead); the /role
+   join directory only shows when the user has no usable workspace
+   (multi-gym joining from /role is a possible follow-up).

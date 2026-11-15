@@ -460,8 +460,8 @@ Object.assign(T.fr, {
   sendInviteBtn:"Envoyer l'invitation",
   staffDirectoryTitle:"Annuaire de l'équipe",
   staffDirectorySub:"Visualisez les profils, rôles et statuts de toute l'équipe de votre salle.",
-  pendingInvitesTitle:'Invitations en attente',
-  pendingInvitesSub:"Suivez les invitations non acceptées et relancez-les si besoin.",
+  pendingInvitesTitle:'Invitations et demandes en attente',
+  pendingInvitesSub:'Suivez les invitations non acceptées et les demandes d’adhésion à valider.',
   rolesLibraryTitle:'Bibliothèque des rôles',
   rolesLibrarySub:'Rôles système verrouillés et rôles personnalisés du tenant actif.',
   createRoleBtn:'Créer un rôle',
@@ -491,8 +491,8 @@ Object.assign(T.fr, {
   teamEmptyTitle:'Aucun membre trouvé',
   teamEmptyBody:"Invitez votre premier membre pour démarrer l'organisation de l'équipe.",
   teamEmptyAction:'Inviter un membre',
-  pendingEmptyTitle:"Aucune invitation en attente",
-  pendingEmptyBody:'Toutes les invitations ont été traitées.',
+  pendingEmptyTitle:'Aucune invitation ni demande en attente',
+  pendingEmptyBody:'Toutes les invitations et demandes ont été traitées.',
   roleEmptyTitle:'Aucun rôle disponible',
   roleEmptyBody:'Créez un rôle personnalisé ou rechargez la matrice.',
   roleEmptyAction:'Créer un rôle',
@@ -507,6 +507,11 @@ Object.assign(T.fr, {
   editProfile:'Modifier le profil',
   resendInvite:"Renvoyer l'invitation",
   cancelInvite:'Annuler',
+  joinRequestLabel:'Demande d’adhésion',
+  joinApprove:'Approuver',
+  joinReject:'Refuser',
+  joinRequestApproved:'Demande acceptée.',
+  joinRequestRejected:'Demande refusée.',
   inviteSentTo:'Invitation envoyée à {email}.',
   inviteResentTo:'Invitation renvoyée à {email}.',
   inviteMissingRole:'Veuillez sélectionner un rôle.',
@@ -580,8 +585,8 @@ Object.assign(T.en, {
   sendInviteBtn:'Send invitation',
   staffDirectoryTitle:'Team directory',
   staffDirectorySub:'Review profiles, roles, and statuses across your gym team.',
-  pendingInvitesTitle:'Pending invitations',
-  pendingInvitesSub:'Track invitations that have not been accepted yet and resend them when needed.',
+  pendingInvitesTitle:'Pending invitations & requests',
+  pendingInvitesSub:'Track unaccepted invitations and join requests waiting for review.',
   rolesLibraryTitle:'Role library',
   rolesLibrarySub:'Locked system roles and custom roles for the active tenant.',
   createRoleBtn:'Create role',
@@ -611,8 +616,8 @@ Object.assign(T.en, {
   teamEmptyTitle:'No members found',
   teamEmptyBody:'Invite your first member to start organizing the team.',
   teamEmptyAction:'Invite member',
-  pendingEmptyTitle:'No pending invitations',
-  pendingEmptyBody:'All invitations have already been handled.',
+  pendingEmptyTitle:'No pending invitations or requests',
+  pendingEmptyBody:'All invitations and requests have been handled.',
   roleEmptyTitle:'No roles available',
   roleEmptyBody:'Create a custom role or refresh the matrix.',
   roleEmptyAction:'Create role',
@@ -627,6 +632,11 @@ Object.assign(T.en, {
   editProfile:'Edit profile',
   resendInvite:'Resend invitation',
   cancelInvite:'Cancel',
+  joinRequestLabel:'Join request',
+  joinApprove:'Approve',
+  joinReject:'Decline',
+  joinRequestApproved:'Request approved.',
+  joinRequestRejected:'Request declined.',
   inviteSentTo:'Invitation sent to {email}.',
   inviteResentTo:'Invitation resent to {email}.',
   inviteMissingRole:'Please select a role.',
@@ -1353,7 +1363,28 @@ function renderPendingInvites() {
     syncPermissionVisibility();
     return;
   }
-  target.innerHTML = rows.map(member => `
+  // Round 9 — join requests vs owner invites. Only owner invites set
+  // invited_at, so a pending row without one is a self-serve join
+  // request (invite_token NULL): it gets Approve / Decline, never
+  // Resend / Cancel — an invite is accepted by the invitee, a request
+  // is decided by the gym.
+  const requests = rows.filter(member => !member.invited_at);
+  const invites = rows.filter(member => member.invited_at);
+  target.innerHTML = [
+    requests.map(member => `
+    <div class="staff-pending-row">
+      <div>
+        <div class="staff-member-name">${Trainw.escapeHtml(member.name || member.invited_name || member.invite_email || '')}</div>
+        <div class="staff-pending-meta">${Trainw.escapeHtml(member.invite_email || member.email || '')}</div>
+        <div class="staff-pending-meta">${Trainw.escapeHtml(member.role_name || t('noRoleAssigned'))} · ${Trainw.escapeHtml(t('joinRequestLabel'))}</div>
+      </div>
+      <div class="staff-pending-actions">
+        <button class="btn-primary" type="button" data-join-approve="${Trainw.escapeHtml(member.membership_id || '')}">${Trainw.escapeHtml(t('joinApprove'))}</button>
+        <button class="btn-danger" type="button" data-join-reject="${Trainw.escapeHtml(member.membership_id || '')}">${Trainw.escapeHtml(t('joinReject'))}</button>
+      </div>
+    </div>
+  `).join(''),
+    invites.map(member => `
     <div class="staff-pending-row">
       <div>
         <div class="staff-member-name">${Trainw.escapeHtml(member.invited_name || member.invite_email || '')}</div>
@@ -1365,8 +1396,31 @@ function renderPendingInvites() {
         <button class="btn-danger" type="button" data-pending-cancel="${Trainw.escapeHtml(member.membership_id || '')}">${Trainw.escapeHtml(t('cancelInvite'))}</button>
       </div>
     </div>
-  `).join('');
+  `).join(''),
+  ].join('');
   syncPermissionVisibility();
+}
+
+async function approveJoinRequest(membershipId) {
+  if (!membershipId) return;
+  const result = await Trainw.api.run(sb.rpc('approve_gym_membership', { p_membership_id: membershipId }), { context: 'approve join request', fallback: null });
+  if (result.error) {
+    Trainw.ui.showToast(result.error.message || t('errorMsg'), 'error');
+    return;
+  }
+  Trainw.ui.showToast(t('joinRequestApproved'), 'success');
+  await loadStaffDirectory();
+}
+
+async function rejectJoinRequest(membershipId) {
+  if (!membershipId) return;
+  const result = await Trainw.api.run(sb.rpc('reject_gym_membership', { p_membership_id: membershipId }), { context: 'reject join request', fallback: null });
+  if (result.error) {
+    Trainw.ui.showToast(result.error.message || t('errorMsg'), 'error');
+    return;
+  }
+  Trainw.ui.showToast(t('joinRequestRejected'), 'success');
+  await loadStaffDirectory();
 }
 
 async function openStaffPanel(userId) {
@@ -5801,6 +5855,16 @@ function bindUi() {
     }
   });
   document.getElementById('staff-pending-list')?.addEventListener('click', event => {
+    const approveButton = event.target.closest('[data-join-approve]');
+    if (approveButton) {
+      void approveJoinRequest(approveButton.dataset.joinApprove || '');
+      return;
+    }
+    const rejectButton = event.target.closest('[data-join-reject]');
+    if (rejectButton) {
+      void rejectJoinRequest(rejectButton.dataset.joinReject || '');
+      return;
+    }
     const resendButton = event.target.closest('[data-pending-resend]');
     if (resendButton) {
       void resendInvitation(resendButton.dataset.pendingResend || '', resendButton.dataset.pendingEmail || '');
