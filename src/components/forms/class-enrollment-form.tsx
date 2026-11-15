@@ -4,6 +4,7 @@ import { useActionState } from "react";
 
 import { enrollClientInClassAction } from "@/actions/classes";
 import { EMPTY_FORM_STATE } from "@/actions/shared";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 export function ClassEnrollmentForm({
@@ -24,16 +25,15 @@ export function ClassEnrollmentForm({
 
       <div className="space-y-2">
         <label htmlFor={`client-${classId}`}>Add client to class</label>
-        <select defaultValue="" id={`client-${classId}`} name="clientId">
-          <option disabled value="">
-            Select client
-          </option>
-          {clients.map((client) => (
-            <option key={client.id} value={client.id}>
-              {client.name} ({client.client_code})
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          id={`client-${classId}`}
+          name="clientId"
+          options={clients.map((client) => ({
+            label: `${client.name} (${client.client_code})`,
+            value: client.id,
+          }))}
+          placeholder="Select client"
+        />
       </div>
 
       {state.error ? (

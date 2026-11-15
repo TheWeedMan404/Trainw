@@ -2383,3 +2383,461 @@ violation; test cleanup must delete sessions first, then the gym.
   use. `tar` extraction fails on root-owned repo files ("Cannot change
   ownership to uid 0") in some destinations — use `cp -r` for scratch
   copies instead.
+
+# Round 5 — remaining follow-ups from rounds 1–4, 2026-11-15
+
+11 commits on `phase1-security-fixes` after the round-4 head `fcffd76`
+(`e42697d` … `58069c7`). Local only — NOT pushed in this round. Rules
+held throughout: never edit an applied migration (all SQL as NEW
+files), one commit per logical piece, no history rewrites, no live
+database, no production deploy, no DB-66 / P2-10 decisions.
+
+Verification harness (same approach rounds 3–4 proved, rebuilt after
+the VM reset wiped `/tmp` and the installed PostgreSQL): throwaway
+local Postgres 16 cluster, harness at
+`.r5-scratch/r5-harness.sh` (up/apply/test/psql/down/reset), cluster
+`/tmp/r5-pgdata`, port 54399, DB `trainw`, stubs at
+`.r5-scratch/supabase-stubs.sql` (auth schema + `auth.users` +
+`auth.uid()`/`auth.role()`/`auth.jwt()` driven by `test.auth_uid` /
+`test.auth_role` GUCs, storage buckets/objects +
+`storage.foldername()`, roles anon/authenticated/service_role with
+BYPASSRLS on service_role, RLS on storage.objects). Test files live in
+`.r5-scratch/` during the round, NOT in the repo; the scratch dir is
+deleted at the end of the round. The server must run as the `postgres`
+OS user (initdb/pg_ctl refuse root) but psql runs as root; the harness
+runs server commands via `su postgres`. The chain applies end to end:
+**54 files** (stubs + 53 migrations), with only the two known
+by-design failures (B5 `20261115050000`, DB-61 `20261115300000` — see
+below), each repaired by a later migration. The harness tolerates
+both by filename; the live apply must also continue past them.
+
+Environment notes (round 5): apt was stuck on `apt-get update` (no
+proxy config for apt; plain-HTTP proxy auth fails with 407). Fix:
+write `/etc/apt/apt.conf.d/99proxy` from the live `$http_proxy` /
+`$https_proxy` env vars **in the same exec call** as the apt command —
+the proxy password rotates between exec calls (proved: apt sent a
+stale password while the live env had a new one). Sources switched to
+HTTPS; then `apt-get install postgresql postgresql-contrib`
+succeeded (PostgreSQL 16). Harness gotcha: the harness `psql`
+subcommand passes its arguments straight to psql, so a SQL string as
+a positional argument is treated as a dbname and psql sits
+interactive waiting on stdin — always use `-c` (or a file) with it.
+`node --check` on every touched JS file; TS files got a transpile-only
+esbuild check (cached esbuild in the npx cache); full `tsc --noEmit` +
+`next build` remain deploy-time items (no node_modules in the repo).
+
+## DB-61 hash gap for DEFAULTs (commit e42697d)
+
+- **Files:** `supabase/migrations/20261115300000_phase1e_freeze_hash_defaults.sql`
+  (built by `.r5-scratch/build-r5-db61.py`), `docs/MIGRATION_CONVENTIONS.md` §7.
+- **What:** the round-4 freeze (migration `20261115210000`, assert
+  re-created in DB-37 `20261115230000`) hashed signature, result,
+  language, volatility, SECURITY DEFINER, proconfig, body — but NOT
+  `proargdefaults`, so a default-only change slipped past. Seven
+  frozen helpers carry defaults (`auth_user_email`,
+  `client_membership_is_active`, `current_membership`,
+  `get_my_permissions`, `has_permission`,
+  `membership_is_active_for_access`, `user_has_membership`). The new
+  migration adds `COALESCE(p.proargdefaults::text, '')` to the formula
+  and recomputes all 30 hashes from the live chain.
+- **Verification:** 4/4 (`r5-tests-db61.sql`) — assert passes; a
+  default-only change to `has_permission` is detected; a body change
+  to `can_view_user` is still detected; restoring both passes again.
+
+## DB-61 portability defect (commit 2826ee3)
+
+- **Files:** `supabase/migrations/20261115330000_phase1e_freeze_hash_portable.sql`
+  (built by `.r5-scratch/build-r5-db61-portable.py`).
+- **What:** the DB-61 formula hashed `proargdefaults::text`, whose
+  node-tree text embeds the callee's OID (`FUNCEXPR :funcid 16401`
+  for the `auth.uid()` defaults on `auth_user_email` and
+  `user_has_membership`) — OIDs are assigned in creation order and
+  differ between clusters, so the e42697d assert passed on the cluster
+  it was built on and failed on any fresh cluster. Found by the
+  rebuilt round-5 harness. The fix re-creates
+  `assert_rls_helpers_frozen()` hashing
+  `pg_get_function_arguments(p.oid)` instead — the signature WITH
+  defaults deparsed as SQL text (e.g. `p_user_id uuid DEFAULT
+  auth.uid()`), stable across clusters — and recomputes all 30 hashes.
+  The old migration is untouched (same pattern as B5: its CREATE OR
+  REPLACE still lands; this file supersedes it and re-validates).
+- **Verification:** 4/4 (`r5-tests-db61p.sql`) — the assert passes on a
+  fresh cluster whose hashes were computed on the previous cluster
+  (genuinely portable); default-only and body changes still detected;
+  restore passes again.
+- **Live-apply note:** the live apply must continue past the
+  by-design failure in `20261115300000`, exactly as it does for B5.
+
+## DB-38: soft-delete for messages (commit c522ddc)
+
+- **Files:** `supabase/migrations/20261115310000_phase1e_message_soft_delete.sql`,
+  `tw-gym-acc.js`, `tw-client-acc.js`, `tw-coach-acc.js`,
+  `trainw-enhancements.css` (shared `.msg-delete` style; all three
+  pages load it).
+- **What:** `deleted_at` / `deleted_by` columns on `messages`;
+  `sender_id` / `receiver_id` nullable with FKs changed to ON DELETE
+  SET NULL (constraint names `messages_sender_id_fkey`,
+  `messages_receiver_id_fkey`); SELECT/UPDATE policies exclude
+  soft-deleted rows; INSERT policy unchanged (still forces a real
+  sender); `soft_delete_message(p_message_id)` RPC (SECURITY DEFINER,
+  sender-only, idempotent — a second call returns the same id; REVOKE
+  PUBLIC, GRANT authenticated); `forbid_message_field_updates()`
+  trigger re-created as SECURITY DEFINER so the FK's SET NULL is
+  allowed only when the old user row is genuinely gone (a caller
+  cannot NULL out a live counterpart). UI: × button on own messages in
+  the gym/client/coach conversation views, calling the RPC and
+  re-rendering; `deleteMessage` i18n keys in all three T objects.
+- **Verification:** 8/8 (`r5-tests-msgdel.sql`, re-run on a fresh
+  cluster after the client/coach buttons landed) — both parties see a
+  live message; sender soft-deletes, hidden for both, row survives;
+  second soft-delete idempotent; receiver soft-delete forbidden;
+  update on soft-deleted touches 0 rows; receiver cannot NULL a live
+  sender; message survives sender deletion with `sender_id` NULL,
+  still visible to receiver; insert policy still forces a real sender.
+  `node --check` clean on all three JS files.
+- **Test-writing lessons:** `can_message_user` requires
+  `is_gym_manager()` (portal = 'admin') or `can_view_user(...)` —
+  fixtures need an admin-portal membership role for the sender.
+  `public.users.id` does NOT reference `auth.users` (plain uuid PK,
+  linked only by the signup trigger's shared id) — MSGe deletes the
+  `public.users` profile row, not the auth row, to fire the messages
+  FK's ON DELETE SET NULL. `SET` is invalid inside a plpgsql DO block
+  (use top-level SETs); psql does NOT interpolate `:'var'` inside a DO
+  `$$` block (pass ids between statements via a temp table, with
+  `GRANT ALL ... TO authenticated` since the superuser owns it).
+- **Code quirk:** the client/coach files carry double-encoded French
+  (mojibake `Ã©`, e.g. literal `Message envoyÃ©.`) — the i18n keys
+  were added by a Python script (`.r5-scratch/r5-msgdel-i18n.py`)
+  anchoring on ASCII `nameLabel` keys because the edit tool's
+  proper-UTF-8 anchor failed. The gym file is proper UTF-8.
+
+## FE-18 follow-up: server-side write idempotency (commit 9468eff)
+
+- **Files:** `supabase/migrations/20261115320000_phase1e_write_idempotency.sql`
+  (built by `.r5-scratch/build-r5-idempotency.py`, extract-and-patch
+  from 003 + DB-37).
+- **What:** `leave_session_review` returns the existing review id
+  instead of raising conflict; `book_coach_session` returns the
+  existing pending/confirmed session for the same client/slot (no
+  duplicate session/payment) and raises `'conflict: this slot is
+  already booked'` for a different client (the chain had no overlap
+  guard at all); respond/cancel/complete/no_show return the id when
+  already in the requested end state, still raise `invalid_state` on
+  a mismatched end state; in respond the decision is validated BEFORE
+  the idempotent return so a bogus decision still raises
+  validation_error. Every function already locks its session row FOR
+  UPDATE, so the check-then-act is race-safe.
+- **Verification:** 9/9 (`r5-tests-idem.sql`) — first booking = 1
+  session + 1 payment; same-client retry = same id, no duplicates;
+  different client same slot = conflict; respond/cancel/complete/
+  review/no-show each idempotent; mismatched decision still raises.
+- **Fixture notes:** `get_my_role()` returns the role CODE, so the
+  booking/review client needs a membership role with code `'client'`;
+  complete/no_show refuse future sessions, so those tests move the
+  session date to today via direct UPDATE as superuser (the write
+  trigger allows the date move while confirmed).
+
+## DB-57 follow-up: per-gym specialty tags (commit 6dd3320)
+
+- **Files:** `supabase/migrations/20261115340000_phase1e_per_gym_tags.sql`,
+  `tw-gym-acc.js`, `tw-gym-acc.html`, `trainw-enhancements.css`.
+- **What:** `specialty_tags.gym_id` nullable (NULL = global; the
+  seeded tags stay global). The global UNIQUE on name is replaced by
+  two partial uniques: `UNIQUE (name) WHERE gym_id IS NULL` and
+  `UNIQUE (gym_id, name) WHERE gym_id IS NOT NULL` (citext, so both
+  are case-insensitive). SELECT shows globals + the caller's own gym
+  tags (+ any gym they manage); INSERT/UPDATE/DELETE are gym managers,
+  gym tags only — globals stay seed/service-role only and a tag cannot
+  be moved into or out of the global list. New validated
+  `create_gym_specialty_tag(p_gym_id, p_name)` RPC (trim, 1–60 chars,
+  manager check, idempotent: an existing name in the gym returns its
+  id). UI: tag suggestions in the gym dashboard coach-edit modal
+  (global + this gym's tags as chips that fill the specialty field,
+  with a dashed "+ save as tag" chip that calls the RPC; wired on
+  modal open + on input, guarded against double-binding via
+  `dataset.tagWatch`).
+- **Verification:** 7/7 (`r5-tests-tags.sql`) — idempotent RPC create,
+  validation + manager checks, per-gym case-insensitive uniqueness,
+  cross-gym visibility, policy-gated direct writes, rename/delete
+  allowed but no move to global, members cannot write.
+- **Two real gotchas:** (a) `citext = text` resolves
+  case-SENSITIVELY (citext is cast to text) — the RPC's fallback
+  lookup casts the input (`name = v_name::citext`) or `'crossfit'`
+  would miss `'CrossFit'`; (b) the chain only ever granted SELECT on
+  the table, so the migration adds the INSERT/UPDATE/DELETE grants
+  the policies need. Also: an RLS WITH CHECK failure raises an error,
+  while a USING mismatch returns 0 rows (the move-to-global test
+  expects the exception). The chain's own 002 seed insert
+  (`ON CONFLICT (name)`) runs before the partial indexes exist, so it
+  is unaffected.
+
+## Searchable selects (commit 460010a)
+
+- **Files:** new `src/components/ui/searchable-select.tsx`; wired
+  into `src/components/forms/attendance-form.tsx` (client + class),
+  `class-enrollment-form.tsx` (client), `class-form.tsx` (coach),
+  `staff-user-form.tsx` (role).
+- **What:** dependency-free combobox (filter-as-you-type, ArrowUp/Down
+  + Enter + Escape, ARIA listbox, hidden input carries the selected id
+  so server actions are unchanged; typing invalidates the previous
+  selection so a stale id can never be submitted; blur closes via a
+  timer cleared on re-focus; option pick uses onMouseDown +
+  preventDefault so it lands before blur). Only the long lists got it;
+  short lists (attendance status, class type, client type) stay native
+  `<select>`s. The `'No class'` empty option is preserved via
+  `defaultValue=""`.
+- **Verification:** esbuild transpile-only check clean on all 14
+  touched TSX files. Full `tsc --noEmit` + `next build` remain
+  deploy-time items.
+
+## NX-10 follow-up: Next.js edit forms (commit 98a57bd)
+
+- **Files:** new `src/components/forms/client-edit-form.tsx`,
+  `coach-edit-form.tsx`, `class-edit-form.tsx`; each `*RowActions`
+  gained an Edit toggle; the three list pages (`clients`, `coaches`,
+  `classes` under `src/app/(dashboard)/dashboard/`) restructured so
+  the actions block sits under the info row.
+- **What:** prefilled inline edit forms wired to the existing update
+  server actions (client: name + type; coach: name + rating; class:
+  name + type + capacity + coach via SearchableSelect; Cancel button;
+  page revalidates on success). Pages now pass name/type/rating/
+  capacity/coachId/coaches — `coachId` was already in
+  `getClassesPageData`'s mapped rows.
+- **Verification:** esbuild transpile-only check clean on all touched
+  files. Full `tsc --noEmit` + `next build` remain deploy-time items.
+
+## DB-37 follow-up: get_bookable_slots in the gym timezone (commit fb2da18)
+
+- **Files:** `supabase/migrations/20261115350000_phase1e_bookable_slots_gym_tz.sql`
+  (built by `.r5-scratch/build-r5-slots-tz.py`, extract-and-patch from
+  DB-37 `20261115230000`).
+- **What:** slots are generated as naive `p_session_date + start_time`
+  (wall time in the gym's zone) but were filtered with
+  `rs.slot_start_ts > now()` — now() is UTC on the server, so near
+  midnight a slot could show bookable after it had already passed in
+  the gym's zone (09:00 Tunis still listed at 08:30 UTC = 09:30
+  Tunis). The function now carries `gym_tz`
+  (`public.gym_timezone(COALESCE(ca.gym_id, cd.gym_id))`) through the
+  windows/raw_slots CTEs and compares against the current wall time in
+  the gym's zone (`now() AT TIME ZONE rs.gym_tz`). The overlap check
+  is untouched (`session_time_range` is naive on both sides and
+  internally consistent).
+- **Verification:** 3/3 (`r5-tests-slottz.sql`) — with a
+  Pacific/Kiritimati gym (UTC+14, no DST) the returned count matches
+  the timezone-aware expectation (the old UTC filter would have
+  returned all 23 slots), no returned slot has passed in the gym zone,
+  and booking a slot still removes exactly that slot from the results.
+- **Test note:** the Kiritimati wall time must stay a plain
+  `timestamp`, not `timestamptz` — assigning
+  `now() AT TIME ZONE '...'` to a timestamptz variable re-interprets
+  the wall time in the session timezone.
+
+## GT-02: terminal session tokens are device-bound (commit 3e3f1db)
+
+- **Files:** `supabase/functions/gate-checkin/handler.mjs`.
+- **What:** `verifyTerminalSession` only checked the token hash,
+  expiry, and gym — never the session row's `device_id`, so a token
+  lifted from one terminal could be replayed from any other device.
+  It now also requires the request's `device_id` to match the
+  session's `device_id` (a request that omits `device_id` fails too).
+  Sessions with no `device_id` on record skip the check, but none
+  exist — the column is NOT NULL and `gate-terminal-auth` binds
+  `device_id` at issuance. The only gate-checkin caller is
+  `gate-terminal.js`, which always sends `device_id` (verified by
+  grep; the other `gate-checkin` reference in `tw-gym-acc.js` only
+  builds a display URL).
+- **Verification:** 4/4 with a Node harness + stub admin client
+  against the real handler (`.r5-scratch/r5-test-gt02.mjs`) — same
+  device passes verification (400 `missing_token`: no QR token
+  supplied), wrong device 401, omitted device_id 401, wrong token 401.
+  The handler is fully injectable (`createGateCheckinHandler(options)`
+  uses only `crypto.subtle`, `Response`, `options.getEnv`,
+  `options.createAdminClient`), which is what makes the local test
+  possible.
+
+## FE-10: gate access results off the public broadcast (commit 10aa327)
+
+- **Files:** `supabase/functions/gate-checkin/handler.mjs`,
+  new `supabase/functions/gate-feed/handler.mjs` +
+  `supabase/functions/gate-feed/index.ts`,
+  `supabase/config.toml`, `gate-terminal.js`.
+- **What:** the `access_result` broadcast carried the member's name,
+  days_left, denial reason and credential type on the public Realtime
+  channel `gate-terminal:<gymId>` — anyone who guessed the gym id
+  could subscribe and watch members walk in. `gate-checkin` now
+  broadcasts only an opaque `access_refresh` signal (gym, device,
+  timestamp); the three `emitAccessEvent` call sites pass only the
+  minimal fields. The terminal fetches the actual entries from the new
+  authenticated `gate-feed` edge function, which verifies the terminal
+  session token (`x-terminal-token`, device-bound per GT-02, gym-bound
+  to the requested gym — a wrong gym/device gets the same 401 either
+  way) and returns the 8 most recent `gate_access_log` rows for that
+  gym, enriched with client names and days_left (computed the same way
+  gate-checkin does). The terminal refreshes the feed on each signal
+  and once at startup / after PIN auth (in-flight guard + one pending
+  re-run, so a burst of scans does not stack fetches); the result card
+  shows this device's newest entry, with the old device filter and
+  dedupe preserved; a 401 clears the session and re-prompts for the
+  PIN, same as the QR-scan path. `config.toml` registers gate-feed
+  with `verify_jwt = false` (same pattern as gate-checkin: the
+  terminal authenticates with the session token, verified in code).
+  `verifyTerminalSession` is duplicated in gate-feed's handler (the
+  functions are separate Deno deployments and this repo has no
+  `supabase/functions/_shared` module — the comment says to keep the
+  two copies in sync). The terminal's own QR scans never depended on
+  the broadcast (`handleQrScan` renders from the HTTP response
+  directly); the broadcast only served external hardware pushes and
+  other terminals.
+- **Verification:** 5/5 with a Node harness + stub admin client
+  against the real handler (`.r5-scratch/r5-test-gatefeed.mjs`) —
+  200 with entries newest-first and names/days_left/reasons resolved,
+  wrong device 401, wrong gym 401, no token 401, turnstiles off 503,
+  with no entries leaked on any 401. GT-02 suite still 4/4 after the
+  broadcast edit. `node --check` clean on both handlers and
+  `gate-terminal.js`; no `access_result` broadcast remains (only the
+  explanatory comment). `client_name` in the checkin handler now
+  appears only in the direct HTTP response bodies (the terminal that
+  performed the scan), never in a broadcast.
+- **Live test still needed:** the full terminal flow with the flag ON
+  (PIN → token → QR scan → feed populates from gate-feed; a second
+  terminal shows its own newest entry on its own card), and the
+  503 `turnstiles_disabled` path for gate-feed with the flag OFF.
+
+## FE-12: session + realtime dashboard settings (commit 8f3a544)
+
+- **Files:** `docs/DEPLOY_RUNBOOK.md` §8 (new).
+- **What:** sessions live in localStorage (the static app has no
+  backend-for-frontend to hold HttpOnly cookies — that stays a larger
+  design item, not done here). The runbook now documents: enable
+  **Realtime Authorization** so the dashboard `postgres_changes`
+  subscriptions (`messages`, `sessions`, `check_ins`,
+  `workout_plans`, `weight_logs` in `tw-gym-acc.js`,
+  `tw-client-acc.js`, `tw-coach-acc.js`) enforce RLS with the caller's
+  JWT — the channel filters are client-chosen and are not a boundary
+  on their own; turn **refresh-token rotation ON**; keep the **JWT
+  expiry short** (3600s / 1h default, do not raise it). Also records
+  the token-hygiene grep audit: no code in the repo logs a token,
+  secret, password, PIN, or key value — the only hit is ai-proxy
+  logging the NAMES of missing env vars, never the values.
+- **Verification:** grep audit over every `console.*` call in
+  `*.js` / `*.ts` / `*.tsx` / `*.mjs`. These are dashboard settings,
+  not code — they must be set by hand before the first pilot.
+
+## Final sweep (commit 58069c7) — re-read the audit + skipped lists
+
+Explicit list before starting, and the outcome for each:
+
+- **DO — DB-35 (validate NOT VALID constraints):** already closed in
+  round 4. Migration `20261115150000_phase1d_validate_constraints.sql`
+  validates every unvalidated constraint dynamically; a fresh-cluster
+  query proves it: 0 unvalidated constraints in `pg_constraint`
+  (45 public tables, 350 constraints). The 25 `NOT VALID` grep hits
+  are the original additions, not open work. Not re-done.
+- **DO — DB-48 (RPC lockout):** closed by documenting + testing the
+  edge-function throttle, the alternative the audit itself offers
+  ("add per-credential/per-device failure counting ... or document
+  and test the edge-function throttle"). Test 4/4
+  (`r5-tests-ratelimit.sql`): device bucket allows 30, refuses the
+  31st; refused calls do not inflate the counter; buckets are
+  independent; IP bucket enforces the same way (exercised with limit
+  5 for speed; production passes 60). Doc note in
+  `docs/HARDWARE_INTEGRATION.md` (tune in `handler.mjs`
+  `RATE_LIMITS`, not in the RPC).
+- **DO — NX-29 (client codes):** closed with a doc note in
+  `docs/HARDWARE_INTEGRATION.md`. Verified by grep: no code path in
+  `gate-checkin`, `gate-terminal.js`, or the gym dashboard reads a
+  client code as a credential; the gate accepts only single-use QR
+  tokens and enrolled hardware credentials.
+- **Already closed in round 4 (verified, not re-done):** DB-41
+  (migration `20261115170000`: blanket grant replaced with per-table
+  grants derived from the RLS policies + `assert_all_tables_have_rls()`);
+  DB-46 (migration `20261115180000`: v18 storage policy — profiles/
+  readable only by owner, `manage_staff`/`manage_media` holders, or
+  when the asset row is `is_public` — plus `media_assets.is_public`
+  added, default false); DB-50 (`docs/DATA_REPAIR_RUNBOOK.md` +
+  `MIGRATION_CONVENTIONS.md` §4: no destructive data repair in a
+  migration); NX-26 (`.github/workflows/ci.yml` exists: type-check,
+  lint, smoke tests, production build); FE-27 (a) `tw-client-pilot.js`
+  is gone from the repo, (b/c/d) `renderPersonalRecordsTable` /
+  `renderProgram` / `renderWeight` each have exactly one definition
+  now and there are zero `callEdge` / `legacyInitDisabled` references.
+- **Deliberately skipped:** DB-51 (rename needs staging `supabase
+  migration list`); DB-66, P2-10 (user's call); NX-14 (password
+  reset/invite flow needs live email to verify); NX-28 (orphan
+  recovery flow needs a live staging kill to verify); NX-24
+  (dependency updates — needs npm install; not verifiable here);
+  NX-25 (remove `as any` — cannot verify without tsc); FE-27(e)
+  (`tw-gym-acc-v17.js` monkey-patching of `loadClients` /
+  `loadAnalytics` / `loadCoaches` / `setLang` / `openCoachModal` —
+  load-bearing rendering code with no DOM test harness; replacing it
+  with explicit hooks needs staging verification); GT-04 (ESP32
+  firmware, not in the repo); FE-11 live tests and the P1-13 live
+  matrix (need staging/live); session-history retention and the
+  consent checkbox (need user decisions); the void-reason
+  `window.prompt` (`tw-gym-acc.js:1985` — P2 polish, low value vs
+  UI risk in the minified file).
+
+## Final verification (whole round, one cluster)
+
+Fresh reset, then every round-5 suite in sequence (fixtures are
+namespaced by distinct UUIDs/bucket keys; the mutating DB-61 suite
+ran last): msgdel 8/8, idem 9/9, tags 7/7, slottz 3/3, ratelimit
+4/4, db61p 4/4 — **35/35**. Node harnesses: GT-02 4/4, gate-feed
+5/5. `node --check` clean on `tw-gym-acc.js`, `tw-client-acc.js`,
+`tw-coach-acc.js`, `gate-terminal.js`, both edge handlers. esbuild
+transpile-only clean on all 14 touched TSX files.
+
+## Audit-vs-code mismatches found in round 5 (additions)
+
+- DB-61: `proargdefaults::text` embeds callee OIDs, so a hash
+  computed on one cluster is not reproducible on another — the
+  round-4 freeze was cluster-specific until the portable fix.
+- DB-57: `citext = text` resolves case-SENSITIVELY (citext is cast to
+  text) — a case-insensitive lookup must cast the input to citext.
+- DB-46 (round-4 note, confirmed in this sweep): the v18 policy is
+  in place; nothing further was needed.
+- FE-27: the audit's tripled renderers are already single
+  definitions; the pilot file is already deleted.
+- DB-35: the audit's 25 unvalidated constraints are already all
+  validated by the round-4 migration — the count on a fresh cluster
+  is 0.
+- The gate-checkin QR path renders the terminal's own scan result
+  from the HTTP response, not from the broadcast — so the FE-10
+  change affects only external-hardware pushes and other terminals.
+
+## What still needs live testing / access / a user decision (round 5)
+
+- **Push:** round 5 is 11 local commits on `phase1-security-fixes`,
+  NOT pushed. Push via the Git Data API script (fetch the remote tip
+  first), then let the Vercel auto-build run. `dist/` was NOT rebuilt
+  in this round — the gate-terminal.js and gym/client/coach JS
+  changes ride in `dist/` only after a rebuild (round 1's P1-9 flow).
+  The new `gate-feed` edge function must be deployed
+  (`supabase functions deploy gate-feed`) alongside the updated
+  `gate-checkin`.
+- **Supabase live work (unchanged):** apply the migration chain +
+  Phase 1 migrations to project `caylegavnekidhytlswo` via the
+  dashboard SQL editor; check whether the DB is empty first; set the
+  deploy secrets (runbook §3) + the §8 dashboard settings (Realtime
+  Authorization, refresh-token rotation, 1h JWT expiry); point code
+  config at the new project keys; rebuild dist. The live apply must
+  continue past the by-design failures in `20261115050000` (B5) and
+  `20261115300000` (DB-61 non-portable hashes) — both are repaired by
+  later migrations. DB-51 rename caveat still applies.
+- **P1-13 live tests** on the new project (cross-tenant matrix), plus
+  the FE-10 terminal flow (flag ON: PIN → token → QR → feed from
+  gate-feed; second terminal isolation; flag OFF: gate-feed 503),
+  the GT-02 live check (a token from terminal A rejected on terminal
+  B), the NX-28 recover flow, the FE-09 live end-to-end QR scan, and
+  the FE-24/FE-25 live invite + reset-link flows.
+- **Deploy secrets still unset:** DB GUC pepper,
+  GATE_TERMINAL_PEPPER, TURNSTILES_ENABLED, CAPTCHA keys (fail-open
+  without the secret), APP_ORIGINS, redirect-URL allowlisting for
+  /tw-login.html and /auth/reset-password.
+- **Decisions still open (unchanged):** P2-10 (Next.js ship target);
+  DB-66 auto-settlement policy; session-history retention; the FE-08
+  coach search embedded-users name filter (live verification).
+- **Full type-check + `next build`:** the Next.js changes
+  (SearchableSelect, edit forms) have only had a transpile-only
+  esbuild check; `tsc --noEmit` + `next build` must run at deploy
+  time (needs node_modules / network).

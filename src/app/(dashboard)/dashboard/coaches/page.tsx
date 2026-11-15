@@ -40,7 +40,7 @@ export default async function CoachesPage({ searchParams }: { searchParams: Prom
             {coaches.length ? (
               coaches.map((coach) => (
                 <div
-                  className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 p-4"
+                  className="space-y-3 rounded-2xl border border-slate-200 p-4"
                   key={coach.id}
                 >
                   <div>
@@ -52,7 +52,11 @@ export default async function CoachesPage({ searchParams }: { searchParams: Prom
                       Created {formatDateTime(coach.created_at)}
                     </p>
                   </div>
-                  <CoachRowActions coachId={coach.id} />
+                  <CoachRowActions
+                    coachId={coach.id}
+                    name={coach.name}
+                    rating={coach.rating}
+                  />
                 </div>
               ))
             ) : (

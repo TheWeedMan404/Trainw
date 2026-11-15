@@ -15,6 +15,12 @@ verify_jwt = false
 # set_pin verifies the caller's JWT in code.
 verify_jwt = false
 
+[functions.gate-feed]
+# FE-10: the terminal calls with the anon key only; the function
+# authenticates the terminal itself via the x-terminal-token header
+# (see handler.mjs) — same pattern as gate-checkin.
+verify_jwt = false
+
 [functions.ai-proxy]
 # ai-proxy verifies the user's JWT itself (round 1, P1-7).
 verify_jwt = true

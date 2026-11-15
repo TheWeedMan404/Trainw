@@ -4,6 +4,7 @@ import { useActionState } from "react";
 
 import { createStaffUserAction } from "@/actions/roles";
 import { EMPTY_FORM_STATE } from "@/actions/shared";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 export function StaffUserForm({
@@ -35,16 +36,15 @@ export function StaffUserForm({
 
       <div className="space-y-2">
         <label htmlFor="staff-role">Assigned role</label>
-        <select defaultValue="" id="staff-role" name="roleId">
-          <option disabled value="">
-            Select a role
-          </option>
-          {roles.map((role) => (
-            <option key={role.id} value={role.id}>
-              {role.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          id="staff-role"
+          name="roleId"
+          options={roles.map((role) => ({
+            label: role.name,
+            value: role.id,
+          }))}
+          placeholder="Select a role"
+        />
       </div>
 
       {state.error ? (

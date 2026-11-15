@@ -242,6 +242,86 @@
     renderFeed();
   }
 
+  // FE-10: the terminal no longer trusts member details from the public
+  // broadcast — gate-checkin only sends an opaque `access_refresh` signal
+  // now. The entries come from the authenticated gate-feed function
+  // (terminal session token, device-bound). replaceFeed swaps the whole
+  // list (newest first, as the server returns it); refreshGateFeed also
+  // renders the newest entry on the result card when it is new to this
+  // terminal (own QR scans already rendered it via handleQrScan, and the
+  // dedupe in shouldHandleEvent keeps them from double-rendering).
+  let feedRefreshInFlight = false;
+  let feedRefreshPending = false;
+
+  function replaceFeed(payloads) {
+    recentFeed = (payloads || []).slice(0, 8).map(payload => ({
+      access: Boolean(payload.access),
+      client_name: payload.client_name || (payload.access ? 'Client' : 'Inconnu'),
+      reason: payload.reason || null,
+      credential_type: payload.credential_type || currentMode,
+      attempted_at: payload.attempted_at || new Date().toISOString(),
+      days_left: payload.days_left ?? null,
+    }));
+    renderFeed();
+  }
+
+  async function refreshGateFeed() {
+    if (feedRefreshInFlight) {
+      feedRefreshPending = true;
+      return;
+    }
+    const session = getStoredSession();
+    if (!session?.token) return;
+    feedRefreshInFlight = true;
+    try {
+      const response = await fetch(`${Trainw.SUPABASE_URL}/functions/v1/gate-feed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: Trainw.SUPABASE_ANON_KEY,
+          'x-terminal-token': session.token,
+        },
+        body: JSON.stringify({ gym_id: gymId, device_id: deviceId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (response.status === 401 && body.error === 'invalid_terminal_session') {
+        clearStoredSession();
+        openAdminModal();
+        return;
+      }
+      if (!response.ok || !Array.isArray(body.entries)) return;
+      const entries = body.entries.map(entry => ({
+        gym_id: gymId,
+        device_id: entry.device_id || null,
+        access: Boolean(entry.access),
+        reason: entry.reason || null,
+        credential_type: entry.credential_type || currentMode,
+        client_id: entry.client_id || null,
+        client_name: entry.client_name || null,
+        days_left: entry.days_left ?? null,
+        attempted_at: entry.attempted_at || new Date().toISOString(),
+      }));
+      if (entries.length) {
+        // The result card shows this terminal's newest entry, not another
+        // terminal's — same device filter the old broadcast handler had.
+        const newestForThisDevice = entries.find(entry => !entry.device_id || entry.device_id === deviceId);
+        if (newestForThisDevice && shouldHandleEvent(newestForThisDevice)) {
+          renderResultState(newestForThisDevice);
+        }
+      }
+      replaceFeed(entries);
+    } catch (_error) {
+      // Feed fetch failed (network) — the terminal keeps its current
+      // feed and the next refresh signal retries. Never fatal.
+    } finally {
+      feedRefreshInFlight = false;
+      if (feedRefreshPending) {
+        feedRefreshPending = false;
+        void refreshGateFeed();
+      }
+    }
+  }
+
   function renderFeed() {
     const node = document.getElementById('access-feed');
     if (!node) return;
@@ -525,6 +605,7 @@
       storeTerminalSession(result.token, result.expires_at);
       closeAdminModal();
       bindRealtime();
+      void refreshGateFeed();
       renderIdleState();
       await setMode('qr');
       return;
@@ -557,12 +638,6 @@
     renderIdleState();
   }
 
-  function handleRealtimeEvent(payload) {
-    if (!shouldHandleEvent(payload)) return;
-    renderResultState(payload);
-    pushFeed(payload);
-  }
-
   function bindRealtime() {
     if (!gymId) {
       setOnlineStatus(false);
@@ -581,8 +656,11 @@
 
     realtimeChannel = sb.channel(`gate-terminal:${gymId}`);
     realtimeChannel
-      .on('broadcast', { event: 'access_result' }, payload => {
-        handleRealtimeEvent(payload?.payload || {});
+      // FE-10: the broadcast is only an opaque refresh signal now — no
+      // member details cross the public channel. The entries come from
+      // the authenticated gate-feed function.
+      .on('broadcast', { event: 'access_refresh' }, () => {
+        void refreshGateFeed();
       })
       .subscribe(status => {
         setOnlineStatus(status === 'SUBSCRIBED');
@@ -647,6 +725,9 @@
     if (getStoredSession()) {
       // Already unlocked with a valid session token — start normally.
       bindRealtime();
+      // FE-10: populate the feed from the authenticated endpoint; the
+      // broadcast only signals refreshes from here on.
+      void refreshGateFeed();
       renderIdleState();
       void setMode('qr');
     } else {

@@ -101,18 +101,27 @@ async function checkRateLimits(admin, { clientIp, deviceId }) {
 // (gate_terminal_sessions.token_hash), so a leaked database row cannot be
 // replayed. Returns { ok: true, session } or { ok: false }.
 // When expectedGymId is given, the session must belong to that gym.
-async function verifyTerminalSession(admin, req, expectedGymId) {
+// When expectedDeviceId is given, the session must belong to that device
+// (GT-02, Phase 1e — see the check below).
+async function verifyTerminalSession(admin, req, expectedGymId, expectedDeviceId) {
   const token = safeString(req?.headers?.get?.('x-terminal-token'));
   if (!token) return { ok: false };
   const tokenHash = await sha256Hex(token);
   const { data, error } = await admin
     .from('gate_terminal_sessions')
-    .select('id, gym_id, expires_at')
+    .select('id, gym_id, device_id, expires_at')
     .eq('token_hash', tokenHash)
     .maybeSingle();
   if (error || !data) return { ok: false };
   if (new Date(data.expires_at).getTime() <= Date.now()) return { ok: false };
   if (expectedGymId && data.gym_id !== expectedGymId) return { ok: false };
+  // GT-02 (Phase 1e): the session token is bound to the device it was
+  // issued for (gate-terminal-auth stores device_id at issuance). A token
+  // presented from a different device — or with device_id omitted — is
+  // rejected, so a token lifted from one terminal cannot be replayed from
+  // another. Sessions with no device_id on record (none exist: the column
+  // is NOT NULL) skip the check rather than failing closed on legacy rows.
+  if (safeString(data.device_id) && safeString(expectedDeviceId) !== safeString(data.device_id)) return { ok: false };
   // Best-effort last-seen refresh; never fail the check-in over it.
   try {
     await admin
@@ -152,6 +161,14 @@ function normalizeAccessBody(body) {
   };
 }
 
+// FE-10 (Phase 1e): the access_result broadcast used to carry the member's
+// name, days_left, denial reason and credential type on the public
+// Realtime channel `gate-terminal:<gymId>` — anyone who guessed the gym
+// id could subscribe and watch members walk in. The broadcast now carries
+// only an opaque refresh signal (gym, device, timestamp); the terminal
+// fetches the actual entries from the authenticated gate-feed function,
+// which verifies the terminal session token. Member details never cross
+// the public channel again.
 async function emitAccessEvent(admin, payload) {
   if (!admin?.channel || !payload?.gym_id) return;
 
@@ -166,8 +183,12 @@ async function emitAccessEvent(admin, payload) {
   try {
     await channel.send({
       type: 'broadcast',
-      event: 'access_result',
-      payload,
+      event: 'access_refresh',
+      payload: {
+        gym_id: payload.gym_id,
+        device_id: payload.device_id || null,
+        attempted_at: payload.attempted_at || new Date().toISOString(),
+      },
     });
   } catch (error) {
     console.warn('[gate-checkin] broadcast failed', error);
@@ -268,7 +289,7 @@ export function createGateCheckinHandler(options) {
       // FE-04: the terminal must prove it was unlocked with the gym PIN
       // (gate-terminal-auth session token). The gym binding is checked
       // again once the effective gym is known, in each branch below.
-      const terminalSession = await verifyTerminalSession(admin, req, null);
+      const terminalSession = await verifyTerminalSession(admin, req, null, deviceId);
       if (!terminalSession.ok) {
         return json({ access: false, reason: 'invalid_terminal_session' }, 401, corsHeaders);
       }
@@ -295,15 +316,12 @@ export function createGateCheckinHandler(options) {
         if (rpcError) throw rpcError;
 
         const responseBody = normalizeAccessBody(rpcResult);
+        // FE-10: only the opaque refresh signal — the terminal fetches
+        // the member details from gate-feed. Nothing member-identifying
+        // goes on the public broadcast channel.
         await emitAccessEvent(admin, {
           gym_id: requestedGymId,
           device_id: deviceId || null,
-          access: Boolean(responseBody.access),
-          reason: responseBody.reason || null,
-          credential_type: type,
-          client_id: responseBody.client_id || null,
-          client_name: responseBody.client_name || null,
-          days_left: responseBody.days_left ?? null,
           attempted_at: new Date().toISOString(),
         });
 
@@ -333,12 +351,6 @@ export function createGateCheckinHandler(options) {
         await emitAccessEvent(admin, {
           gym_id: details.gym_id || requestedGymId || null,
           device_id: deviceId || null,
-          access: false,
-          reason,
-          credential_type: 'qr',
-          client_id: details.client_id || null,
-          client_name: details.client_name || null,
-          days_left: details.days_left ?? null,
           attempted_at: attemptedAt,
         });
         return json({ access: false, reason }, status, corsHeaders);
@@ -531,12 +543,6 @@ export function createGateCheckinHandler(options) {
       await emitAccessEvent(admin, {
         gym_id: gateSession.gym_id,
         device_id: deviceId || null,
-        access: true,
-        reason: null,
-        credential_type: 'qr',
-        client_id: gateSession.client_id,
-        client_name: clientUser?.name || 'Client',
-        days_left: daysLeft,
         attempted_at: attemptedAt,
       });
 

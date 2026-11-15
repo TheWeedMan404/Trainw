@@ -131,3 +131,48 @@ Run these on the staging/preview deployment before any pilot:
   still needs a scheduler (cron, UptimeRobot, Better Stack, …) to
   actually page someone.
 - **P2-10:** whether the Next.js app is the ship target at all.
+
+## 8. Dashboard settings (FE-10 / FE-12 — set before the first pilot)
+
+These are Supabase dashboard settings, not code. The code is written to
+assume they are on; without them the protections below are weaker.
+
+**Realtime Authorization (FE-10).** The three dashboards subscribe to
+`postgres_changes` on `messages`, `sessions`, `check_ins`,
+`workout_plans` and `weight_logs` with the signed-in user's JWT
+(`tw-gym-acc.js`, `tw-client-acc.js`, `tw-coach-acc.js`). The channel
+filters (`gym_id=eq.…`, `client_id=eq.…`) are chosen by the client, so
+they are not a security boundary on their own. Enable **Realtime
+Authorization** in the Supabase dashboard (Database → Replication, or
+Settings → API → Realtime, depending on the dashboard version) so the
+realtime stream enforces Row Level Security with the caller's JWT —
+then a user can only receive rows their RLS policies already let them
+read. Without it, any authenticated user could subscribe with any
+filter and receive other gyms' rows. (The gate terminal does not use
+`postgres_changes` for access results at all any more: gate-checkin
+broadcasts only an opaque `access_refresh` signal and the terminal
+fetches entries from the authenticated `gate-feed` function.)
+
+**Refresh-token rotation + short JWT expiry (FE-12).** Sessions live in
+`localStorage` (the static app has no backend-for-frontend to hold
+HttpOnly cookies — that is a larger design item, not done here). The
+mitigations that are in place: stored-XSS is closed (round 1, P1-5)
+and the CSP is strict (round 1, P1-6), so a token can only be stolen
+by a new XSS hole. Reduce the blast radius in the dashboard
+(Authentication → Settings):
+- Turn **refresh-token rotation ON** (and revoke the family on reuse
+  detection if the dashboard offers it) — a stolen refresh token then
+  stops working as soon as the legitimate client rotates it.
+- Set the **JWT expiry short** (3600 seconds / 1 hour is the Supabase
+  default; do not raise it). A stolen access token then dies within
+  the hour instead of living for a day.
+
+**Token hygiene (FE-12, verified in code).** No code in the repo logs a
+token, secret, password, PIN, or key value: a grep over every `console.*`
+call in `*.js` / `*.ts` / `*.tsx` / `*.mjs` finds only the names of
+missing env vars (ai-proxy logs that `SUPABASE_URL` / `SUPABASE_ANON_KEY`
+are not configured — the values are never printed) and the usual
+`invalid_terminal_session` / `invalid_pin` / `server_error` reason
+strings, which carry no credential material. Keep it that way: if a
+future debug log needs a token, log a truncated hash or the first 4
+characters, never the value.

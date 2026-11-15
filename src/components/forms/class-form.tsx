@@ -4,6 +4,7 @@ import { useActionState } from "react";
 
 import { createClassAction } from "@/actions/classes";
 import { EMPTY_FORM_STATE } from "@/actions/shared";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 export function ClassForm({
@@ -38,16 +39,15 @@ export function ClassForm({
 
       <div className="space-y-2">
         <label htmlFor="coachId">Assigned coach</label>
-        <select defaultValue="" id="coachId" name="coachId">
-          <option disabled value="">
-            Select a coach
-          </option>
-          {coaches.map((coach) => (
-            <option key={coach.id} value={coach.id}>
-              {coach.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          id="coachId"
+          name="coachId"
+          options={coaches.map((coach) => ({
+            label: coach.name,
+            value: coach.id,
+          }))}
+          placeholder="Select a coach"
+        />
       </div>
 
       {state.error ? (

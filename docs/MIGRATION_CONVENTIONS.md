@@ -85,9 +85,11 @@ that migration (see DB-37, migration `20261115230000`, for the worked
 example). Never update a hash to silence the check without reviewing the
 definition diff.
 
-Known gap: the hash does not cover a function's DEFAULT expressions
-(`proargdefaults` is not in the formula), so a default-only change slips
-past the tripwire. Hardening the hash to include defaults is a follow-up.
+Known gap, closed in round 5 (migration `20261115300000`): the hash now
+covers a function's DEFAULT expressions via `proargdefaults`, so a
+default-only change is caught too. The frozen hash table was recomputed
+under the new formula; all 30 values changed (the added term alters the
+input even for helpers without defaults).
 
 ## 8. Verify on the throwaway cluster before committing
 

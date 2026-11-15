@@ -282,7 +282,7 @@ const T = {
     subDesc:'Passez au plan Pro pour débloquer toutes les fonctionnalités', upgradePro:'Passer au Pro →',
     langSettings:'Langue', support:'Support', contactSupport:'Contacter le Support',
     addCoachTitle:'Ajouter un Coach', coachName:'Nom Complet', coachEmail:'Email',
-    coachPhone:'Téléphone', coachSpecialty:'Spécialité', coachRate:'Tarif / Séance (DT)', submitCoach:'Ajouter le Coach',
+    coachPhone:'Téléphone', coachSpecialty:'Spécialité',tagSuggestions:'Suggestions',saveAsTag:'Enregistrer comme tag de la salle', coachRate:'Tarif / Séance (DT)', submitCoach:'Ajouter le Coach',
     noCoaches:'Aucun coach. Ajoutez votre premier coach !', noClients:'Aucun client. Ajoutez votre premier client !', noSessions:'Aucune séance trouvée.',
     savedOk:'Enregistré !', coachAdded:'Coach ajouté !', clientAdded:'Client ajouté !', sessionCreated:'Séance créée !', errorMsg:'Une erreur est survenue.',
     hourlyRate:'DT/séance', avgRating:'Note', employedLbl:'Ancienneté', totalReviews:'Avis',
@@ -298,7 +298,7 @@ const T = {
     checkInDone:'Check-in enregistré !', alreadyCheckedIn:"Déjà enregistré aujourd'hui.",
     messagesTitle:'Messages', messagesSub:'Conversations avec vos clients', messageTooLong:'Message trop long (max 2000 caractères).',
     typeMessage:'Écrivez un message…', sendMsg:'Envoyer',
-    noMessages:'Aucune conversation. Sélectionnez un client pour commencer.', selectConv:'Sélectionnez une conversation',
+    noMessages:'Aucune conversation. Sélectionnez un client pour commencer.', deleteMessage:'Supprimer ce message', selectConv:'Sélectionnez une conversation',
     classesTitle:'Cours & Activités', classesSub:'Gérez les cours de votre salle',
     addClass:'+ Ajouter un Cours', addClassTitle:'Ajouter un Cours',
     className:'Nom du Cours', classDesc:'Description', classDay:'Jour', classTime:'Heure',
@@ -345,7 +345,7 @@ const T = {
     subDesc:'Upgrade to Pro to unlock all features', upgradePro:'Upgrade to Pro →',
     langSettings:'Language', support:'Support', contactSupport:'Contact Support',
     addCoachTitle:'Add New Coach', coachName:'Full Name', coachEmail:'Email',
-    coachPhone:'Phone', coachSpecialty:'Specialty', coachRate:'Rate / Session (DT)', submitCoach:'Add Coach',
+    coachPhone:'Phone', coachSpecialty:'Specialty',tagSuggestions:'Suggestions',saveAsTag:'Save as a gym tag', coachRate:'Rate / Session (DT)', submitCoach:'Add Coach',
     noCoaches:'No coaches yet. Add your first coach!', noClients:'No clients yet. Add your first client!', noSessions:'No sessions found.',
     savedOk:'Saved!', coachAdded:'Coach added!', clientAdded:'Client added!', sessionCreated:'Session created!', errorMsg:'Something went wrong.',
     hourlyRate:'DT/session', avgRating:'Rating', employedLbl:'Employed', totalReviews:'Reviews',
@@ -361,7 +361,7 @@ const T = {
     checkInDone:'Check-in recorded!', alreadyCheckedIn:'Already checked in today.',
     messagesTitle:'Messages', messagesSub:'Conversations with your clients', messageTooLong:'Message too long (max 2000 characters).',
     typeMessage:'Write a message…', sendMsg:'Send',
-    noMessages:'No conversations. Select a client to start.', selectConv:'Select a conversation',
+    noMessages:'No conversations. Select a client to start.', deleteMessage:'Delete this message', selectConv:'Select a conversation',
     classesTitle:'Classes & Activities', classesSub:'Manage your gym classes',
     addClass:'+ Add Class', addClassTitle:'Add Class',
     className:'Class Name', classDesc:'Description', classDay:'Day', classTime:'Time',
@@ -408,7 +408,7 @@ const T = {
     subDesc:'ترقية إلى Pro لفتح جميع الميزات', upgradePro:'الترقية إلى Pro ←',
     langSettings:'اللغة', support:'الدعم', contactSupport:'تواصل مع الدعم',
     addCoachTitle:'إضافة مدرب', coachName:'الاسم الكامل', coachEmail:'البريد الإلكتروني',
-    coachPhone:'الهاتف', coachSpecialty:'التخصص', coachRate:'الأجر / جلسة (دت)', submitCoach:'إضافة المدرب',
+    coachPhone:'الهاتف', coachSpecialty:'التخصص',tagSuggestions:'اقتراحات',saveAsTag:'حفظ كوسم للصالة', coachRate:'الأجر / جلسة (دت)', submitCoach:'إضافة المدرب',
     noCoaches:'لا يوجد مدربون بعد.', noClients:'لا يوجد عملاء بعد.', noSessions:'لا توجد جلسات.',
     savedOk:'تم الحفظ!', coachAdded:'تمت إضافة المدرب!', clientAdded:'تمت إضافة العميل!', sessionCreated:'تم إنشاء الجلسة!', errorMsg:'حدث خطأ ما.',
     hourlyRate:'دت/جلسة', avgRating:'التقييم', employedLbl:'مدة العمل', totalReviews:'التقييمات',
@@ -424,7 +424,7 @@ const T = {
     checkInDone:'تم تسجيل الحضور!', alreadyCheckedIn:'تم التسجيل مسبقاً اليوم.',
     messagesTitle:'الرسائل', messagesSub:'المحادثات مع العملاء', messageTooLong:'الرسالة طويلة جداً (الحد الأقصى 2000 حرف).',
     typeMessage:'اكتب رسالة…', sendMsg:'إرسال',
-    noMessages:'لا توجد محادثات. اختر عميلاً للبدء.', selectConv:'اختر محادثة',
+    noMessages:'لا توجد محادثات. اختر عميلاً للبدء.', deleteMessage:'حذف هذه الرسالة', selectConv:'اختر محادثة',
     classesTitle:'الدروس والأنشطة', classesSub:'إدارة دروس صالتك',
     addClass:'+ إضافة درس', addClassTitle:'إضافة درس',
     className:'اسم الدرس', classDesc:'الوصف', classDay:'اليوم', classTime:'الوقت',
@@ -3038,6 +3038,47 @@ function openEditCoachModal(profileId,name,specialty,rate,bio){
   document.getElementById('edit-coach-rate2').value=rate||'';
   document.getElementById('edit-coach-bio2').value=bio;
   document.getElementById('coach-modal').classList.remove('show'); m.classList.add('show');
+  loadCoachTagSuggestions();
+  // Refresh the "save as tag" affordance as the manager types.
+  const specialtyInput=document.getElementById('edit-coach-specialty2');
+  if(specialtyInput&&!specialtyInput.dataset.tagWatch){
+    specialtyInput.dataset.tagWatch='1';
+    specialtyInput.addEventListener('input',()=>loadCoachTagSuggestions());
+  }
+}
+// DB-57 (round 5): per-gym tag suggestions for the coach specialty
+// field — global tags + this gym's tags as chips (click fills the
+// input), plus a dashed chip to save the typed specialty as a tag of
+// this gym via the create_gym_specialty_tag RPC.
+async function loadCoachTagSuggestions(){
+  const wrap=document.getElementById('edit-coach-tag-suggestions'); if(!wrap) return;
+  wrap.innerHTML='';
+  if(!currentGymId) return;
+  const {data,error}=await sb.from('specialty_tags').select('id, name, gym_id').or(`gym_id.is.null,gym_id.eq.${currentGymId}`).order('name');
+  if(error||!data) return;
+  const input=document.getElementById('edit-coach-specialty2');
+  const current=(input?.value||'').trim().toLowerCase();
+  if(data.length){
+    const label=document.createElement('span');
+    label.className='tag-suggestions-label'; label.textContent=t('tagSuggestions')+':';
+    wrap.appendChild(label);
+  }
+  data.forEach(tag=>{
+    const chip=document.createElement('button');
+    chip.type='button'; chip.className='tag-chip'; chip.textContent=tag.name;
+    chip.addEventListener('click',()=>{ if(input) input.value=tag.name; loadCoachTagSuggestions(); });
+    wrap.appendChild(chip);
+  });
+  if(current&&!data.some(tag=>tag.name.toLowerCase()===current)){
+    const add=document.createElement('button');
+    add.type='button'; add.className='tag-chip is-new'; add.textContent='+ '+t('saveAsTag');
+    add.addEventListener('click',async()=>{
+      const r=await Trainw.api.run(sb.rpc('create_gym_specialty_tag',{p_gym_id:currentGymId,p_name:input.value.trim()}),{context:'save tag',fallback:null});
+      if(r.error) return;
+      toast(t('savedOk')); loadCoachTagSuggestions();
+    });
+    wrap.appendChild(add);
+  }
 }
 async function saveEditCoach(){
   const profileId=document.getElementById('edit-coach-profile-id').value;
@@ -4924,7 +4965,7 @@ function renderConversation(clientId) {
       lastDate = dateStr;
     }
     if (isOwner) {
-      return separator + `<div class="msg-row msg-row-out message"><div class="msg-bubble msg-bubble-out"><div class="msg-content">${content}${autoTag}</div><div class="msg-ts">${Trainw.escapeHtml(time)}</div></div></div>`;
+      return separator + `<div class="msg-row msg-row-out message"><div class="msg-bubble msg-bubble-out"><div class="msg-content">${content}${autoTag}</div><div class="msg-ts">${Trainw.escapeHtml(time)}</div><button class="msg-delete" type="button" data-delete-message="${message.id}" title="${Trainw.escapeHtml(t('deleteMessage'))}" aria-label="${Trainw.escapeHtml(t('deleteMessage'))}">×</button></div></div>`;
     }
     return separator + `<div class="msg-row msg-row-in message"><div class="msg-av msg-av-sm">${clientIni}</div><div class="msg-bubble msg-bubble-in"><div class="msg-content">${content}</div><div class="msg-ts">${Trainw.escapeHtml(time)}</div></div></div>`;
   }).join('');
@@ -4972,6 +5013,25 @@ async function sendMessage() {
   } finally {
     Trainw.ui.setBusy(btn, false);
   }
+}
+
+// DB-38 (round 5): retracting a message soft-deletes it via RPC — the row
+// is hidden for both parties but never hard-deleted. Only the sender's
+// own messages carry the button (renderConversation), and the RPC enforces
+// sender-only server-side.
+async function deleteOwnMessage(messageId) {
+  if (!messageId || !activeConvId) return;
+  const result = await Trainw.api.run(
+    sb.rpc('soft_delete_message', { p_message_id: messageId }),
+    { context: 'delete message', fallback: null }
+  );
+  if (result.error) {
+    toast(result.error.message || t('errorMsg'), 'err');
+    return;
+  }
+  conversationMap[activeConvId] = (conversationMap[activeConvId] || []).filter(message => message.id !== messageId);
+  renderConversation(activeConvId);
+  await updateMessageBadge();
 }
 
 async function loadCheckIns() {
@@ -5608,6 +5668,11 @@ function bindUi() {
   document.getElementById('btn-save-edit-coach')?.addEventListener('click', saveEditCoach);
   document.getElementById('btn-save-edit-client')?.addEventListener('click', saveEditClient);
   document.getElementById('btn-send-message')?.addEventListener('click', sendMessage);
+  document.getElementById('conv-messages')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-delete-message]');
+    if (!button) return;
+    void deleteOwnMessage(button.dataset.deleteMessage);
+  });
   document.getElementById('btn-send-member-invite')?.addEventListener('click', submitMemberInvite);
   document.getElementById('btn-new-role')?.addEventListener('click', () => {
     resetRoleBuilderForm();

@@ -4,6 +4,7 @@ import { useActionState } from "react";
 
 import { createAttendanceAction } from "@/actions/attendance";
 import { EMPTY_FORM_STATE } from "@/actions/shared";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 export function AttendanceForm({
@@ -22,29 +23,33 @@ export function AttendanceForm({
     <form action={formAction} className="space-y-4">
       <div className="space-y-2">
         <label htmlFor="attendance-client">Client</label>
-        <select defaultValue="" id="attendance-client" name="clientId">
-          <option disabled value="">
-            Select client
-          </option>
-          {clients.map((client) => (
-            <option key={client.id} value={client.id}>
-              {client.name} ({client.client_code})
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          id="attendance-client"
+          name="clientId"
+          options={clients.map((client) => ({
+            label: `${client.name} (${client.client_code})`,
+            value: client.id,
+          }))}
+          placeholder="Select client"
+        />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
           <label htmlFor="attendance-class">Class (optional)</label>
-          <select defaultValue="" id="attendance-class" name="classId">
-            <option value="">No class</option>
-            {classes.map((gymClass) => (
-              <option key={gymClass.id} value={gymClass.id}>
-                {gymClass.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            defaultValue=""
+            id="attendance-class"
+            name="classId"
+            options={[
+              { label: "No class", value: "" },
+              ...classes.map((gymClass) => ({
+                label: gymClass.name,
+                value: gymClass.id,
+              })),
+            ]}
+            placeholder="No class"
+          />
         </div>
 
         <div className="space-y-2">

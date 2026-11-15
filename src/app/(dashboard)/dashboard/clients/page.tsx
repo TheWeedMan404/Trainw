@@ -41,22 +41,22 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
             {clients.length ? (
               clients.map((client) => (
                 <div
-                  className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 p-4"
+                  className="space-y-3 rounded-2xl border border-slate-200 p-4"
                   key={client.id}
                 >
-                  <div>
-                    <p className="font-medium text-slate-950">{client.name}</p>
-                    <p className="mt-1 text-sm text-slate-600">{client.client_code}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Created {formatDateTime(client.created_at)}
-                    </p>
-                    {client.email || client.phone ? (
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-slate-950">{client.name}</p>
+                      <p className="mt-1 text-sm text-slate-600">{client.client_code}</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {[client.email, client.phone].filter(Boolean).join(" · ")}
+                        Created {formatDateTime(client.created_at)}
                       </p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
+                      {client.email || client.phone ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          {[client.email, client.phone].filter(Boolean).join(" · ")}
+                        </p>
+                      ) : null}
+                    </div>
                     <StatusBadge
                       label={
                         client.status === "pending"
@@ -64,8 +64,13 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                           : client.type
                       }
                     />
-                    <ClientRowActions clientId={client.id} status={client.status} />
                   </div>
+                  <ClientRowActions
+                    clientId={client.id}
+                    name={client.name}
+                    status={client.status}
+                    type={client.type}
+                  />
                 </div>
               ))
             ) : (

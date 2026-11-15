@@ -57,8 +57,18 @@ export default async function ClassesPage({ searchParams }: { searchParams: Prom
                     <p className="text-xs text-slate-500">
                       Capacity: {gymClass.capacity ?? "Unlimited"}
                     </p>
-                    <ClassRowActions classId={gymClass.id} />
                   </div>
+                </div>
+
+                <div className="mt-4">
+                  <ClassRowActions
+                    capacity={gymClass.capacity}
+                    classId={gymClass.id}
+                    coachId={gymClass.coachId}
+                    coaches={coaches}
+                    name={gymClass.name}
+                    type={gymClass.type}
+                  />
                 </div>
 
                 <div className="mt-6">
