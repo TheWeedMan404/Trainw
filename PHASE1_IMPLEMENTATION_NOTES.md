@@ -6774,3 +6774,174 @@ the flag was not touched.
   on production, PIN prompt flow once turnstiles are re-enabled,
   live QR scan). GT-03 live throttle test is blocked until the user
   re-enables turnstiles.
+
+## Phase 2 — P2-7: backups, monitoring, staging (2026-11-15)
+
+Step definition (audit §Phase 2, line 349): "Enable Supabase
+PITR/backups, test a restore to a fresh project, add Sentry + an
+uptime check + an alert on gate-function errors, create a staging
+project, write a one-page deploy runbook. Verify: restore a backup
+into staging and log in."
+
+Method: code side was already done (deploy runbook, backup + uptime
+scripts, round 4) — this round did the live parts. Management API
+(`sb-api.py`) reads + project creation; migration chain applied to
+staging through `POST /v1/projects/{ref}/database/query`; login
+tested with the staging project's own API keys (fetched via the
+Management API, kept in memory, never printed). VM↔Supabase
+transport flakes hit twice (one read timeout on the Auth Admin
+call, one `RemoteDisconnected` on a REST read) — both succeeded on
+the single retry. No push, no merge, no deploy, no purchase, no
+plan upgrade, no account created, no cron/scheduled monitor
+created, no data deleted anywhere, no live-project writes at all
+(except read-only probes).
+
+### Per-item verdicts
+
+- **Plan + PITR/backups — NEEDS-USER (paid).** Org `Trainw` plan
+  is **free** (`GET /v1/organizations/yloqnjynokxiyymrjdgc` →
+  `"plan": "free"`). `GET
+  /v1/projects/caylegavnekidhytlswo/database/backups` →
+  `pitr_enabled: false`, `walg_enabled: true`, `backups: []` — no
+  restorable backups exist and PITR is off. PITR is a Pro-and-up
+  add-on; the Management API exposes no prices, so the cost was
+  taken from Supabase's pricing page as read Oct–Nov 2026 by
+  several independent pricing guides (all consistent): **Pro
+  $25/month per org** (includes $10/month compute credit covering
+  one Micro project, daily backups 7-day retention) **+ PITR
+  $100/month per project for a 7-day window** ($200/14d, $400/28d),
+  billed hourly, **not covered by the spend cap**; PITR also needs
+  at least Small compute ($15/month vs the $10 Micro the credit
+  covers), so the realistic total is **about $125–130/month** for
+  one Pro project with 7-day PITR. Confirm on the billing page
+  before buying. Until the user decides, pg_dump (§5 of the
+  runbook) is the only safety net — and no dump has ever been
+  taken: `pg_dump`/`psql` are not installed on this VM and the
+  live DB password is dashboard-held.
+- **Staging project — DONE.** Created via the Management API:
+  `Trainw Staging`, ref `azstzaoujmtpnyjypggq`, eu-west-2, free
+  tier, `ACTIVE_HEALTHY` (2026-11-15T17:43:01Z). DB password
+  generated (32 random chars) and stored ONLY in
+  `goals/build-trainw/hidden_files/staging-project-2026-11-15.md`
+  (mode 0600, never printed, never committed, never put in any
+  other file); the API request body file was deleted immediately
+  after the call. REST endpoint answers 401 without a key
+  (reachable), same as live.
+- **Restore drill — PARTIAL (schema restore + login done; data
+  restore blocked).** There is no backup to restore (free plan,
+  above), so the true PITR/pg_dump restore is blocked on the same
+  user decision — stated plainly, not faked. What was done
+  instead: the full 74-file migration chain applied to staging,
+  then a login test. First pass 71/74 OK; `20261115050000` (B5)
+  failed by design (42P13 return-type) and — because the
+  Management API runs one call = one transaction — its rollback
+  also took down `20261115120000` (missing
+  `caller_manages_gym_direct`, which B5 defines). Fixed by
+  applying B5 statement-by-statement (24/25, only the
+  `get_staff_directory` CREATE failed) and re-running
+  `20261115120000` clean. `20261115300000` failed by design (DB-61
+  drift guard), repaired by `20261115330000`. Final: every file
+  applied. The pg_dump → pg_restore procedure is written into the
+  runbook (§5); it is still untested end to end (needs the live DB
+  password + a machine with `pg_dump`).
+- **Staging verified.** 49 public tables;
+  `assert_rls_helpers_frozen()` passes (DB-61); 0 unvalidated
+  constraints (DB-35); key functions present
+  (`get_staff_directory`, `caller_manages_gym_direct`,
+  `validate_member_credential`, `ensure_gym_default_roles`,
+  `handle_new_user`, `prepare_session_write`,
+  `assert_rls_helpers_frozen`, `assert_no_unvalidated_constraints`).
+  Anon EXECUTE on the sensitive RPCs: none (matches live). One
+  ordering gap found and fixed: 4 functions created after the
+  round-9 revoke migration ran (`get_staff_directory`,
+  `get_staff_directory_sensitive`, `revoke_gate_session`,
+  `trainw_rpc_rate_limit_consume`) carried anon EXECUTE from the
+  Supabase default grant — revoked explicitly, then migration
+  `20261116110000` re-run whole (guarded, idempotent). Anon
+  EXECUTE totals after the fix: staging 306, live 307 (the 1
+  difference is `rls_auto_enable`, which exists only on live).
+- **Log in on staging — DONE.** Test user
+  `staging-p27-test@example.com` created via the Auth Admin API
+  (email pre-confirmed); password sign-in 200, token issued, user
+  id matches; `users` row `role=client, gym_id=NULL` and a
+  `client_profiles` row exist (`handle_new_user` works);
+  `list_public_gyms` returns `[]` (no gyms yet, as expected); anon
+  calling `trainw_rpc_rate_limit_consume` gets 404 (not visible to
+  anon — the owner-only design holds). Credentials recorded in the
+  0600 hidden file only. Staging gaps, not blockers:
+  `app_secrets` is empty (set a **fresh** pepper, different from
+  live, before any gate-credential test on staging); no seed/test
+  gyms yet; the frontend is still pointed at live (to run the app
+  against staging, build with the staging URL + anon key).
+- **Sentry — NEEDS-USER (no account).** The user has no Sentry
+  account and none was created. Exact setup is in the runbook
+  (§10): account + JavaScript project → DSN into Vercel env
+  (preview + production) and Supabase edge-function secrets →
+  wrap the 4 edge-function handlers (code change, not done) →
+  alert rule on gate-function errors.
+- **Uptime check + gate-error alert — PROPOSAL ONLY.** No cron
+  job or scheduled monitor was created (the parent owns
+  scheduling). Proposal written into the runbook (§10): every 5
+  minutes, `scripts/uptime-check.sh` extended with edge-function
+  probes. Expected responses observed live 2026-11-15 (POST, no
+  auth): `gate-checkin` 503 `turnstiles_disabled`,
+  `gate-terminal-auth` 503 `turnstiles_disabled`, `gate-feed` 503
+  `turnstiles_disabled`, `ai-proxy` 401
+  `UNAUTHORIZED_NO_AUTH_HEADER`; production site 200, Supabase
+  REST 401 without a key. Alert on anything else — and note the
+  expected gate responses change to 401 when turnstiles are
+  re-enabled, so the probe must be updated with the flag. Until
+  Sentry exists, gate errors surface only in the Supabase
+  dashboard's Edge Function logs; and while turnstiles are off, a
+  gate error looks exactly like the healthy disabled state, so the
+  probe can only catch the functions being down or the flag logic
+  breaking.
+
+### Discrepancies found vs live (flagged, not fixed here)
+
+- **P2-5 never landed on live.** Live has no `rpc_rate_limits`
+  table and no `trainw_rpc_rate_limit_consume`, and live's
+  `list_public_gyms` / `request_gym_membership` bodies contain no
+  reference to the limiter — they are the pre-limiter versions
+  from `20261116100000`. Migration `20261116130000` has no
+  live-apply record in the notes. The join-flow rate limiting is
+  therefore not live. Applying it to live is a P2-5 follow-up for
+  the parent, not part of P2-7.
+- **Leftover probe tables on live:** `__probe_a`, `__probe_b`.
+  Same bucket as the known test-data cleanup; remove with the rest
+  of the test data, not ad hoc.
+
+### Verification
+
+- Management API: org plan `free`; live backups `pitr_enabled:
+  false`, `backups: []`; staging project created
+  (`azstzaoujmtpnyjypggq`, `ACTIVE_HEALTHY`); staging REST 401
+  (reachable); live REST 401; production site 200.
+- Chain apply (`/tmp/p27-apply-chain.py`, log
+  `/tmp/p27-chain-log.json`): 71/74 whole-file OK, then B5
+  statement-wise 24/25 + `20261115120000` re-run OK — every file
+  applied. Post-apply checks: 49 tables, DB-61 freeze passes,
+  DB-35 0 unvalidated, `app_secrets` 0 rows, sensitive RPCs 0
+  anon grants.
+- Login test (`/tmp/p27-login-test2.py`): admin create 200,
+  sign-in 200, profile rows present, `list_public_gyms` 200 `[]`,
+  anon rate-limit consume 404.
+- Edge-function probes (curl, no auth): gate-checkin /
+  gate-terminal-auth / gate-feed 503 `turnstiles_disabled`,
+  ai-proxy 401 `UNAUTHORIZED_NO_AUTH_HEADER`.
+- No JS/SQL/edge-function files in the app tree touched, so no
+  `node --check` or local-Postgres chain run was needed for P2-7
+  code; `node env-config.js` + `npm run verify` run for the
+  runbook/notes change (see below).
+
+### Still needs the parent
+
+- Push / merge / deploy (runbook + notes only — nothing to deploy
+  from this round in behaviour terms, but the runbook text ships
+  with the next deploy).
+- The user decisions: Pro + PITR ($125–130/month), Sentry account,
+  uptime-monitor scheduling.
+- P2-5 follow-up: apply migration `20261116130000` to live (join
+  rate limiting is not live).
+- Staging follow-ups when it is used: fresh pepper in
+  `app_secrets`, seed/test gyms, frontend pointed at staging.
