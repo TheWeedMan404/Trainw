@@ -3970,3 +3970,66 @@ date → banner shows (expired).
   in a browser: the coach multi-gym select path (code unchanged, only its
   data source changed) and the genuinely-expired banner path (logic
   unchanged, only the null path fixed).
+
+## Round 11 — client membership card garbled dash (2026-11-15)
+
+One-line fix, user-authorised under the standing grind instruction.
+The round-10 browser re-check on production found the client portal
+(/client, client@test.com) membership card rendering garbled characters
+"Â€"" where a dash should be. Commit: local, branch
+`phase1-security-fixes` (parent pushes).
+
+### Root cause
+
+`tw-client-acc.js` line 237, `renderDashboardHero()`:
+
+```js
+let membershipStatus='â€”',membershipCopy='No membership data available.';
+```
+
+The literal `'â€"'` is the classic double-encoding of the em-dash
+`—` (U+2014). The em-dash's UTF-8 bytes (E2 80 94) were once decoded
+as Windows-1252 — giving `â` (E2), `€` (80), `”` (94) — and those
+three characters were then re-encoded as UTF-8, so the file on disk
+holds the 9 bytes `C3 A2 E2 82 AC E2 80 9D`. The browser reads the file
+as UTF-8 and displays exactly those three characters, `â€"`. The
+value is the membership card's status: when the client has no
+`membership_end_date`, `membershipDays` is null and the status stays
+at this literal, which `Trainw.ui.setText('dashboard-membership-status',
+membershipStatus)` writes straight into the card — no encoding step in
+between, so the literal itself was the bug. The card's other dashes
+("MEMBRE DEPUIS —", "FIN D'ABONNEMENT —") are proper em-dashes
+elsewhere and render fine.
+
+This is one of the file's pre-existing double-encoded sequences (round
+8 counted 76). The same mojibake em-dash byte sequence occurs 10 times
+in `tw-client-acc.js` (safeVal/date/weight/target/days-left/booking-date
+fallbacks); only the `membershipStatus` instance is this bug. The other
+9 were left untouched, per the minimal-fix scope — a bulk re-encode of
+the file is a separate decision, not this round.
+
+### Fix
+
+One literal, one line (`tw-client-acc.js`, line 237):
+
+```diff
+-let membershipStatus='â€”'
++let membershipStatus='—'
+```
+
+No other file touched. No migration, no RLS change, no secret.
+
+### Verification
+
+- Hexdump: the literal's bytes are now `E2 80 94` (proper em-dash);
+  the mojibake sequence count in the file dropped 10 → 9.
+- Node eval of the extracted literal: char `—`, code point U+2014.
+- `node --check tw-client-acc.js` clean.
+- Static build: `node env-config.js` + `npm run verify` — "all checks
+  passed" (env vars fetched from the Supabase Management API into the
+  build process env only, never printed; `dist/` rebuilt and confirmed
+  to contain the fixed literal).
+- `git diff`: exactly 1 line changed in 1 file.
+- **Not verified in this session (no live-browser access):** the actual
+  browser render of the membership card on production. Browser re-check
+  happens after the parent deploys.
